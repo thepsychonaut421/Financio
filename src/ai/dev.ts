@@ -1,1 +1,5 @@
-// Flows will be imported for their side effects in this file.
+import { config } from 'dotenv';
+config();
+
+import '@/ai/flows/normalize-and-deduplicate-data.ts';
+import '@/ai/flows/extract-invoice-data.ts';
