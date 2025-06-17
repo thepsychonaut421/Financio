@@ -16,6 +16,8 @@ import { readFileAsDataURL } from '@/lib/file-helpers';
 import { extractBankStatementData, type BankTransactionAI } from '@/ai/flows/extract-bank-statement-data';
 import { v4 as uuidv4 } from 'uuid';
 
+const LOCAL_STORAGE_MATCHER_DATA_KEY = 'processedIncomingInvoicesForMatcher';
+
 export function BankMatcherPageContent() {
   const [bankStatementFile, setBankStatementFile] = useState<File | null>(null);
   const [bankTransactions, setBankTransactions] = useState<BankTransaction[]>([]);
@@ -27,16 +29,21 @@ export function BankMatcherPageContent() {
   const [availableInvoices, setAvailableInvoices] = useState<ERPIncomingInvoiceItem[]>([]);
 
   useEffect(() => {
-    const storedInvoices = localStorage.getItem('processedIncomingInvoicesForMatcher');
-    if (storedInvoices) {
+    const storedInvoicesString = localStorage.getItem(LOCAL_STORAGE_MATCHER_DATA_KEY);
+    if (storedInvoicesString) {
       try {
-        const parsedInvoices: ERPIncomingInvoiceItem[] = JSON.parse(storedInvoices);
-        setAvailableInvoices(parsedInvoices);
-        // Don't set status message here, let the main alert handle it initially
+        const parsedJson = JSON.parse(storedInvoicesString);
+        if (Array.isArray(parsedJson)) {
+          const parsedInvoices = parsedJson as ERPIncomingInvoiceItem[];
+          setAvailableInvoices(parsedInvoices);
+        } else {
+          console.warn(`Stored data for ${LOCAL_STORAGE_MATCHER_DATA_KEY} is not an array, clearing.`);
+          localStorage.removeItem(LOCAL_STORAGE_MATCHER_DATA_KEY);
+        }
       } catch (e) {
-        console.error("Failed to parse invoices from localStorage", e);
-        // Set error message to be displayed in an alert if parsing fails
+        console.error(`Failed to parse data from localStorage key ${LOCAL_STORAGE_MATCHER_DATA_KEY}:`, e);
         setErrorMessage("Error: Could not load previously processed invoice data. It might be corrupted.");
+        localStorage.removeItem(LOCAL_STORAGE_MATCHER_DATA_KEY);
       }
     }
   }, []);
@@ -53,8 +60,8 @@ export function BankMatcherPageContent() {
         setBankStatementFile(file);
         setBankTransactions([]);
         setMatchedTransactions([]);
-        setStatusMessage(null); // Clear previous status messages
-        setErrorMessage(null); // Clear previous error messages
+        setStatusMessage(null); 
+        setErrorMessage(null); 
       } else {
         setErrorMessage("Invalid file type. Please select a CSV or PDF file.");
         setBankStatementFile(null);
@@ -66,9 +73,6 @@ export function BankMatcherPageContent() {
     setBankStatementFile(null);
     setBankTransactions([]);
     setMatchedTransactions([]);
-    // Optionally clear status/error messages as well
-    // setStatusMessage(null);
-    // setErrorMessage(null);
   };
 
   const handleProcessStatement = async () => {
@@ -228,7 +232,7 @@ export function BankMatcherPageContent() {
           </div>
         )}
         
-        {!isProcessing && !statusMessage && errorMessage && ( // Show error only if not processing and no other status
+        {!isProcessing && !statusMessage && errorMessage && ( 
           <Alert variant="destructive" className="my-6">
             <AlertCircle className="h-4 w-4" />
             <AlertTitle>Error</AlertTitle>
@@ -297,7 +301,6 @@ export function BankMatcherPageContent() {
             </CardContent>
           </Card>
         )}
-         {/* Message if processing is done but no statement file selected (e.g. after removing a file) */}
         {!isProcessing && !bankStatementFile && bankTransactions.length > 0 && (
             <Alert className="my-6">
                 <Info className="h-4 w-4" />
@@ -314,4 +317,5 @@ export function BankMatcherPageContent() {
     </div>
   );
 }
+
 

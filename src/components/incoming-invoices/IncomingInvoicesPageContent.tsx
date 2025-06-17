@@ -42,17 +42,29 @@ export function IncomingInvoicesPageContent() {
     try {
       const cachedDataString = localStorage.getItem(LOCAL_STORAGE_PAGE_CACHE_KEY);
       if (cachedDataString) {
-        const cachedData: IncomingInvoicesPageCache = JSON.parse(cachedDataString);
-        if (cachedData.status === 'success') {
-          setExtractedInvoices(cachedData.extractedInvoices || []);
-          setErpProcessedInvoices(cachedData.erpProcessedInvoices || []);
-          setErpMode(cachedData.erpMode || false);
-          setUseMinimalErpExport(cachedData.useMinimalErpExport === undefined ? true : cachedData.useMinimalErpExport);
-          setStatus('success'); // Restore to success so UI reflects loaded data
+        const parsedJson = JSON.parse(cachedDataString);
+        // Validate the structure of parsedJson before casting
+        if (
+          parsedJson &&
+          typeof parsedJson === 'object' &&
+          'status' in parsedJson && // Ensure 'status' property exists
+          parsedJson.status === 'success'
+        ) {
+          const cachedData = parsedJson as IncomingInvoicesPageCache;
+
+          setExtractedInvoices(Array.isArray(cachedData.extractedInvoices) ? cachedData.extractedInvoices : []);
+          setErpProcessedInvoices(Array.isArray(cachedData.erpProcessedInvoices) ? cachedData.erpProcessedInvoices : []);
+          setErpMode(typeof cachedData.erpMode === 'boolean' ? cachedData.erpMode : false);
+          setUseMinimalErpExport(typeof cachedData.useMinimalErpExport === 'boolean' ? cachedData.useMinimalErpExport : true);
+          setStatus('success'); 
+        } else {
+          // Cached data is not in the expected format or not a 'success' state.
+          console.warn("Cached data for incoming invoices is invalid or not a 'success' state, clearing.");
+          localStorage.removeItem(LOCAL_STORAGE_PAGE_CACHE_KEY);
         }
       }
     } catch (error) {
-      console.error("Failed to load incoming invoices page cache from localStorage:", error);
+      console.error("Failed to load or parse incoming invoices page cache from localStorage:", error);
       localStorage.removeItem(LOCAL_STORAGE_PAGE_CACHE_KEY);
     }
   }, []);
@@ -77,7 +89,7 @@ export function IncomingInvoicesPageContent() {
 
   const supplierMap: Record<string, string> = {
     "LIDL": "Lidl",
-    "LIDL DIGITAL DEUTSCHLAND GMBH & CO. KG": "Lidl",
+    "LIDL DIGITAL DEUTSCHLAND GMBH & CO. KG": "Lidl", // Case-insensitive match in prompt, but keep consistent here.
     "GD ARTLANDS ETRADING GMBH": "GD Artlands eTrading GmbH",
     "RETOURA": "RETOURA",
     "DOITBAU GMBH & CO.KG": "doitBau",
@@ -86,6 +98,7 @@ export function IncomingInvoicesPageContent() {
     "FIRMA HANDLOWA KABIS BOZENA KEDZIORA": "FIRMA HANDLOWA KABIS BOZENA KEDZIORA",
     "ZWECO UG": "Zweco UG"
   };
+  
 
   const DEFAULT_KONTENRAHMEN = "1740 - Verbindlichkeiten";
 
@@ -113,13 +126,12 @@ export function IncomingInvoicesPageContent() {
     let invoiceDate: Date;
     try {
         invoiceDate = parseISO(invoiceDateStr); 
-         if (isNaN(invoiceDate.getTime())) { // Check if parseISO resulted in a valid date
-            // Try parsing DD.MM.YYYY if YYYY-MM-DD failed or was not the input format
+         if (isNaN(invoiceDate.getTime())) { 
             const parts = invoiceDateStr.match(/(\d{2})\.(\d{2})\.(\d{4})/);
             if (parts) {
                 invoiceDate = parseISO(`${parts[3]}-${parts[2]}-${parts[1]}`);
             }
-            if (isNaN(invoiceDate.getTime())) return invoiceDateStr; // Still invalid
+            if (isNaN(invoiceDate.getTime())) return invoiceDateStr;
          }
     } catch (e) {
         return invoiceDateStr; 
@@ -166,7 +178,6 @@ export function IncomingInvoicesPageContent() {
       localStorage.removeItem(LOCAL_STORAGE_PAGE_CACHE_KEY);
     } else {
        // If no results, but files were selected, do not clear selectedFiles
-       // This allows toggling ERP mode before processing
     }
     setStatus('idle');
     setCurrentFileProgress('');
@@ -200,20 +211,31 @@ export function IncomingInvoicesPageContent() {
         const aiResult: ExtractIncomingInvoiceDataOutput = await extractIncomingInvoiceData({ invoiceDataUri: dataUri }, {model: 'googleai/gemini-1.5-flash-latest'});
         
         let finalLieferantName = aiResult.lieferantName;
-        if (aiResult.lieferantName && supplierMap[aiResult.lieferantName.toUpperCase()]) {
-          finalLieferantName = supplierMap[aiResult.lieferantName.toUpperCase()];
-        } else if (aiResult.lieferantName && Object.values(supplierMap).includes(aiResult.lieferantName)) {
-          finalLieferantName = aiResult.lieferantName;
-        } else if (aiResult.lieferantName) {
-          const foundKey = Object.keys(supplierMap).find(key => aiResult.lieferantName?.toLowerCase().includes(key.toLowerCase()));
-          if (foundKey) {
-              finalLieferantName = supplierMap[foundKey];
-          } else {
-              finalLieferantName = (aiResult.lieferantName === "UNBEKANNT" || !aiResult.lieferantName) ? "UNBEKANNT" : aiResult.lieferantName;
-          }
+
+        // Normalize supplier name based on supplierMap (case-insensitive check for keys)
+        if (aiResult.lieferantName) {
+            const upperCaseLieferantName = aiResult.lieferantName.toUpperCase();
+            if (supplierMap[upperCaseLieferantName]) { // Direct match with case-normalized key
+                finalLieferantName = supplierMap[upperCaseLieferantName];
+            } else {
+                // Check if the AI returned one of the *values* from supplierMap
+                const matchedValue = Object.values(supplierMap).find(val => val.toLowerCase() === aiResult.lieferantName?.toLowerCase());
+                if (matchedValue) {
+                    finalLieferantName = matchedValue;
+                } else {
+                     // Fallback: try to find a partial match in keys (less reliable)
+                    const foundKey = Object.keys(supplierMap).find(key => upperCaseLieferantName.includes(key.toUpperCase()));
+                    if (foundKey) {
+                        finalLieferantName = supplierMap[foundKey];
+                    } else {
+                        finalLieferantName = (aiResult.lieferantName === "UNBEKANNT" || !aiResult.lieferantName) ? "UNBEKANNT" : aiResult.lieferantName;
+                    }
+                }
+            }
         } else {
-          finalLieferantName = "UNBEKANNT";
+            finalLieferantName = "UNBEKANNT";
         }
+
 
         const postingDateERP = formatDateForERP(aiResult.datum);
         const dueDateERP = calculateDueDate(postingDateERP, aiResult.zahlungsziel);
@@ -223,13 +245,15 @@ export function IncomingInvoicesPageContent() {
         if (aiResult.bestellNummer) remarks += `${remarks ? ' / ' : ''}Bestell-Nr.: ${aiResult.bestellNummer}`;
 
         let istBezahltStatus: 0 | 1 = 0;
-        const zahlungszielLower = (aiResult.zahlungsziel || '').toLowerCase();
-        const zahlungsartLower = (aiResult.zahlungsart || '').toLowerCase();
-        
-        if (aiResult.isPaidByAI === true) {
+        // Prefer AI's direct assessment of payment if available
+        if (aiResult.isPaid === true) { // Checking `isPaid` from AI Output
           istBezahltStatus = 1;
-        } else if (zahlungszielLower.includes('sofort') || zahlungsartLower === 'sofort' || zahlungsartLower === 'lastschrift' || zahlungsartLower.includes('paypal') || zahlungsartLower.includes('paid')) {
-          istBezahltStatus = 1;
+        } else { // Fallback to keyword check in payment terms/method
+            const zahlungszielLower = (aiResult.zahlungsziel || '').toLowerCase();
+            const zahlungsartLower = (aiResult.zahlungsart || '').toLowerCase();
+            if (zahlungszielLower.includes('sofort') || zahlungsartLower === 'sofort' || zahlungsartLower === 'lastschrift' || zahlungsartLower.includes('paypal') || zahlungsartLower.includes('paid')) {
+              istBezahltStatus = 1;
+            }
         }
         
         let year = new Date().getFullYear().toString();
@@ -251,12 +275,12 @@ export function IncomingInvoicesPageContent() {
           rechnungspositionen: aiResult.rechnungspositionen || [],
           kundenNummer: aiResult.kundenNummer,
           bestellNummer: aiResult.bestellNummer,
-          isPaidByAI: aiResult.isPaidByAI,
+          isPaidByAI: aiResult.isPaid, // Store what AI returned directly
           erpNextInvoiceName: erpNextInvoiceNameGenerated,
           billDate: postingDateERP,
           dueDate: dueDateERP,
           wahrung: 'EUR',
-          istBezahlt: istBezahltStatus,
+          istBezahlt: istBezahltStatus, // This is the final 0/1 for ERPNext
           kontenrahmen: DEFAULT_KONTENRAHMEN,
           remarks: remarks.trim(),
         };
@@ -269,7 +293,7 @@ export function IncomingInvoicesPageContent() {
               pdfFileName: file.name,
               rechnungsnummer: aiResult.rechnungsnummer,
               datum: aiResult.datum, 
-              lieferantName: aiResult.lieferantName, 
+              lieferantName: aiResult.lieferantName, // Show original AI extraction here
               lieferantAdresse: aiResult.lieferantAdresse,
               zahlungsziel: aiResult.zahlungsziel,
               zahlungsart: aiResult.zahlungsart,
@@ -278,7 +302,7 @@ export function IncomingInvoicesPageContent() {
               rechnungspositionen: aiResult.rechnungspositionen || [],
               kundenNummer: aiResult.kundenNummer,
               bestellNummer: aiResult.bestellNummer,
-              isPaidByAI: aiResult.isPaidByAI, 
+              isPaidByAI: aiResult.isPaid, 
           });
         }
         
@@ -289,7 +313,7 @@ export function IncomingInvoicesPageContent() {
       setErpProcessedInvoices(erpResultsDisplay);
       
       localStorage.setItem(LOCAL_STORAGE_MATCHER_DATA_KEY, JSON.stringify(allProcessedForMatcher));
-      setStatus('success'); // This will trigger the useEffect to save page cache
+      setStatus('success'); 
       setCurrentFileProgress('Processing complete!');
 
     } catch (error) {
