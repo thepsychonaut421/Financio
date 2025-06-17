@@ -72,7 +72,6 @@ const prompt = ai.definePrompt({
   name: 'extractInvoiceDataPrompt',
   input: {schema: ExtractInvoiceDataInputSchema},
   output: {schema: ExtractInvoiceDataOutputSchema},
-  // Removed model property, will use global default from src/ai/genkit.ts
   prompt: `You are an expert in extracting data from invoices.
 
 You will receive an invoice as a data URI. Extract the following information from the invoice:
@@ -94,7 +93,7 @@ const extractInvoiceDataFlow = ai.defineFlow(
     outputSchema: ExtractInvoiceDataOutputSchema,
   },
   async input => {
-    const {output} = await prompt(input);
+    const {output} = await prompt(input, {model: 'googleai/gemini-1.5-flash-latest'});
     // Normalization will be done in the exported wrapper function
     return output!;
   }

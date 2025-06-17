@@ -66,7 +66,6 @@ const prompt = ai.definePrompt({
   name: 'suggestPdfFilenamePrompt',
   input: { schema: SuggestPdfFilenameInputSchema },
   output: { schema: SuggestPdfFilenameOutputSchema },
-  // Removed model property, will use global default from src/ai/genkit.ts
   prompt: `You are an expert AI assistant that suggests concise and informative filenames for PDF documents, which are often invoices or official documents.
 You will receive a PDF as a data URI and its original filename.
 
@@ -84,7 +83,7 @@ Based on the extracted information, construct a new filename. Follow these patte
 - If only Supplier is found: SupplierNameShort.pdf
 - If only Date is found: YYYY-MM-DD_document.pdf
 
-If specific details (Invoice Number, Supplier, Date) cannot be reliably extracted, use a fallback based on the 'Original Filename' I provide you (you will need to remove the extension like .pdf from it). For example, if the original filename is "my_scan.pdf", a fallback could be "Processed_my_scan.pdf".
+If specific details (Invoice Number, Supplier, Date) cannot be reliably extracted, use a fallback based on the 'Original Filename' I provide you (you will need to remove the extension like .pdf from it). For example, if the original filename is "my_scan.pdf", a fallback could be "Processed_my_scan.pdf". This instruction is for you, AI, do not use Handlebars for "originalFilename without extension".
 
 General Rules:
 - The final suggested filename MUST end with ".pdf".
@@ -104,7 +103,7 @@ const suggestPdfFilenameFlow = ai.defineFlow(
     outputSchema: SuggestPdfFilenameOutputSchema,
   },
   async (input) => {
-    const { output } = await prompt(input);
+    const { output } = await prompt(input, {model: 'googleai/gemini-1.5-flash-latest'});
     return output!;
   }
 );

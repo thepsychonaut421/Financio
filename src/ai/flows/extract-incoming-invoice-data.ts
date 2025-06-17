@@ -111,7 +111,7 @@ const extractIncomingInvoiceDataFlow = ai.defineFlow(
     outputSchema: ExtractIncomingInvoiceDataOutputSchema,
   },
   async input => {
-    const {output} = await prompt(input);
+    const {output} = await prompt(input, {model: 'googleai/gemini-1.5-flash-latest'});
     // Post-processing for specific fields can be done in the wrapper 'extractIncomingInvoiceData' if needed.
     return output!; 
   }
