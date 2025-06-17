@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useState, useCallback, ChangeEvent } from 'react';
@@ -7,13 +8,14 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { UploadCloud, FileText, XCircle, AlertCircle, Info, ListChecks, Banknote } from 'lucide-react';
 import type { BankTransaction, MatchedTransaction, MatchStatus } from '@/lib/bank-matcher/types';
-// We'll need to import the actual invoice type, assuming it's ERPIncomingInvoiceItem from the other module
-// For now, we might need a way to access this data or pass it.
-// This is a placeholder, actual invoice data would need to be fetched or passed.
 import type { ERPIncomingInvoiceItem } from '@/types/incoming-invoice'; 
 import { parseBankStatementCSV } from '@/lib/bank-matcher/bankStatementParser';
 import { matchTransactions } from '@/lib/bank-matcher/matchBankToInvoices';
 import { Progress } from '@/components/ui/progress';
+import { readFileAsDataURL } from '@/lib/file-helpers';
+import { extractBankStatementData, type BankTransactionAI } from '@/ai/flows/extract-bank-statement-data';
+import { v4 as uuidv4 } from 'uuid';
+
 
 // Dummy data for now - in a real app, this would come from a store, context, or props
 const DUMMY_EXTRACTED_INVOICES: ERPIncomingInvoiceItem[] = [];
@@ -28,18 +30,27 @@ export default function BankMatcherPage() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [progressValue, setProgressValue] = useState(0);
 
-  // This would ideally come from a shared state or be fetched from the Incoming Invoices module.
-  // For this example, we'll use a simple state, but acknowledge this needs robust handling.
   const [availableInvoices, setAvailableInvoices] = useState<ERPIncomingInvoiceItem[]>(DUMMY_EXTRACTED_INVOICES);
 
 
   const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
     if (event.target.files && event.target.files[0]) {
-      setBankStatementFile(event.target.files[0]);
-      setBankTransactions([]);
-      setMatchedTransactions([]);
-      setStatusMessage(null);
-      setErrorMessage(null);
+      const file = event.target.files[0];
+      // Check for both MIME type and file extension for robustness
+      const acceptedCsvTypes = ['text/csv', 'application/vnd.ms-excel']; // Some systems might use vnd.ms-excel for CSV
+      const isCsv = acceptedCsvTypes.includes(file.type) || file.name.toLowerCase().endsWith('.csv');
+      const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+
+      if (isCsv || isPdf) {
+        setBankStatementFile(file);
+        setBankTransactions([]);
+        setMatchedTransactions([]);
+        setStatusMessage(null);
+        setErrorMessage(null);
+      } else {
+        setErrorMessage("Invalid file type. Please select a CSV or PDF file.");
+        setBankStatementFile(null);
+      }
     }
   };
 
@@ -51,7 +62,7 @@ export default function BankMatcherPage() {
 
   const handleProcessStatement = async () => {
     if (!bankStatementFile) {
-      setErrorMessage("Please select a bank statement CSV file.");
+      setErrorMessage("Please select a bank statement CSV or PDF file.");
       return;
     }
 
@@ -61,25 +72,45 @@ export default function BankMatcherPage() {
     setProgressValue(10);
 
     try {
-      const parsedTransactions = await parseBankStatementCSV(bankStatementFile);
-      setBankTransactions(parsedTransactions);
-      setProgressValue(40);
-      setStatusMessage(`Parsed ${parsedTransactions.length} transactions. Now matching with invoices...`);
+      let parsedTxFromSource: BankTransaction[] = [];
+
+      const isPdf = bankStatementFile.type === 'application/pdf' || bankStatementFile.name.toLowerCase().endsWith('.pdf');
+
+      if (isPdf) {
+        setStatusMessage("Extracting transactions from PDF using AI...");
+        setProgressValue(20);
+        const dataUri = await readFileAsDataURL(bankStatementFile);
+        const aiResult = await extractBankStatementData({ statementDataUri: dataUri });
+        
+        parsedTxFromSource = (aiResult.transactions || []).map((tx: BankTransactionAI) => ({
+          id: tx.id || uuidv4(),
+          date: tx.date, // AI flow should ensure YYYY-MM-DD
+          description: tx.description || '',
+          amount: typeof tx.amount === 'number' ? tx.amount : 0, // AI flow normalizes amount
+          currency: tx.currency || 'EUR',
+          recipientOrPayer: tx.recipientOrPayer || '',
+        }));
+        setProgressValue(40);
+      } else { // Assume CSV
+        parsedTxFromSource = await parseBankStatementCSV(bankStatementFile);
+        setProgressValue(40);
+      }
       
-      // In a real app, ensure `availableInvoices` is populated with current PDF extractions.
-      // For now, it's DUMMY_EXTRACTED_INVOICES. If you have extracted invoices on the
-      // /incoming-invoices page, you'd need a way to access them here.
-      // This could be through a global state (Zustand, Redux, Context API), or by
-      // re-processing/fetching. For simplicity, we use the dummy state.
+      setBankTransactions(parsedTxFromSource);
+      if (parsedTxFromSource.length === 0 && !errorMessage) {
+         setStatusMessage(`No transactions found in ${bankStatementFile.name}. Now attempting to match...`);
+      } else {
+         setStatusMessage(`Parsed ${parsedTxFromSource.length} transactions. Now matching with invoices...`);
+      }
       
-      const matches = await matchTransactions(parsedTransactions, availableInvoices);
+      const matches = await matchTransactions(parsedTxFromSource, availableInvoices);
       setMatchedTransactions(matches);
       setProgressValue(100);
-      setStatusMessage("Matching complete!");
+      setStatusMessage(matches.length > 0 || parsedTxFromSource.length > 0 ? "Matching complete!" : "Processing complete. No transactions found or matched.");
 
     } catch (err) {
       console.error("Error processing bank statement:", err);
-      const message = err instanceof Error ? err.message : "An unknown error occurred.";
+      const message = err instanceof Error ? err.message : "An unknown error occurred during processing.";
       setErrorMessage(`Failed to process bank statement: ${message}`);
       setStatusMessage(null);
     } finally {
@@ -103,7 +134,7 @@ export default function BankMatcherPage() {
       <header className="mb-8 text-center">
         <h1 className="text-3xl md:text-4xl font-headline font-bold text-primary">Bank Statement Matcher</h1>
         <p className="text-muted-foreground mt-2">
-          Upload your bank statement (CSV) to automatically match transactions with extracted PDF invoices.
+          Upload your bank statement (CSV or PDF) to automatically match transactions with extracted PDF invoices.
         </p>
       </header>
 
@@ -112,17 +143,17 @@ export default function BankMatcherPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2 font-headline">
               <UploadCloud className="w-6 h-6 text-primary" />
-              Upload Bank Statement (CSV)
+              Upload Bank Statement (CSV or PDF)
             </CardTitle>
-            <CardDescription>Select your bank statement file in CSV format.</CardDescription>
+            <CardDescription>Select your bank statement file in CSV or PDF format.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
             <div>
-              <label htmlFor={inputId} className="sr-only">Choose CSV file</label>
+              <label htmlFor={inputId} className="sr-only">Choose CSV or PDF file</label>
               <Input
                 id={inputId}
                 type="file"
-                accept=".csv"
+                accept=".csv,.pdf,text/csv,application/pdf"
                 onChange={handleFileChange}
                 disabled={isProcessing}
                 className="block w-full text-sm text-slate-500
@@ -182,7 +213,7 @@ export default function BankMatcherPage() {
             <Info className="h-4 w-4 text-primary" />
             <AlertTitle className="text-primary font-semibold">Get Started</AlertTitle>
             <AlertDescription className="text-primary/80">
-              Upload a bank statement CSV to begin matching against your invoices.
+              Upload a bank statement CSV or PDF to begin matching against your invoices.
               <br/>
               <small className="text-xs">Note: Ensure invoices are already processed in the 'Incoming Invoices' module for matching to occur (currently uses dummy invoice data).</small>
             </AlertDescription>
@@ -231,7 +262,6 @@ export default function BankMatcherPage() {
                   </Card>
                 ))}
               </div>
-              {/* Add export button here later */}
             </CardContent>
           </Card>
         )}
@@ -243,3 +273,4 @@ export default function BankMatcherPage() {
     </div>
   );
 }
+
