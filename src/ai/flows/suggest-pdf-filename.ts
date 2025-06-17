@@ -85,7 +85,7 @@ Based on the extracted information, construct a new filename. Follow these patte
 - If only Date is found: YYYY-MM-DD_document.pdf
 
 If specific details (Invoice Number, Supplier, Date) cannot be reliably extracted, use a fallback based on the original filename:
-- Fallback: Processed_{{originalFilename without extension}}.pdf
+- Fallback: Construct a name like "Processed_ORIGINAL_FILENAME_SANS_EXTENSION.pdf" using the 'Original Filename' I provide you (you'll need to remove the extension like .pdf from it).
 
 General Rules:
 - The final suggested filename MUST end with ".pdf".
