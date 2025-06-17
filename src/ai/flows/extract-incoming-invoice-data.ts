@@ -22,7 +22,7 @@ const ExtractIncomingInvoiceDataInputSchema = z.object({
 export type ExtractIncomingInvoiceDataInput = z.infer<typeof ExtractIncomingInvoiceDataInputSchema>;
 
 const ExtractIncomingInvoiceDataOutputSchema = z.object({
-  rechnungsnummer: z.string().optional().describe('The invoice number (Rechnungsnummer). This should be the number explicitly labeled as "Rechnungs-Nr." or "Rechnungsnummer". Do not use "Bestell-Nr." or similar order numbers.'),
+  rechnungsnummer: z.string().optional().describe('The invoice number (Rechnungsnummer). This must be the number explicitly and clearly labeled as "Rechnungs-Nr.", "Rechnungsnummer", or "Invoice No.". Absolutely do NOT use any number labeled "Bestell-Nr.", "Order Number", "Bestellnummer", "Auftragsnummer", or similar order/customer identifiers. The filename or a generic document title like "Rechnung XXXXX" should NOT be the source for Rechnungsnummer if XXXXX is identified as an order number elsewhere. If no value is explicitly labeled as "Rechnungs-Nr." or "Rechnungsnummer", this field must be left empty.'),
   datum: z.string().optional().describe('The invoice date (Datum), preferably in YYYY-MM-DD or DD.MM.YYYY format. Look for labels like "Rechnungsdatum".'),
   lieferantName: z.string().optional().describe('The name of the supplier (Lieferant).'),
   lieferantAdresse: z.string().optional().describe('The full address of the supplier (Adresse Lieferant).'),
@@ -85,7 +85,7 @@ const prompt = ai.definePrompt({
   prompt: `You are an expert AI assistant specialized in extracting detailed information from German invoices (Eingangsrechnungen).
 You will receive an invoice as a data URI. Extract the following information meticulously:
 
-- Rechnungsnummer: The unique invoice number. Critically, look for labels like "Rechnungs-Nr.", "Rechnungsnummer", or "Invoice No.". This is the true invoice identifier. Do NOT use "Bestell-Nr.", "Order Number", or any number that might appear in the document's main title (e.g., if the title is "Rechnung <some_number>", that <some_number> is likely an order number, not the invoice number). If no clear "Rechnungs-Nr." or "Rechnungsnummer" is found with an associated value, leave this field empty.
+- Rechnungsnummer: The unique invoice number. THIS IS CRITICAL. You MUST find the number that is EXPLICITLY labeled "Rechnungs-Nr.", "Rechnungsnummer", "Invoice No.", or a very similar German equivalent for invoice number. IGNORE any numbers labeled as "Bestell-Nr.", "Bestellnummer", "Order Number", "Kunden-Nr.", "Customer Number", "Auftragsnummer", or any other type of reference number. If a document has a title like "Rechnung 12345" but "12345" is also found next to "Bestell-Nr.", then "12345" is NOT the Rechnungsnummer. The Rechnungsnummer MUST have its own distinct "Rechnungs-Nr." or "Rechnungsnummer" label. Do NOT use numbers from the filename. If no clear value is associated with an explicit "Rechnungs-Nr." or "Rechnungsnummer" label, leave this field empty.
 - Datum: The date of the invoice. Look for labels like "Rechnungsdatum" or "Invoice Date". Try to provide the date in DD.MM.YYYY format or YYYY-MM-DD format if possible.
 - Lieferant Name: The name of the company that issued the invoice (supplier). Ensure this is a clean string.
 - Lieferant Adresse: The full postal address of the supplier. Ensure this is a clean string, removing any newline characters.
