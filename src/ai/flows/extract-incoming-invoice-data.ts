@@ -22,12 +22,12 @@ const ExtractIncomingInvoiceDataInputSchema = z.object({
 export type ExtractIncomingInvoiceDataInput = z.infer<typeof ExtractIncomingInvoiceDataInputSchema>;
 
 const ExtractIncomingInvoiceDataOutputSchema = z.object({
-  rechnungsnummer: z.string().optional().describe('The invoice number (Rechnungsnummer).'),
-  datum: z.string().optional().describe('The invoice date (Datum), preferably in YYYY-MM-DD or DD.MM.YYYY format.'),
+  rechnungsnummer: z.string().optional().describe('The invoice number (Rechnungsnummer). This should be the number explicitly labeled as "Rechnungs-Nr." or "Rechnungsnummer". Do not use "Bestell-Nr." or similar order numbers.'),
+  datum: z.string().optional().describe('The invoice date (Datum), preferably in YYYY-MM-DD or DD.MM.YYYY format. Look for labels like "Rechnungsdatum".'),
   lieferantName: z.string().optional().describe('The name of the supplier (Lieferant).'),
   lieferantAdresse: z.string().optional().describe('The full address of the supplier (Adresse Lieferant).'),
   zahlungsziel: z.string().optional().describe('The payment terms (Zahlungsziel), e.g., "14 Tage netto", "sofort zahlbar".'),
-  zahlungsart: z.string().optional().describe('The payment method (Zahlungsart), e.g., "Überweisung", "Sofort", "PayPal".'),
+  zahlungsart: z.string().optional().describe('The payment method (Zahlungsart), e.g., "Überweisung", "Sofort", "PayPal", "Lastschrift".'),
   gesamtbetrag: z.number().optional().describe('The total amount of the invoice (Gesamtbetrag) as a numeric value.'),
   mwstSatz: z.string().optional().describe('The VAT rate (MwSt.-Satz or USt.-Satz), e.g., "19%" or "7%".'),
   rechnungspositionen: z.array(InvoiceLineItemSchema).describe('An array of line items (Rechnungspositionen) from the invoice, including productCode, productName, quantity, and unitPrice.')
@@ -64,6 +64,8 @@ export async function extractIncomingInvoiceData(input: ExtractIncomingInvoiceDa
    if (normalizedOutput.zahlungsart) {
     normalizedOutput.zahlungsart = String(normalizedOutput.zahlungsart || '').trim().replace(/\n/g, ' ');
   }
+  // Rechnungsnummer and Datum are expected to be extracted more precisely by the AI.
+  // Any specific formatting for Datum for ERP is handled client-side.
 
   if (normalizedOutput.rechnungspositionen) {
     normalizedOutput.rechnungspositionen = normalizedOutput.rechnungspositionen.map(item => ({
@@ -83,17 +85,17 @@ const prompt = ai.definePrompt({
   prompt: `You are an expert AI assistant specialized in extracting detailed information from German invoices (Eingangsrechnungen).
 You will receive an invoice as a data URI. Extract the following information meticulously:
 
-- Rechnungsnummer: The unique invoice number.
-- Datum: The date of the invoice. Try to format it as YYYY-MM-DD if possible, otherwise use the format on the invoice.
+- Rechnungsnummer: The unique invoice number. Critically, look for labels like "Rechnungs-Nr.", "Rechnungsnummer", or "Invoice No.". This is the true invoice identifier. Do NOT use "Bestell-Nr.", "Order Number", or any number that might appear in the document's main title (e.g., if the title is "Rechnung <some_number>", that <some_number> is likely an order number, not the invoice number). If no clear "Rechnungs-Nr." or "Rechnungsnummer" is found with an associated value, leave this field empty.
+- Datum: The date of the invoice. Look for labels like "Rechnungsdatum" or "Invoice Date". Try to provide the date in DD.MM.YYYY format or YYYY-MM-DD format if possible.
 - Lieferant Name: The name of the company that issued the invoice (supplier). Ensure this is a clean string.
-- Lieferant Adresse: The full postal address of the supplier. Ensure this is a clean string.
+- Lieferant Adresse: The full postal address of the supplier. Ensure this is a clean string, removing any newline characters.
 - Zahlungsziel: The payment terms specified on the invoice (e.g., "14 Tage netto", "sofort zahlbar"). Clean any newline characters.
 - Zahlungsart: The payment method specified (e.g., "Überweisung", "PayPal", "Sofort", "Lastschrift"). Clean any newline characters. If not explicitly mentioned, try to infer it from payment details if possible, or leave it empty.
 - Gesamtbetrag: The final total amount of the invoice. This should be a numerical value. Parse it carefully, considering currency symbols or thousands separators if present.
 - MwSt.-Satz (or USt.-Satz): The Value Added Tax rate applied (e.g., "19%", "7%"). If multiple VAT rates are present for different items and a summary rate is not obvious, this can be omitted or you can list the most prominent one.
 - Rechnungspositionen: A list of all individual items or services billed on the invoice. For each item, extract:
     - productCode: The product code or article number. This should be a plain string, avoid scientific notation if it's a long number.
-    - productName: The name or description of the product/service. Ensure this is a clean string.
+    - productName: The name or description of the product/service. Ensure this is a clean string, removing any newline characters.
     - quantity: The quantity of the product/service.
     - unitPrice: The price per unit of the product/service.
 
@@ -110,6 +112,8 @@ const extractIncomingInvoiceDataFlow = ai.defineFlow(
   },
   async input => {
     const {output} = await prompt(input);
+    // Post-processing for specific fields can be done in the wrapper 'extractIncomingInvoiceData' if needed.
     return output!; 
   }
 );
+
