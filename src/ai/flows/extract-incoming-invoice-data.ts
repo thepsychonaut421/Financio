@@ -9,7 +9,7 @@
 
 import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
-import { ExtractedItemSchema as InvoiceLineItemSchema } from '@/ai/flows/normalize-and-deduplicate-data';
+import { ExtractedItemSchema as InvoiceLineItemSchema } from '@/ai/schemas/invoice-item-schema';
 
 const ExtractIncomingInvoiceDataInputSchema = z.object({
   invoiceDataUri: z

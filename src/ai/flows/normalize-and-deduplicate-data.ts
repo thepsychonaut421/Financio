@@ -4,20 +4,12 @@
  *
  * - normalizeAndDeduplicateData - A function that normalizes and deduplicates data.
  * - NormalizeAndDeduplicateInput - The input type for the normalizeAndDeduplicateData function.
- * - NormalizeAndDeduplicateOutput - The return type for the normalizeAndDeduplicateData function.
+ * - NormalizeAndDeduplicateOutput - The return type for the normalizeAndDequplicateData function.
  */
 
 import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
-
-const ExtractedItemSchema = z.object({
-  productCode: z.string().describe('The code of the product.'),
-  productName: z.string().describe('The name of the product.'),
-  quantity: z.number().describe('The quantity of the product.'),
-  unitPrice: z.number().describe('The unit price of the product.'),
-});
-
-export type ExtractedItem = z.infer<typeof ExtractedItemSchema>;
+import { ExtractedItemSchema, type ExtractedItem } from '@/ai/schemas/invoice-item-schema';
 
 const NormalizeAndDeduplicateInputSchema = z.array(ExtractedItemSchema);
 export type NormalizeAndDeduplicateInput = z.infer<typeof NormalizeAndDeduplicateInputSchema>;

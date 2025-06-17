@@ -1,4 +1,4 @@
-import type { ExtractedItem as LineItem } from '@/ai/flows/normalize-and-deduplicate-data';
+import type { ExtractedItem as LineItem } from '@/ai/schemas/invoice-item-schema';
 
 export interface IncomingInvoiceData {
   rechnungsnummer?: string;
