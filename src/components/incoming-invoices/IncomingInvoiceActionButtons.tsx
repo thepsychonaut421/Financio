@@ -9,7 +9,7 @@ import {
   downloadFile 
 } from '@/lib/export-helpers';
 import type { IncomingInvoiceItem } from '@/types/incoming-invoice';
-import { CopyAll, FileJson, FileSpreadsheet } from 'lucide-react'; // Using FileSpreadsheet for CSV
+import { Copy, FileJson, FileSpreadsheet } from 'lucide-react'; // Using FileSpreadsheet for CSV
 
 interface IncomingInvoiceActionButtonsProps {
   invoices: IncomingInvoiceItem[];
@@ -60,7 +60,7 @@ export function IncomingInvoiceActionButtons({ invoices }: IncomingInvoiceAction
   return (
     <div className="my-6 flex flex-col sm:flex-row justify-center items-center gap-3 sm:gap-4">
       <Button onClick={handleCopyToClipboard} variant="outline" className="w-full sm:w-auto">
-        <CopyAll className="mr-2 h-4 w-4" />
+        <Copy className="mr-2 h-4 w-4" />
         Copy All to Clipboard
       </Button>
       <Button onClick={handleExportJSON} variant="outline" className="w-full sm:w-auto">
