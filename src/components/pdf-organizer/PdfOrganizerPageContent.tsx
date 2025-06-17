@@ -104,6 +104,11 @@ export function PdfOrganizerPageContent() {
         setErrorMessage((prev) => (prev ? `${prev}\n` : '') + `Failed to process ${file.name}.`);
       }
       setOverallProgress(Math.round(((i + 1) / selectedFiles.length) * 100));
+      
+      // Introduce a delay after processing each file (except the last one)
+      if (i < selectedFiles.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 2000)); // 2-second delay
+      }
     }
 
     setProcessingResults(results);
@@ -302,3 +307,4 @@ export function PdfOrganizerPageContent() {
     </div>
   );
 }
+
