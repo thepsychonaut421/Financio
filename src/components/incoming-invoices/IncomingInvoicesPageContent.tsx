@@ -28,21 +28,17 @@ export function IncomingInvoicesPageContent() {
   const [erpMode, setErpMode] = useState(false);
   const [useMinimalErpExport, setUseMinimalErpExport] = useState(true);
 
-  // Updated supplierMap based on user prompt
+  // Updated supplierMap to match user's provided model for consistency
   const supplierMap: Record<string, string> = {
     "LIDL": "Lidl",
     "Lidl Digital Deutschland GmbH & Co. KG": "Lidl",
-    "Lidl Digital International GmbH & Co. KG": "Lidl", // Added from existing
     "GD Artlands eTrading GmbH": "GD Artlands eTrading GmbH",
     "RETOURA": "RETOURA",
-    "RETOURA GmbH": "RETOURA", // Added from existing
     "doitBau GmbH & Co.KG": "doitBau",
     "Kaufland": "Kaufland",
-    "ALDI": "ALDI E-Commerce", // User specified "ALDI E-Commerce" for ALDI
-    "ALDI E-Commerce GmbH & Co. KG": "ALDI E-Commerce", // ALDI mapping
+    "ALDI": "ALDI E-Commerce",
     "FIRMA HANDLOWA KABIS BOZENA KEDZIORA": "FIRMA HANDLOWA KABIS BOZENA KEDZIORA",
-    "Zweco UG": "Zweco UG",
-    "Baluata, Bayer Rem Ug": "BAYER REM UG", // From existing, user did not list it
+    "Zweco UG": "Zweco UG"
   };
 
   // Simplified Kontenrahmen - default for all
