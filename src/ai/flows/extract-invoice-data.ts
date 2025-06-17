@@ -11,7 +11,7 @@
 
 import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
-import type { ExtractedItem } from '@/ai/schemas/invoice-item-schema';
+import { AILineItemSchema, type AppLineItem } from '@/ai/schemas/invoice-item-schema';
 
 
 const ExtractInvoiceDataInputSchema = z.object({
@@ -23,17 +23,17 @@ const ExtractInvoiceDataInputSchema = z.object({
 });
 export type ExtractInvoiceDataInput = z.infer<typeof ExtractInvoiceDataInputSchema>;
 
-const ExtractInvoiceDataOutputSchema = z.object({
-  invoiceDetails: z.array(
-    z.object({
-      productCode: z.string().describe('The product code from the invoice. Should be a plain string, avoid scientific notation.'),
-      productName: z.string().describe('The name of the product.'),
-      quantity: z.number().describe('The quantity of the product.'),
-      unitPrice: z.number().describe('The unit price of the product.'),
-    })
-  ).describe('An array of invoice details extracted from the invoice.')
+// This schema defines what the AI model is asked to produce.
+// Line items use AILineItemSchema which allows for optional quantity/price.
+const AIOutputSchema = z.object({
+  invoiceDetails: z.array(AILineItemSchema).describe('An array of invoice details extracted from the invoice.')
 });
-export type ExtractInvoiceDataOutput = z.infer<typeof ExtractInvoiceDataOutputSchema>;
+
+// This type defines what the exported function will return after normalization.
+// Line items conform to AppLineItem where quantity/price are required.
+export interface ExtractInvoiceDataOutput {
+  invoiceDetails: AppLineItem[];
+}
 
 
 // Helper function for product code normalization
@@ -54,32 +54,28 @@ export async function extractInvoiceData(input: ExtractInvoiceDataInput): Promis
   const rawOutput = await extractInvoiceDataFlow(input);
 
   // Normalize the output
-  const normalizedOutput: ExtractInvoiceDataOutput = { invoiceDetails: [] };
-
-  if (rawOutput.invoiceDetails) {
-    normalizedOutput.invoiceDetails = rawOutput.invoiceDetails.map((item: any) => ({ // Cast item to any for temp access
-      ...item,
-      productCode: normalizeProductCode(item.productCode),
-      productName: String(item.productName || '').trim().replace(/\n/g, ' '),
-      // quantity and unitPrice are numbers
-    } as ExtractedItem )); // Cast back to ExtractedItem
-  }
+  const normalizedInvoiceDetails: AppLineItem[] = (rawOutput.invoiceDetails || []).map(item => ({
+    productCode: normalizeProductCode(item.productCode),
+    productName: String(item.productName || '').trim().replace(/\n/g, ' '),
+    quantity: item.quantity === undefined ? 0 : item.quantity, // Default to 0 if undefined
+    unitPrice: item.unitPrice === undefined ? 0.0 : item.unitPrice, // Default to 0.0 if undefined
+  }));
   
-  return normalizedOutput;
+  return { invoiceDetails: normalizedInvoiceDetails };
 }
 
 const prompt = ai.definePrompt({
   name: 'extractInvoiceDataPrompt',
   input: {schema: ExtractInvoiceDataInputSchema},
-  output: {schema: ExtractInvoiceDataOutputSchema},
+  output: {schema: AIOutputSchema}, // AI generates data according to AILineItemSchema for items
   prompt: `You are an expert in extracting data from invoices.
 
 You will receive an invoice as a data URI. Extract the following information from the invoice:
 
 - productCode: The product code from the invoice. This should be a plain string of characters and/or digits, exactly as it appears. Avoid scientific notation.
 - productName: The name of the product. Ensure this is a clean string.
-- quantity: The quantity of the product.
-- unitPrice: The unit price of the product.
+- quantity: The quantity of the product. If not clearly stated, you may omit this.
+- unitPrice: The unit price of the product. If not clearly stated, you may omit this.
 
 Return the information as a JSON array of objects under the key "invoiceDetails".
 
@@ -90,11 +86,10 @@ const extractInvoiceDataFlow = ai.defineFlow(
   {
     name: 'extractInvoiceDataFlow',
     inputSchema: ExtractInvoiceDataInputSchema,
-    outputSchema: ExtractInvoiceDataOutputSchema,
+    outputSchema: AIOutputSchema, // Flow's direct output matches AI's schema
   },
   async input => {
     const {output} = await prompt(input, {model: 'googleai/gemini-1.5-flash-latest'});
-    // Normalization will be done in the exported wrapper function
     return output!;
   }
 );

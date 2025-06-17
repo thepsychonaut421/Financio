@@ -10,12 +10,12 @@
 
 import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
-import { ExtractedItemSchema, type ExtractedItem } from '@/ai/schemas/invoice-item-schema';
+import { ProcessedLineItemSchema, type AppLineItem } from '@/ai/schemas/invoice-item-schema';
 
-const NormalizeAndDeduplicateInputSchema = z.array(ExtractedItemSchema);
+const NormalizeAndDeduplicateInputSchema = z.array(ProcessedLineItemSchema);
 export type NormalizeAndDeduplicateInput = z.infer<typeof NormalizeAndDeduplicateInputSchema>;
 
-const NormalizeAndDeduplicateOutputSchema = z.array(ExtractedItemSchema);
+const NormalizeAndDeduplicateOutputSchema = z.array(ProcessedLineItemSchema);
 export type NormalizeAndDeduplicateOutput = z.infer<typeof NormalizeAndDeduplicateOutputSchema>;
 
 // Helper function for product code normalization (can be shared or defined locally)
@@ -52,7 +52,7 @@ const normalizeAndDeduplicateFlow = ai.defineFlow(
     }));
 
     // Deduplicate data based on product code
-    const uniqueData: ExtractedItem[] = [];
+    const uniqueData: AppLineItem[] = [];
     const productCodes = new Set<string>();
 
     for (const item of normalizedData) {
@@ -69,4 +69,3 @@ const normalizeAndDeduplicateFlow = ai.defineFlow(
     return uniqueData;
   }
 );
-

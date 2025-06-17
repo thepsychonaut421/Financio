@@ -10,7 +10,7 @@
 
 import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
-import { ExtractedItemSchema as InvoiceLineItemSchema } from '@/ai/schemas/invoice-item-schema';
+import { AILineItemSchema, type AppLineItem } from '@/ai/schemas/invoice-item-schema';
 
 const ExtractIncomingInvoiceDataInputSchema = z.object({
   invoiceDataUri: z
@@ -21,7 +21,8 @@ const ExtractIncomingInvoiceDataInputSchema = z.object({
 });
 export type ExtractIncomingInvoiceDataInput = z.infer<typeof ExtractIncomingInvoiceDataInputSchema>;
 
-const ExtractIncomingInvoiceDataOutputSchema = z.object({
+// Schema for AI model output (uses AILineItemSchema for flexibility)
+const AIOutputSchema = z.object({
   rechnungsnummer: z.string().optional().describe('The invoice number (Rechnungsnummer). This must be the number explicitly and clearly labeled as "Rechnungs-Nr.", "Rechnungsnummer", or "Invoice No.". Absolutely do NOT use any number labeled "Bestell-Nr.", "Order Number", "Bestellnummer", "Auftragsnummer", or similar order/customer identifiers, NOR from the filename. If no value is explicitly labeled as "Rechnungs-Nr." or "Rechnungsnummer", this field must be left empty.'),
   datum: z.string().optional().describe('The invoice date (Datum), preferably in YYYY-MM-DD format (convert if DD.MM.YYYY). Look for labels like "Rechnungsdatum".'),
   lieferantName: z.string().optional().describe('The name of the supplier (Lieferant). Try to match to the ERPNext supplier name from the provided list. If no match, return the extracted name or "UNBEKANNT".'),
@@ -30,12 +31,27 @@ const ExtractIncomingInvoiceDataOutputSchema = z.object({
   zahlungsart: z.string().optional().describe('The payment method (Zahlungsart), e.g., "Überweisung", "Sofort", "PayPal", "Lastschrift".'),
   gesamtbetrag: z.number().optional().describe('The total amount of the invoice (Gesamtbetrag) as a numeric value.'),
   mwstSatz: z.string().optional().describe('The VAT rate (MwSt.-Satz or USt.-Satz), e.g., "19%" or "7%".'),
-  rechnungspositionen: z.array(InvoiceLineItemSchema).describe('An array of line items (Rechnungspositionen) from the invoice, including productCode, productName, quantity, and unitPrice.'),
+  rechnungspositionen: z.array(AILineItemSchema).describe('An array of line items (Rechnungspositionen) from the invoice, including productCode, productName, quantity, and unitPrice. Quantity and unitPrice may be omitted if not found.'),
   kundenNummer: z.string().optional().describe('The customer number (Kunden-Nr.) if present.'),
   bestellNummer: z.string().optional().describe('The order number (Bestell-Nr., Bestellnummer) if present and distinct from Rechnungsnummer.'),
   isPaid: z.boolean().optional().describe('Whether the invoice is marked as paid ("Bezahlt"). True if paid, false or undefined otherwise.')
 });
-export type ExtractIncomingInvoiceDataOutput = z.infer<typeof ExtractIncomingInvoiceDataOutputSchema>;
+
+// Type for the exported function's return value (uses AppLineItem for stricter line items)
+export interface ExtractIncomingInvoiceDataOutput {
+  rechnungsnummer?: string;
+  datum?: string;
+  lieferantName?: string;
+  lieferantAdresse?: string;
+  zahlungsziel?: string;
+  zahlungsart?: string;
+  gesamtbetrag?: number;
+  mwstSatz?: string;
+  rechnungspositionen: AppLineItem[];
+  kundenNummer?: string;
+  bestellNummer?: string;
+  isPaid?: boolean; // This is what AI directly returns, will be mapped to istBezahlt in calling component
+}
 
 // Helper function for product code normalization
 function normalizeProductCode(code: any): string {
@@ -53,44 +69,35 @@ function normalizeProductCode(code: any): string {
 export async function extractIncomingInvoiceData(input: ExtractIncomingInvoiceDataInput): Promise<ExtractIncomingInvoiceDataOutput> {
   const rawOutput = await extractIncomingInvoiceDataFlow(input);
 
-  // Normalize common text fields for consistency, even if AI does a good job.
-  const normalizedOutput: Partial<ExtractIncomingInvoiceDataOutput> = { ...rawOutput };
+  const normalizedLineItems: AppLineItem[] = (rawOutput.rechnungspositionen || []).map(item => ({
+    productCode: normalizeProductCode(item.productCode),
+    productName: String(item.productName || '').trim().replace(/\n/g, ' '),
+    quantity: item.quantity === undefined ? 0 : item.quantity,
+    unitPrice: item.unitPrice === undefined ? 0.0 : item.unitPrice,
+  }));
 
-  if (normalizedOutput.lieferantName) {
-    normalizedOutput.lieferantName = String(normalizedOutput.lieferantName || '').trim().replace(/\n/g, ' ');
-  }
-  if (normalizedOutput.lieferantAdresse) {
-    normalizedOutput.lieferantAdresse = String(normalizedOutput.lieferantAdresse || '').trim().replace(/\n/g, ' ');
-  }
-  if (normalizedOutput.zahlungsziel) {
-    normalizedOutput.zahlungsziel = String(normalizedOutput.zahlungsziel || '').trim().replace(/\n/g, ' ');
-  }
-   if (normalizedOutput.zahlungsart) {
-    normalizedOutput.zahlungsart = String(normalizedOutput.zahlungsart || '').trim().replace(/\n/g, ' ');
-  }
-  if (normalizedOutput.kundenNummer) {
-    normalizedOutput.kundenNummer = String(normalizedOutput.kundenNummer || '').trim();
-  }
-  if (normalizedOutput.bestellNummer) {
-    normalizedOutput.bestellNummer = String(normalizedOutput.bestellNummer || '').trim();
-  }
-
-
-  if (normalizedOutput.rechnungspositionen) {
-    normalizedOutput.rechnungspositionen = normalizedOutput.rechnungspositionen.map(item => ({
-      ...item,
-      productCode: normalizeProductCode(item.productCode),
-      productName: String(item.productName || '').trim().replace(/\n/g, ' '),
-    }));
-  }
+  const normalizedOutput: ExtractIncomingInvoiceDataOutput = {
+    rechnungsnummer: rawOutput.rechnungsnummer,
+    datum: rawOutput.datum,
+    lieferantName: String(rawOutput.lieferantName || '').trim().replace(/\n/g, ' '),
+    lieferantAdresse: String(rawOutput.lieferantAdresse || '').trim().replace(/\n/g, ' '),
+    zahlungsziel: String(rawOutput.zahlungsziel || '').trim().replace(/\n/g, ' '),
+    zahlungsart: String(rawOutput.zahlungsart || '').trim().replace(/\n/g, ' '),
+    gesamtbetrag: rawOutput.gesamtbetrag,
+    mwstSatz: rawOutput.mwstSatz,
+    kundenNummer: String(rawOutput.kundenNummer || '').trim(),
+    bestellNummer: String(rawOutput.bestellNummer || '').trim(),
+    isPaid: rawOutput.isPaid,
+    rechnungspositionen: normalizedLineItems,
+  };
   
-  return normalizedOutput as ExtractIncomingInvoiceDataOutput;
+  return normalizedOutput;
 }
 
 const prompt = ai.definePrompt({
   name: 'extractIncomingInvoiceDataPrompt',
   input: {schema: ExtractIncomingInvoiceDataInputSchema},
-  output: {schema: ExtractIncomingInvoiceDataOutputSchema},
+  output: {schema: AIOutputSchema}, // AI tries to fill this schema
   prompt: `You are an expert AI assistant specialized in extracting detailed information from German invoices (Eingangsrechnungen) for ERPNext integration.
 You will receive an invoice as a data URI. Extract the following information meticulously:
 
@@ -140,14 +147,14 @@ Extraction Rules for Invoices:
 9.  Rechnungspositionen (Line Items): A list of all individual items or services. For each item, extract:
     *   productCode (item_code): The product code or article number (e.g., EAN). If not available, leave empty. This should be a plain string.
     *   productName (description): The name or description of the product/service. Clean string.
-    *   quantity (qty): The quantity.
-    *   unitPrice (rate): The price per unit.
+    *   quantity (qty): The quantity. If not explicitly stated for an item, you may omit this field for that specific item.
+    *   unitPrice (rate): The price per unit. If not explicitly stated for an item, you may omit this field for that specific item.
 
 10. KundenNummer (Customer Number): Extract if labeled "Kunden-Nr." or similar.
 11. BestellNummer (Order Number): Extract if labeled "Bestell-Nr.", "Bestellnummer", or similar, AND it is clearly distinct from the Rechnungsnummer.
 12. isPaid: Determine if the invoice explicitly states it has been paid (e.g., contains the word "Bezahlt"). Set to true if paid, false or undefined otherwise.
 
-Ensure all text fields are extracted as accurately as possible. For numerical fields like Gesamtbetrag, quantity, and unitPrice, provide them as numbers.
+Ensure all text fields are extracted as accurately as possible. For numerical fields like Gesamtbetrag, quantity, and unitPrice, provide them as numbers where available.
 
 Invoice: {{media url=invoiceDataUri}}`,
 });
@@ -156,12 +163,10 @@ const extractIncomingInvoiceDataFlow = ai.defineFlow(
   {
     name: 'extractIncomingInvoiceDataFlow',
     inputSchema: ExtractIncomingInvoiceDataInputSchema,
-    outputSchema: ExtractIncomingInvoiceDataOutputSchema,
+    outputSchema: AIOutputSchema, // Flow's direct output matches AI's schema
   },
   async input => {
     const {output} = await prompt(input, {model: 'googleai/gemini-1.5-flash-latest'});
-    return output!; 
+    return output!;
   }
 );
-
-    

@@ -1,5 +1,5 @@
 
-import type { ExtractedItem as LineItem } from '@/ai/schemas/invoice-item-schema';
+import type { AppLineItem as LineItem } from '@/ai/schemas/invoice-item-schema';
 
 export interface IncomingInvoiceData {
   rechnungsnummer?: string;
@@ -7,17 +7,17 @@ export interface IncomingInvoiceData {
   lieferantName?: string;
   lieferantAdresse?: string;
   zahlungsziel?: string;
-  zahlungsart?: string; 
+  zahlungsart?: string;
   gesamtbetrag?: number;
   mwstSatz?: string;
   rechnungspositionen: LineItem[];
-  kundenNummer?: string; // Added
-  bestellNummer?: string; // Added
-  isPaidByAI?: boolean; // Renamed from isPaid to avoid conflict with erpNextInvoice.istBezahlt
+  kundenNummer?: string;
+  bestellNummer?: string;
+  isPaidByAI?: boolean;
 }
 
 export interface IncomingInvoiceItem extends IncomingInvoiceData {
-  pdfFileName: string; 
+  pdfFileName: string;
 }
 
 export interface ERPIncomingInvoiceItem extends IncomingInvoiceItem {
@@ -27,9 +27,7 @@ export interface ERPIncomingInvoiceItem extends IncomingInvoiceItem {
   wahrung?: string; // e.g., EUR
   billDate?: string; // YYYY-MM-DD
   dueDate?: string; // YYYY-MM-DD
-  remarks?: string; // Added
+  remarks?: string;
 }
 
 export type IncomingProcessingStatus = 'idle' | 'processing' | 'success' | 'error';
-
-    
