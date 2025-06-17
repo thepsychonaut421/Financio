@@ -3,7 +3,7 @@ import type { ExtractedItem as LineItem } from '@/ai/schemas/invoice-item-schema
 
 export interface IncomingInvoiceData {
   rechnungsnummer?: string;
-  datum?: string;
+  datum?: string; // Should be YYYY-MM-DD after processing for ERP mode
   lieferantName?: string;
   lieferantAdresse?: string;
   zahlungsziel?: string;
@@ -22,6 +22,8 @@ export interface ERPIncomingInvoiceItem extends IncomingInvoiceItem {
   istBezahlt?: 0 | 1;
   kontenrahmen?: string;
   wahrung?: string; // e.g., EUR
+  billDate?: string; // YYYY-MM-DD
+  dueDate?: string; // YYYY-MM-DD
 }
 
 export type IncomingProcessingStatus = 'idle' | 'processing' | 'success' | 'error';

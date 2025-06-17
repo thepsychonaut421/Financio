@@ -8,7 +8,7 @@ import { ERPInvoiceTable } from '@/components/incoming-invoices/ERPInvoiceTable'
 import { IncomingInvoiceActionButtons } from '@/components/incoming-invoices/IncomingInvoiceActionButtons';
 import { Progress } from '@/components/ui/progress';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { AlertCircle, Info, Settings2 } from 'lucide-react';
+import { AlertCircle, Info, Settings2, FileCog } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { readFileAsDataURL } from '@/lib/file-helpers';
@@ -24,12 +24,41 @@ export default function IncomingInvoicesPage() {
   const [currentFileProgress, setCurrentFileProgress] = useState('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [erpMode, setErpMode] = useState(false);
+  const [useMinimalErpExport, setUseMinimalErpExport] = useState(true);
 
   const supplierMap: Record<string, string> = {
     "ALDI E-Commerce GmbH & Co. KG": "ALDI",
     "Baluata, Bayer Rem Ug": "BAYER REM UG",
     "RETOURA GmbH": "RETOURA",
+    "Lidl Digital International GmbH & Co. KG": "Lidl",
     // Add more known long names to their ERP short names here
+  };
+
+  const kontenrahmenMap: Record<string, string> = {
+    "Lidl": "1740 - Verbindlichkeiten",
+    "ALDI": "1740 - Verbindlichkeiten",
+    // Add more supplier to account mappings
+  };
+
+  const formatDateForERP = (dateString?: string): string | undefined => {
+    if (!dateString) return undefined;
+    const datePartsDDMMYYYY = dateString.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+    const datePartsYYYYMMDD = dateString.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    
+    if (datePartsDDMMYYYY && datePartsDDMMYYYY[3] && datePartsDDMMYYYY[2] && datePartsDDMMYYYY[1]) {
+        return `${datePartsDDMMYYYY[3]}-${datePartsDDMMYYYY[2]}-${datePartsDDMMYYYY[1]}`;
+    } else if (datePartsYYYYMMDD) {
+        return dateString;
+    }
+    try {
+        const d = new Date(dateString);
+        if (!isNaN(d.getTime())) {
+             return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        }
+    } catch (e) {
+        // date string might be invalid
+    }
+    return dateString; // Fallback if parsing fails or not in expected formats
   };
 
   const handleFilesSelected = useCallback((files: File[]) => {
@@ -64,10 +93,11 @@ export default function IncomingInvoicesPage() {
         const dataUri = await readFileAsDataURL(file);
         const extractionResult: ExtractIncomingInvoiceDataOutput = await extractIncomingInvoiceData({ invoiceDataUri: dataUri });
         
-        const baseExtractedData = {
+        const baseExtractedData: IncomingInvoiceItem = {
           pdfFileName: file.name,
           rechnungsnummer: extractionResult.rechnungsnummer,
           datum: extractionResult.datum,
+          lieferantName: extractionResult.lieferantName,
           lieferantAdresse: extractionResult.lieferantAdresse,
           zahlungsziel: extractionResult.zahlungsziel,
           zahlungsart: extractionResult.zahlungsart,
@@ -77,10 +107,7 @@ export default function IncomingInvoicesPage() {
         };
         
         if (!erpMode) {
-          regularResults.push({
-            ...baseExtractedData,
-            lieferantName: extractionResult.lieferantName, // Original name for non-ERP mode
-          });
+          regularResults.push(baseExtractedData);
         }
 
         if (erpMode) {
@@ -89,48 +116,45 @@ export default function IncomingInvoicesPage() {
             finalLieferantName = supplierMap[extractionResult.lieferantName];
           }
 
-          const erpInvoice: ERPIncomingInvoiceItem = { 
-            ...baseExtractedData,
-            lieferantName: finalLieferantName, // Normalized or original supplier name
-            wahrung: 'EUR', 
-          };
-
-          if (extractionResult.datum) {
-            const dateParts = extractionResult.datum.match(/(\d{2})\.(\d{2})\.(\d{4})/); 
-            let year = new Date().getFullYear().toString();
-            if (dateParts && dateParts[3]) {
-              year = dateParts[3];
-            } else if (extractionResult.datum.match(/^\d{4}-\d{2}-\d{2}$/)) { 
-                year = extractionResult.datum.substring(0,4);
-            }
-            
-            if (!yearCounters[year]) {
-              yearCounters[year] = 0;
-            }
-            yearCounters[year]++;
-            erpInvoice.erpNextInvoiceName = `ACC-PINV-${year}-${String(yearCounters[year]).padStart(5, '0')}`;
-          } else {
-            const currentYear = new Date().getFullYear().toString();
-            if (!yearCounters[currentYear]) yearCounters[currentYear] = 0;
-            yearCounters[currentYear]++;
-            erpInvoice.erpNextInvoiceName = `ACC-PINV-${currentYear}-${String(yearCounters[currentYear]).padStart(5, '0')}`;
-          }
-
+          const postingDateERP = formatDateForERP(extractionResult.datum);
+          let dueDateERP = undefined;
           const zahlungszielLower = (extractionResult.zahlungsziel || '').toLowerCase();
           const zahlungsartLower = (extractionResult.zahlungsart || '').toLowerCase();
+
+          if (zahlungszielLower.includes('sofort') || zahlungsartLower === 'sofort') {
+            dueDateERP = postingDateERP;
+          }
+
+          const erpInvoice: ERPIncomingInvoiceItem = { 
+            ...baseExtractedData,
+            lieferantName: finalLieferantName,
+            datum: postingDateERP, // Store formatted date
+            billDate: postingDateERP,
+            dueDate: dueDateERP,
+            wahrung: 'EUR', 
+          };
+          
+          let year = new Date().getFullYear().toString();
+          if (postingDateERP) {
+              year = postingDateERP.substring(0,4);
+          }
+            
+          if (!yearCounters[year]) {
+            yearCounters[year] = 0;
+          }
+          yearCounters[year]++;
+          erpInvoice.erpNextInvoiceName = `ACC-PINV-${year}-${String(yearCounters[year]).padStart(5, '0')}`;
+          
           erpInvoice.istBezahlt = (
             zahlungszielLower.includes('sofort') || 
             zahlungsartLower === 'sofort' || 
             zahlungsartLower === 'lastschrift'
           ) ? 1 : 0;
           
-          if (finalLieferantName && finalLieferantName.toLowerCase().includes('lidl')) {
-            erpInvoice.kontenrahmen = '1740 - Verbindlichkeiten';
-          } else if (finalLieferantName && finalLieferantName.toLowerCase().includes('aldi')) {
-             erpInvoice.kontenrahmen = '1740 - Verbindlichkeiten'; // Example, adjust as needed
-          }
-          else {
-            erpInvoice.kontenrahmen = ''; 
+          if (finalLieferantName && kontenrahmenMap[finalLieferantName]) {
+            erpInvoice.kontenrahmen = kontenrahmenMap[finalLieferantName];
+          } else {
+            erpInvoice.kontenrahmen = '1740 - Verbindlichkeiten'; // Default fallback
           }
           erpResults.push(erpInvoice);
         }
@@ -156,6 +180,17 @@ export default function IncomingInvoicesPage() {
     }
   };
 
+  const resetStateOnModeChange = () => {
+    if (status === 'success' || extractedInvoices.length > 0 || erpProcessedInvoices.length > 0) {
+       setSelectedFiles([]); 
+       setExtractedInvoices([]);
+       setErpProcessedInvoices([]);
+       setStatus('idle');
+       setCurrentFileProgress('');
+       setProgressValue(0);
+    }
+  }
+
   const displayInvoices = erpMode ? erpProcessedInvoices : extractedInvoices;
 
   return (
@@ -175,27 +210,36 @@ export default function IncomingInvoicesPage() {
           selectedFileCount={selectedFiles.length}
         />
 
-        <div className="flex items-center justify-center space-x-3 p-4 bg-card border rounded-lg shadow-sm">
-          <Switch
-            id="erp-mode-switch"
-            checked={erpMode}
-            onCheckedChange={(checked) => {
-              setErpMode(checked);
-              if (status === 'success' || extractedInvoices.length > 0 || erpProcessedInvoices.length > 0) {
-                 setSelectedFiles([]); 
-                 setExtractedInvoices([]);
-                 setErpProcessedInvoices([]);
-                 setStatus('idle');
-                 setCurrentFileProgress('');
-                 setProgressValue(0);
-              }
-            }}
-            disabled={status === 'processing'}
-          />
-          <Label htmlFor="erp-mode-switch" className="text-base font-medium">
-            ERP Vorlage Mode
-          </Label>
-          <Settings2 className="h-5 w-5 text-muted-foreground" />
+        <div className="flex flex-col sm:flex-row items-center justify-center gap-4 p-4 bg-card border rounded-lg shadow-sm">
+          <div className="flex items-center space-x-3">
+            <Switch
+              id="erp-mode-switch"
+              checked={erpMode}
+              onCheckedChange={(checked) => {
+                setErpMode(checked);
+                resetStateOnModeChange();
+              }}
+              disabled={status === 'processing'}
+            />
+            <Label htmlFor="erp-mode-switch" className="text-base font-medium">
+              ERP Vorlage Mode
+            </Label>
+            <Settings2 className="h-5 w-5 text-muted-foreground" />
+          </div>
+          {erpMode && (
+            <div className="flex items-center space-x-3 border-t sm:border-t-0 sm:border-l pt-4 sm:pt-0 sm:pl-4 mt-4 sm:mt-0">
+              <Switch
+                id="erp-export-mode-switch"
+                checked={useMinimalErpExport}
+                onCheckedChange={setUseMinimalErpExport}
+                disabled={status === 'processing'}
+              />
+              <Label htmlFor="erp-export-mode-switch" className="text-sm font-medium">
+                Use Minimal ERP Export
+              </Label>
+              <FileCog className="h-5 w-5 text-muted-foreground" />
+            </div>
+          )}
         </div>
 
 
@@ -228,7 +272,8 @@ export default function IncomingInvoicesPage() {
           <div className="mt-8 space-y-6">
             <IncomingInvoiceActionButtons 
               invoices={displayInvoices} 
-              erpMode={erpMode} 
+              erpMode={erpMode}
+              useMinimalErpExport={useMinimalErpExport} 
             />
             {erpMode ? (
               <ERPInvoiceTable invoices={erpProcessedInvoices} />

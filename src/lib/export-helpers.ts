@@ -71,50 +71,29 @@ export function incomingInvoicesToCSV(invoices: IncomingInvoiceItem[]): string {
   return csvString;
 }
 
+// Minimal ERPNext CSV Export
 export function incomingInvoicesToERPNextCSV(invoices: ERPIncomingInvoiceItem[]): string {
   if (!invoices || invoices.length === 0) return '';
 
   const headers = [
-    "supplier",                   // Supplier Name (Link to Supplier Doctype) - Must exactly match ERPNext supplier name
-    "posting_date",               // Date (YYYY-MM-DD)
-    "bill_no",                    // Supplier's Invoice Number (Original Rechnungsnummer)
-    // "payment_terms_template",  // Removed: Extracted full text is not a valid template name. User should map this carefully if re-added.
-    "currency",                   // Currency (e.g., EUR)
-    "grand_total",                // Grand Total amount of the invoice
-    // Item details - child table fields for 'items'
-    "items/item_code",            // Link to Item Doctype or plain item code
-    "items/description",          // Item Description (can be product name)
-    "items/qty",                  // Quantity
-    "items/rate",                 // Rate per unit
+    "supplier",              
+    "posting_date",          
+    "bill_no",               
+    "currency",              
+    "grand_total",           
+    "items/item_code",       
+    "items/description",     
+    "items/qty",             
+    "items/rate",            
   ];
   
   let csvString = headers.join(',') + '\n';
 
   invoices.forEach((invoice) => {
-    let postingDate = invoice.datum || '';
-    if (invoice.datum) {
-        const datePartsDDMMYYYY = invoice.datum.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
-        const datePartsYYYYMMDD = invoice.datum.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-        
-        if (datePartsDDMMYYYY && datePartsDDMMYYYY[3] && datePartsDDMMYYYY[2] && datePartsDDMMYYYY[1]) {
-            postingDate = `${datePartsDDMMYYYY[3]}-${datePartsDDMMYYYY[2]}-${datePartsDDMMYYYY[1]}`;
-        } else if (datePartsYYYYMMDD) {
-            postingDate = invoice.datum;
-        } else {
-            const d = new Date(invoice.datum); // Attempt to parse other formats
-            if (!isNaN(d.getTime())) {
-                 postingDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-            } else {
-                postingDate = invoice.datum; // Fallback if parsing fails
-            }
-        }
-    }
-
     const mainInvoiceData = [
       escapeCSVField(invoice.lieferantName), 
-      escapeCSVField(postingDate),
+      escapeCSVField(invoice.datum), // Already YYYY-MM-DD from processing
       escapeCSVField(invoice.rechnungsnummer), 
-      // escapeCSVField(invoice.zahlungsziel), // Corresponding to removed payment_terms_template
       escapeCSVField(invoice.wahrung || 'EUR'),
       invoice.gesamtbetrag?.toString() ?? '',
     ];
@@ -130,11 +109,74 @@ export function incomingInvoicesToERPNextCSV(invoices: ERPIncomingInvoiceItem[])
         csvString += mainInvoiceData.join(',') + ',' + itemData.join(',') + '\n';
       });
     } else {
-       const emptyItemData = ['', '', '', '']; // Represent invoice even if no items
+       const emptyItemData = ['', '', '', '']; 
        csvString += mainInvoiceData.join(',') + ',' + emptyItemData.join(',') + '\n';
     }
   });
 
+  return csvString;
+}
+
+// More Complete ERPNext CSV Export
+export function incomingInvoicesToERPNextCSVComplete(invoices: ERPIncomingInvoiceItem[]): string {
+  if (!invoices || invoices.length === 0) return '';
+
+  const headers = [
+    "supplier",
+    "posting_date",
+    "bill_no", // Supplier Invoice No
+    "bill_date", // Often same as posting_date
+    "due_date",
+    "currency",
+    "grand_total",
+    "is_paid", // 0 or 1
+    "debit_to", // Accounts Payable (Kontenrahmen)
+    "remarks", // General remarks for the invoice
+    // Item details
+    "items/item_code",
+    "items/description",
+    "items/qty",
+    "items/rate",
+    "items/item_group", // Placeholder
+    "items/warehouse", // Placeholder
+    "items/cost_center" // Placeholder
+  ];
+  
+  let csvString = headers.join(',') + '\n';
+
+  invoices.forEach((invoice) => {
+    const mainInvoiceData = [
+      escapeCSVField(invoice.lieferantName), 
+      escapeCSVField(invoice.datum), // posting_date
+      escapeCSVField(invoice.rechnungsnummer),
+      escapeCSVField(invoice.billDate || invoice.datum), // bill_date
+      escapeCSVField(invoice.dueDate), // due_date
+      escapeCSVField(invoice.wahrung || 'EUR'),
+      invoice.gesamtbetrag?.toString() ?? '',
+      invoice.istBezahlt?.toString() ?? '0',
+      escapeCSVField(invoice.kontenrahmen),
+      escapeCSVField(''), // remarks - empty for now
+    ];
+
+    if (invoice.rechnungspositionen && invoice.rechnungspositionen.length > 0) {
+      invoice.rechnungspositionen.forEach(item => {
+        const itemData = [
+          escapeCSVField(item.productCode),
+          escapeCSVField(item.productName), 
+          item.quantity.toString(),
+          item.unitPrice.toString(),
+          escapeCSVField(''), // item_group
+          escapeCSVField(''), // warehouse
+          escapeCSVField(''), // cost_center
+        ];
+        csvString += mainInvoiceData.join(',') + ',' + itemData.join(',') + '\n';
+      });
+    } else {
+       // Still output main invoice data even if no items
+       const emptyItemData = ['', '', '', '', '', '', '']; 
+       csvString += mainInvoiceData.join(',') + ',' + emptyItemData.join(',') + '\n';
+    }
+  });
   return csvString;
 }
 
@@ -148,59 +190,74 @@ function escapeTSVField(field: string | number | undefined | null): string {
   return String(field).replace(/\t/g, ' ').replace(/\n/g, ' ');
 }
 
-export function incomingInvoicesToTSV(invoices: IncomingInvoiceItem[] | ERPIncomingInvoiceItem[], erpMode: boolean): string {
+export function incomingInvoicesToTSV(invoices: IncomingInvoiceItem[] | ERPIncomingInvoiceItem[], erpMode: boolean, useMinimalErpExport: boolean): string {
   if (!invoices || invoices.length === 0) return '';
 
   let tsvString = '';
 
   if (erpMode) {
     const erpInvoices = invoices as ERPIncomingInvoiceItem[];
-    const headers = [ // Align with simplified ERPNext CSV headers
-      "supplier", "posting_date", "bill_no", 
-      "currency", "grand_total", 
-      "items/item_code", "items/description", "items/qty", "items/rate"
-    ];
+    let headers: string[];
+    
+    if (useMinimalErpExport) {
+      headers = ["supplier", "posting_date", "bill_no", "currency", "grand_total", "items/item_code", "items/description", "items/qty", "items/rate"];
+    } else {
+      headers = [
+        "supplier", "posting_date", "bill_no", "bill_date", "due_date", "currency", "grand_total", "is_paid", "debit_to", "remarks",
+        "items/item_code", "items/description", "items/qty", "items/rate", "items/item_group", "items/warehouse", "items/cost_center"
+      ];
+    }
     tsvString = headers.join('\t') + '\n';
 
     erpInvoices.forEach((invoice) => {
-      let postingDate = invoice.datum || '';
-      if (invoice.datum) {
-          const datePartsDDMMYYYY = invoice.datum.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
-          const datePartsYYYYMMDD = invoice.datum.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-          if (datePartsDDMMYYYY && datePartsDDMMYYYY[3] && datePartsDDMMYYYY[2] && datePartsDDMMYYYY[1]) {
-              postingDate = `${datePartsDDMMYYYY[3]}-${datePartsDDMMYYYY[2]}-${datePartsDDMMYYYY[1]}`;
-          } else if (datePartsYYYYMMDD) {
-              postingDate = invoice.datum;
-          } else {
-            const d = new Date(invoice.datum);
-            if (!isNaN(d.getTime())) {
-                 postingDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-            } else {
-                postingDate = invoice.datum; 
-            }
-          }
-      }
-
-      const mainInvoiceData = [
+      const mainInvoiceBase = [
         escapeTSVField(invoice.lieferantName),
-        escapeTSVField(postingDate),
+        escapeTSVField(invoice.datum), // posting_date
         escapeTSVField(invoice.rechnungsnummer),
-        escapeTSVField(invoice.wahrung || 'EUR'),
-        invoice.gesamtbetrag?.toString() ?? '',
       ];
+      
+      let mainInvoiceDataSpecific: (string|number|undefined|null)[] = [];
+      if (useMinimalErpExport) {
+        mainInvoiceDataSpecific = [
+            escapeTSVField(invoice.wahrung || 'EUR'),
+            invoice.gesamtbetrag?.toString() ?? '',
+        ];
+      } else {
+         mainInvoiceDataSpecific = [
+            escapeTSVField(invoice.billDate || invoice.datum),
+            escapeTSVField(invoice.dueDate),
+            escapeTSVField(invoice.wahrung || 'EUR'),
+            invoice.gesamtbetrag?.toString() ?? '',
+            invoice.istBezahlt?.toString() ?? '0',
+            escapeTSVField(invoice.kontenrahmen),
+            escapeTSVField(''), // remarks
+         ];
+      }
+      const mainInvoiceData = [...mainInvoiceBase, ...mainInvoiceDataSpecific.map(f => escapeTSVField(f))];
+
 
       if (invoice.rechnungspositionen && invoice.rechnungspositionen.length > 0) {
         invoice.rechnungspositionen.forEach(item => {
-          const itemData = [
+          const itemBase = [
             escapeTSVField(item.productCode),
             escapeTSVField(item.productName),
             item.quantity.toString(),
             item.unitPrice.toString(),
           ];
+          let itemSpecific: string[] = [];
+          if (!useMinimalErpExport) {
+            itemSpecific = [
+                escapeTSVField(''), // item_group
+                escapeTSVField(''), // warehouse
+                escapeTSVField(''), // cost_center
+            ];
+          }
+          const itemData = [...itemBase, ...itemSpecific];
           tsvString += mainInvoiceData.join('\t') + '\t' + itemData.join('\t') + '\n';
         });
       } else {
-        const emptyItemData = ['', '', '', ''];
+        const emptyItemCount = useMinimalErpExport ? 4 : 7;
+        const emptyItemData = Array(emptyItemCount).fill('');
         tsvString += mainInvoiceData.join('\t') + '\t' + emptyItemData.join('\t') + '\n';
       }
     });
