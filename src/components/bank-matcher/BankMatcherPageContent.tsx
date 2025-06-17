@@ -1,7 +1,7 @@
 
 'use client';
 
-import React, { useState, useCallback, ChangeEvent } from 'react';
+import React, { useState, useCallback, ChangeEvent, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -16,8 +16,6 @@ import { readFileAsDataURL } from '@/lib/file-helpers';
 import { extractBankStatementData, type BankTransactionAI } from '@/ai/flows/extract-bank-statement-data';
 import { v4 as uuidv4 } from 'uuid';
 
-const DUMMY_EXTRACTED_INVOICES: ERPIncomingInvoiceItem[] = [];
-
 export function BankMatcherPageContent() {
   const [bankStatementFile, setBankStatementFile] = useState<File | null>(null);
   const [bankTransactions, setBankTransactions] = useState<BankTransaction[]>([]);
@@ -26,7 +24,23 @@ export function BankMatcherPageContent() {
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [progressValue, setProgressValue] = useState(0);
-  const [availableInvoices, setAvailableInvoices] = useState<ERPIncomingInvoiceItem[]>(DUMMY_EXTRACTED_INVOICES);
+  const [availableInvoices, setAvailableInvoices] = useState<ERPIncomingInvoiceItem[]>([]);
+
+  useEffect(() => {
+    const storedInvoices = localStorage.getItem('processedIncomingInvoicesForMatcher');
+    if (storedInvoices) {
+      try {
+        const parsedInvoices: ERPIncomingInvoiceItem[] = JSON.parse(storedInvoices);
+        setAvailableInvoices(parsedInvoices);
+        // Don't set status message here, let the main alert handle it initially
+      } catch (e) {
+        console.error("Failed to parse invoices from localStorage", e);
+        // Set error message to be displayed in an alert if parsing fails
+        setErrorMessage("Error: Could not load previously processed invoice data. It might be corrupted.");
+      }
+    }
+  }, []);
+
 
   const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
     if (event.target.files && event.target.files[0]) {
@@ -39,8 +53,8 @@ export function BankMatcherPageContent() {
         setBankStatementFile(file);
         setBankTransactions([]);
         setMatchedTransactions([]);
-        setStatusMessage(null);
-        setErrorMessage(null);
+        setStatusMessage(null); // Clear previous status messages
+        setErrorMessage(null); // Clear previous error messages
       } else {
         setErrorMessage("Invalid file type. Please select a CSV or PDF file.");
         setBankStatementFile(null);
@@ -52,6 +66,9 @@ export function BankMatcherPageContent() {
     setBankStatementFile(null);
     setBankTransactions([]);
     setMatchedTransactions([]);
+    // Optionally clear status/error messages as well
+    // setStatusMessage(null);
+    // setErrorMessage(null);
   };
 
   const handleProcessStatement = async () => {
@@ -73,7 +90,7 @@ export function BankMatcherPageContent() {
         setStatusMessage("Extracting transactions from PDF using AI...");
         setProgressValue(20);
         const dataUri = await readFileAsDataURL(bankStatementFile);
-        const aiResult = await extractBankStatementData({ statementDataUri: dataUri });
+        const aiResult = await extractBankStatementData({ statementDataUri: dataUri }, {model: 'googleai/gemini-1.5-flash-latest'});
         
         parsedTxFromSource = (aiResult.transactions || []).map((tx: BankTransactionAI) => ({
           id: tx.id || uuidv4(),
@@ -90,16 +107,34 @@ export function BankMatcherPageContent() {
       }
       
       setBankTransactions(parsedTxFromSource);
-      if (parsedTxFromSource.length === 0 && !errorMessage) {
-         setStatusMessage(`No transactions found in ${bankStatementFile.name}. Now attempting to match...`);
+
+      let processStatusMsg = "";
+      if (parsedTxFromSource.length === 0) {
+          processStatusMsg = `No transactions found in ${bankStatementFile.name}. `;
       } else {
-         setStatusMessage(`Parsed ${parsedTxFromSource.length} transactions. Now matching with invoices...`);
+          processStatusMsg = `Parsed ${parsedTxFromSource.length} transactions. `;
       }
-      
-      const matches = await matchTransactions(parsedTxFromSource, availableInvoices);
-      setMatchedTransactions(matches);
-      setProgressValue(100);
-      setStatusMessage(matches.length > 0 || parsedTxFromSource.length > 0 ? "Matching complete!" : "Processing complete. No transactions found or matched.");
+
+      if (availableInvoices.length === 0) {
+          processStatusMsg += "No invoices available for matching. Please process invoices first in the 'Incoming Invoices' module.";
+          setStatusMessage(processStatusMsg);
+          setMatchedTransactions([]); 
+          setProgressValue(100);
+      } else {
+          processStatusMsg += `Now matching with ${availableInvoices.length} available invoice(s)...`;
+          setStatusMessage(processStatusMsg);
+          const matches = await matchTransactions(parsedTxFromSource, availableInvoices);
+          setMatchedTransactions(matches);
+          setProgressValue(100);
+          const successfulMatches = matches.filter(m => m.status === 'Matched' || m.status === 'Suspect').length;
+          if (successfulMatches > 0) {
+            setStatusMessage(`Matching complete! Found ${successfulMatches} potential match(es).`);
+          } else if (parsedTxFromSource.length > 0) {
+            setStatusMessage("Matching complete. No strong matches found for the transactions.");
+          } else {
+            setStatusMessage("Processing complete. No transactions found in the statement.");
+          }
+      }
 
     } catch (err) {
       console.error("Error processing bank statement:", err);
@@ -127,7 +162,7 @@ export function BankMatcherPageContent() {
       <header className="mb-8 text-center">
         <h1 className="text-3xl md:text-4xl font-headline font-bold text-primary">Bank Statement Matcher</h1>
         <p className="text-muted-foreground mt-2">
-          Upload your bank statement (CSV or PDF) to automatically match transactions with extracted PDF invoices.
+          Upload your bank statement (CSV or PDF) to automatically match transactions with processed PDF invoices.
         </p>
       </header>
 
@@ -192,23 +227,27 @@ export function BankMatcherPageContent() {
             <p className="text-sm text-center text-muted-foreground">{statusMessage}</p>
           </div>
         )}
-
-        {errorMessage && (
+        
+        {!isProcessing && !statusMessage && errorMessage && ( // Show error only if not processing and no other status
           <Alert variant="destructive" className="my-6">
             <AlertCircle className="h-4 w-4" />
-            <AlertTitle>Processing Error</AlertTitle>
+            <AlertTitle>Error</AlertTitle>
             <AlertDescription>{errorMessage}</AlertDescription>
           </Alert>
         )}
 
-        {!isProcessing && bankTransactions.length === 0 && !bankStatementFile && (
+        {!isProcessing && bankTransactions.length === 0 && !bankStatementFile && !errorMessage && (
            <Alert className="my-6 bg-primary/5 border-primary/20">
             <Info className="h-4 w-4 text-primary" />
             <AlertTitle className="text-primary font-semibold">Get Started</AlertTitle>
             <AlertDescription className="text-primary/80">
-              Upload a bank statement CSV or PDF to begin matching against your invoices.
+              Upload a bank statement CSV or PDF to begin matching.
               <br/>
-              <small className="text-xs">Note: Ensure invoices are already processed in the 'Incoming Invoices' module for matching to occur (currently uses dummy invoice data).</small>
+              <small className="text-xs">
+                {availableInvoices.length > 0 
+                  ? `${availableInvoices.length} invoice(s) from the 'Incoming Invoices' module are ready for matching.`
+                  : "No invoices found from the 'Incoming Invoices' module. Please process some invoices there first."}
+              </small>
             </AlertDescription>
           </Alert>
         )}
@@ -226,7 +265,7 @@ export function BankMatcherPageContent() {
             <CardContent>
               <div className="space-y-4">
                 {matchedTransactions.map((match, index) => (
-                  <Card key={index} className={`border-l-4 ${getMatchStatusColor(match.status)}`}>
+                  <Card key={match.transaction.id || index} className={`border-l-4 ${getMatchStatusColor(match.status)}`}>
                     <CardHeader className="pb-2">
                       <CardTitle className="text-base flex justify-between items-center">
                         <span>Transaction: {match.transaction.description || 'N/A'}</span>
@@ -258,6 +297,15 @@ export function BankMatcherPageContent() {
             </CardContent>
           </Card>
         )}
+         {/* Message if processing is done but no statement file selected (e.g. after removing a file) */}
+        {!isProcessing && !bankStatementFile && bankTransactions.length > 0 && (
+            <Alert className="my-6">
+                <Info className="h-4 w-4" />
+                <AlertTitle>No Bank Statement Selected</AlertTitle>
+                <AlertDescription>Please select a bank statement file to process.</AlertDescription>
+            </Alert>
+        )}
+
       </main>
 
       <footer className="text-center mt-12 py-4 border-t">
@@ -266,3 +314,4 @@ export function BankMatcherPageContent() {
     </div>
   );
 }
+
