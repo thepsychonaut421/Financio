@@ -4,8 +4,8 @@ import { Toaster } from "@/components/ui/toaster";
 import { AppHeader } from '@/components/shared/AppHeader';
 
 export const metadata: Metadata = {
-  title: 'PDF Data Extractor',
-  description: 'Extract data from PDF invoices using AI',
+  title: 'PDF Suite',
+  description: 'Extract data from PDFs, organize files, and match bank statements using AI.',
 };
 
 export default function RootLayout({

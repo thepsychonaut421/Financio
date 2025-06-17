@@ -1,12 +1,13 @@
 'use client';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { ListOrdered, ReceiptText, Landmark } from 'lucide-react';
+import { ListOrdered, ReceiptText, Landmark, FileEdit } from 'lucide-react';
 
 const navLinks = [
   { href: '/', label: 'Line Item Extractor', icon: <ListOrdered className="w-5 h-5" /> },
   { href: '/incoming-invoices', label: 'Incoming Invoices', icon: <ReceiptText className="w-5 h-5" /> },
   { href: '/bank-matcher', label: 'Bank Matcher', icon: <Landmark className="w-5 h-5" /> },
+  { href: '/pdf-organizer', label: 'PDF Organizer', icon: <FileEdit className="w-5 h-5" /> },
 ];
 
 export function AppHeader() {
@@ -16,7 +17,7 @@ export function AppHeader() {
     <header className="bg-card border-b border-border shadow-sm sticky top-0 z-40">
       <nav className="container mx-auto px-4 md:px-8 h-16 flex items-center justify-between">
         <Link href="/" className="text-xl sm:text-2xl font-bold text-primary font-headline">
-          PDF Extractor
+          PDF Suite
         </Link>
         <div className="flex items-center space-x-1 sm:space-x-3">
           {navLinks.map((link) => (
