@@ -100,18 +100,23 @@ export function IncomingInvoicesPageContent() {
   }, []);
 
   const resetStateOnModeChange = () => {
-    // Only reset if there's actual data or selected files
-    if (extractedInvoices.length > 0 || erpProcessedInvoices.length > 0 || selectedFiles.length > 0) {
-      setSelectedFiles([]); // Clear selected files to force re-upload if mode changes with selections
+    const hasProcessedResults = extractedInvoices.length > 0 || erpProcessedInvoices.length > 0;
+
+    if (hasProcessedResults) {
+      // If results from a previous processing exist, clear everything, including file selection
+      setSelectedFiles([]); 
       setExtractedInvoices([]);
       setErpProcessedInvoices([]);
-      setStatus('idle');
-      setCurrentFileProgress('');
-      setProgressValue(0);
-      setErrorMessage(null);
-      // Clear localStorage for matcher too, as the data might be "stale" if user changes mode and expects different processing
       localStorage.removeItem('processedIncomingInvoicesForMatcher');
     }
+    // Always reset status and progress indicators, regardless of whether files were selected or results existed.
+    // This prepares for a fresh processing attempt if the user proceeds.
+    setStatus('idle');
+    setCurrentFileProgress('');
+    setProgressValue(0);
+    setErrorMessage(null);
+    // If no results, localStorage doesn't need clearing or is already clear from handleFilesSelected/initial state.
+    // If there were results, it's cleared above.
   }
 
   const handleProcessFiles = async () => {
@@ -166,7 +171,7 @@ export function IncomingInvoicesPageContent() {
         let istBezahltStatus: 0 | 1 = 0;
         const zahlungszielLower = (aiResult.zahlungsziel || '').toLowerCase();
         const zahlungsartLower = (aiResult.zahlungsart || '').toLowerCase();
-        if (aiResult.isPaid === true) {
+        if (aiResult.isPaidByAI === true) { // Changed from aiResult.isPaid to aiResult.isPaidByAI
           istBezahltStatus = 1;
         } else if (zahlungszielLower.includes('sofort') || zahlungsartLower === 'sofort' || zahlungsartLower === 'lastschrift' || zahlungsartLower.includes('paypal')) {
           istBezahltStatus = 1;
@@ -191,7 +196,7 @@ export function IncomingInvoicesPageContent() {
           rechnungspositionen: aiResult.rechnungspositionen || [],
           kundenNummer: aiResult.kundenNummer,
           bestellNummer: aiResult.bestellNummer,
-          isPaidByAI: aiResult.isPaid,
+          isPaidByAI: aiResult.isPaidByAI, // Changed from isPaid
           erpNextInvoiceName: erpNextInvoiceNameGenerated,
           billDate: postingDateERP,
           dueDate: dueDateERP,
@@ -219,7 +224,7 @@ export function IncomingInvoicesPageContent() {
               rechnungspositionen: aiResult.rechnungspositionen || [],
               kundenNummer: aiResult.kundenNummer,
               bestellNummer: aiResult.bestellNummer,
-              isPaidByAI: aiResult.isPaid,
+              isPaidByAI: aiResult.isPaidByAI, // Changed from isPaid
           });
         }
         
