@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { UploadCloud, FileText, XCircle, AlertCircle, Info, ListChecks, Banknote } from 'lucide-react';
+import { UploadCloud, FileText, XCircle, AlertCircle, Info, ListChecks, Banknote, Percent } from 'lucide-react';
 import type { BankTransaction, MatchedTransaction, MatchStatus } from '@/lib/bank-matcher/types';
 import type { ERPIncomingInvoiceItem } from '@/types/incoming-invoice'; 
 import { parseBankStatementCSV } from '@/lib/bank-matcher/bankStatementParser';
@@ -97,7 +97,7 @@ export function BankMatcherPageContent() {
         const aiResult = await extractBankStatementData({ statementDataUri: dataUri }, {model: 'googleai/gemini-1.5-flash-latest'});
         
         parsedTxFromSource = (aiResult.transactions || []).map((tx: BankTransactionAI) => ({
-          id: tx.id || uuidv4(),
+          id: tx.id || uuidv4(), // Ensure ID is always present
           date: tx.date,
           description: tx.description || '',
           amount: typeof tx.amount === 'number' ? tx.amount : 0,
@@ -130,11 +130,13 @@ export function BankMatcherPageContent() {
           const matches = await matchTransactions(parsedTxFromSource, availableInvoices);
           setMatchedTransactions(matches);
           setProgressValue(100);
-          const successfulMatches = matches.filter(m => m.status === 'Matched' || m.status === 'Suspect').length;
-          if (successfulMatches > 0) {
-            setStatusMessage(`Matching complete! Found ${successfulMatches} potential match(es).`);
+          const successfulMatchesCount = matches.filter(m => m.status === 'Matched').length;
+          const suspectMatchesCount = matches.filter(m => m.status === 'Suspect').length;
+
+          if (successfulMatchesCount > 0 || suspectMatchesCount > 0) {
+            setStatusMessage(`Matching complete! Found ${successfulMatchesCount} match(es) and ${suspectMatchesCount} suspect(s).`);
           } else if (parsedTxFromSource.length > 0) {
-            setStatusMessage("Matching complete. No strong matches found for the transactions.");
+            setStatusMessage("Matching complete. No strong matches or suspects found for the transactions.");
           } else {
             setStatusMessage("Processing complete. No transactions found in the statement.");
           }
@@ -150,12 +152,12 @@ export function BankMatcherPageContent() {
     }
   };
 
-  const getMatchStatusColor = (status: MatchStatus) => {
+  const getMatchStatusColorClasses = (status: MatchStatus) => {
     switch (status) {
-      case 'Matched': return 'text-green-600 bg-green-100 border-green-300';
-      case 'Suspect': return 'text-yellow-600 bg-yellow-100 border-yellow-300';
-      case 'Unmatched': return 'text-red-600 bg-red-100 border-red-300';
-      default: return 'text-gray-600 bg-gray-100 border-gray-300';
+      case 'Matched': return 'text-green-700 bg-green-100 border-green-500';
+      case 'Suspect': return 'text-yellow-700 bg-yellow-100 border-yellow-500';
+      case 'Unmatched': return 'text-red-700 bg-red-100 border-red-500';
+      default: return 'text-gray-700 bg-gray-100 border-gray-500';
     }
   };
   
@@ -268,33 +270,53 @@ export function BankMatcherPageContent() {
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                {matchedTransactions.map((match, index) => (
-                  <Card key={match.transaction.id || index} className={`border-l-4 ${getMatchStatusColor(match.status)}`}>
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-base flex justify-between items-center">
-                        <span>Transaction: {match.transaction.description || 'N/A'}</span>
-                        <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${getMatchStatusColor(match.status)}`}>
-                          {match.status} {match.confidence ? `(${Math.round(match.confidence * 100)}%)` : ''}
-                        </span>
-                      </CardTitle>
-                       <CardDescription className="text-sm">
-                        Amount: <Banknote className="inline h-4 w-4 mr-1" /> {match.transaction.amount.toFixed(2)} {match.transaction.currency || 'EUR'} on {new Date(match.transaction.date).toLocaleDateString()}
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                      {match.matchedInvoice ? (
+                {matchedTransactions.map((match) => (
+                  <Card key={match.transaction.id} className={`border-l-4 ${getMatchStatusColorClasses(match.status)}`}>
+                    <CardHeader className="pb-3 pt-4 px-4">
+                      <div className="flex justify-between items-start">
                         <div>
-                          <p className="text-sm font-medium">Matched Invoice:</p>
-                          <p className="text-xs text-muted-foreground">
-                            Ref: {match.matchedInvoice.rechnungsnummer || match.matchedInvoice.pdfFileName} | 
-                            Supplier: {match.matchedInvoice.lieferantName || 'N/A'} | 
-                            Total: {match.matchedInvoice.gesamtbetrag?.toFixed(2)} {match.matchedInvoice.wahrung || 'EUR'}
-                          </p>
+                            <CardTitle className="text-base leading-tight">
+                            {match.transaction.description || 'N/A'}
+                            </CardTitle>
+                            <CardDescription className="text-xs mt-0.5">
+                                Tx Date: {new Date(match.transaction.date).toLocaleDateString()} | Payer/Recipient: {match.transaction.recipientOrPayer || 'N/A'}
+                            </CardDescription>
                         </div>
-                      ) : (
-                        <p className="text-sm text-muted-foreground italic">No specific invoice matched based on current criteria.</p>
-                      )}
-                    </CardContent>
+                        <div className={`text-right ml-2 flex-shrink-0`}>
+                             <span className={`px-2.5 py-1 rounded-full text-xs font-semibold shadow-sm ${getMatchStatusColorClasses(match.status)}`}>
+                                {match.status}
+                             </span>
+                            {match.confidence !== undefined && match.confidence > 0 && (
+                                 <p className="text-xs text-muted-foreground mt-1 flex items-center justify-end">
+                                    <Percent className="inline h-3 w-3 mr-0.5" /> {(match.confidence * 100).toFixed(0)}%
+                                 </p>
+                            )}
+                        </div>
+                      </div>
+                       <p className="text-lg font-semibold text-foreground mt-1">
+                         <Banknote className="inline h-5 w-5 mr-1 text-primary/80" /> 
+                         {match.transaction.amount.toFixed(2)} {match.transaction.currency || 'EUR'}
+                       </p>
+                    </CardHeader>
+                    {match.matchedInvoice && (
+                        <CardContent className="px-4 pb-4 pt-0 border-t border-border/60">
+                        <p className="text-sm font-medium mt-2 mb-1 text-primary">Matched Invoice:</p>
+                        <div className="text-xs space-y-0.5 text-muted-foreground">
+                            <p><strong>Ref:</strong> {match.matchedInvoice.rechnungsnummer || 'N/A'}</p>
+                            <p><strong>Supplier:</strong> {match.matchedInvoice.lieferantName || 'N/A'}</p>
+                            <p><strong>Inv. Date:</strong> {match.matchedInvoice.datum ? new Date(match.matchedInvoice.datum).toLocaleDateString() : 'N/A'}</p>
+                            <p><strong>Inv. Total:</strong> {match.matchedInvoice.gesamtbetrag?.toFixed(2) || 'N/A'} {match.matchedInvoice.wahrung || 'EUR'}</p>
+                            <p><strong>File:</strong> {match.matchedInvoice.pdfFileName || 'N/A'}</p>
+                        </div>
+                        </CardContent>
+                    )}
+                    {match.status !== 'Matched' && !match.matchedInvoice && (
+                         <CardContent className="px-4 pb-3 pt-2">
+                            <p className="text-sm text-muted-foreground italic">
+                                {match.transaction.amount >=0 ? "Income transaction or not a payment." : "No suitable invoice found based on current criteria."}
+                            </p>
+                         </CardContent>
+                    )}
                   </Card>
                 ))}
               </div>
@@ -317,5 +339,3 @@ export function BankMatcherPageContent() {
     </div>
   );
 }
-
-
