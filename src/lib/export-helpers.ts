@@ -64,7 +64,6 @@ export function incomingInvoicesToCSV(invoices: IncomingInvoiceItem[]): string {
         csvString += mainInvoiceData.join(',') + ',' + itemData.join(',') + '\n';
       });
     } else {
-      // Still add main invoice data even if there are no items, with empty item fields
       csvString += mainInvoiceData.join(',') + ',,,,\n'; 
     }
   });
@@ -72,21 +71,18 @@ export function incomingInvoicesToCSV(invoices: IncomingInvoiceItem[]): string {
   return csvString;
 }
 
-// ERPNext Data Import expects specific field names.
-// These are common field names for Purchase Invoice and Purchase Invoice Item.
-// Child table fields are prefixed with "items/" (or the child table's fieldname in parent doctype).
 export function incomingInvoicesToERPNextCSV(invoices: ERPIncomingInvoiceItem[]): string {
   if (!invoices || invoices.length === 0) return '';
 
   const headers = [
-    "supplier",                   // Supplier Name (Link to Supplier Doctype)
+    "supplier",                   // Supplier Name (Link to Supplier Doctype) - Must exactly match ERPNext supplier name
     "posting_date",               // Date (YYYY-MM-DD)
-    "bill_no",                    // Supplier's Invoice Number
-    "payment_terms_template",     // Payment Terms (Link to Payment Term Template)
+    "bill_no",                    // Supplier's Invoice Number (Original Rechnungsnummer)
+    // "payment_terms_template",  // Removed: Extracted full text is not a valid template name. User should map this carefully if re-added.
     "currency",                   // Currency (e.g., EUR)
     "grand_total",                // Grand Total amount of the invoice
     // Item details - child table fields for 'items'
-    "items/item_code",            // Link to Item Doctype
+    "items/item_code",            // Link to Item Doctype or plain item code
     "items/description",          // Item Description (can be product name)
     "items/qty",                  // Quantity
     "items/rate",                 // Rate per unit
@@ -95,38 +91,30 @@ export function incomingInvoicesToERPNextCSV(invoices: ERPIncomingInvoiceItem[])
   let csvString = headers.join(',') + '\n';
 
   invoices.forEach((invoice) => {
-    // Format posting_date to YYYY-MM-DD
     let postingDate = invoice.datum || '';
     if (invoice.datum) {
-        const datePartsDDMMYYYY = invoice.datum.match(/^(\d{2})\.(\d{2})\.(\d{4})$/); // DD.MM.YYYY
-        const datePartsYYYYMMDD = invoice.datum.match(/^(\d{4})-(\d{2})-(\d{2})$/); // YYYY-MM-DD
+        const datePartsDDMMYYYY = invoice.datum.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+        const datePartsYYYYMMDD = invoice.datum.match(/^(\d{4})-(\d{2})-(\d{2})$/);
         
         if (datePartsDDMMYYYY && datePartsDDMMYYYY[3] && datePartsDDMMYYYY[2] && datePartsDDMMYYYY[1]) {
-            postingDate = `${datePartsDDMMYYYY[3]}-${datePartsDDMMYYYY[2]}-${datePartsDDMMYYYY[1]}`; // Convert DD.MM.YYYY to YYYY-MM-DD
+            postingDate = `${datePartsDDMMYYYY[3]}-${datePartsDDMMYYYY[2]}-${datePartsDDMMYYYY[1]}`;
         } else if (datePartsYYYYMMDD) {
-            postingDate = invoice.datum; // Already in YYYY-MM-DD
+            postingDate = invoice.datum;
         } else {
-            // Attempt to parse other common date formats or log a warning
-            // For simplicity, if not in expected formats, use as is or leave empty if critical
-            // For robustness, one might try new Date(invoice.datum).toISOString().split('T')[0]
-            // but this can be unreliable without knowing the exact input format.
-            // For now, if not DD.MM.YYYY or YYYY-MM-DD, it might cause issues in ERPNext.
-            // Defaulting to original if not matched, ERPNext might reject it.
-            const d = new Date(invoice.datum);
+            const d = new Date(invoice.datum); // Attempt to parse other formats
             if (!isNaN(d.getTime())) {
                  postingDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
             } else {
-                postingDate = invoice.datum; // Fallback to original
+                postingDate = invoice.datum; // Fallback if parsing fails
             }
         }
     }
 
-
     const mainInvoiceData = [
-      escapeCSVField(invoice.lieferantName), // Mapped supplier name
+      escapeCSVField(invoice.lieferantName), 
       escapeCSVField(postingDate),
-      escapeCSVField(invoice.rechnungsnummer), // Original invoice number
-      escapeCSVField(invoice.zahlungsziel),
+      escapeCSVField(invoice.rechnungsnummer), 
+      // escapeCSVField(invoice.zahlungsziel), // Corresponding to removed payment_terms_template
       escapeCSVField(invoice.wahrung || 'EUR'),
       invoice.gesamtbetrag?.toString() ?? '',
     ];
@@ -135,20 +123,14 @@ export function incomingInvoicesToERPNextCSV(invoices: ERPIncomingInvoiceItem[])
       invoice.rechnungspositionen.forEach(item => {
         const itemData = [
           escapeCSVField(item.productCode),
-          escapeCSVField(item.productName), // Using productName as description
+          escapeCSVField(item.productName), 
           item.quantity.toString(),
           item.unitPrice.toString(),
         ];
-        // Each row in CSV for ERPNext import typically represents one item line,
-        // repeating parent DocType fields.
         csvString += mainInvoiceData.join(',') + ',' + itemData.join(',') + '\n';
       });
     } else {
-      // If an invoice has no items, ERPNext might still require an "empty" item row
-      // or it might not be importable. For now, we'll skip invoices without items
-      // in the ERPNext CSV or add main data with empty item fields.
-      // Let's add main data with empty item fields to represent the invoice.
-       const emptyItemData = ['', '', '', ''];
+       const emptyItemData = ['', '', '', '']; // Represent invoice even if no items
        csvString += mainInvoiceData.join(',') + ',' + emptyItemData.join(',') + '\n';
     }
   });
@@ -173,9 +155,8 @@ export function incomingInvoicesToTSV(invoices: IncomingInvoiceItem[] | ERPIncom
 
   if (erpMode) {
     const erpInvoices = invoices as ERPIncomingInvoiceItem[];
-    // Align TSV headers with the simplified ERPNext CSV headers
-    const headers = [
-      "supplier", "posting_date", "bill_no", "payment_terms_template", 
+    const headers = [ // Align with simplified ERPNext CSV headers
+      "supplier", "posting_date", "bill_no", 
       "currency", "grand_total", 
       "items/item_code", "items/description", "items/qty", "items/rate"
     ];
@@ -204,7 +185,6 @@ export function incomingInvoicesToTSV(invoices: IncomingInvoiceItem[] | ERPIncom
         escapeTSVField(invoice.lieferantName),
         escapeTSVField(postingDate),
         escapeTSVField(invoice.rechnungsnummer),
-        escapeTSVField(invoice.zahlungsziel),
         escapeTSVField(invoice.wahrung || 'EUR'),
         invoice.gesamtbetrag?.toString() ?? '',
       ];
@@ -213,7 +193,7 @@ export function incomingInvoicesToTSV(invoices: IncomingInvoiceItem[] | ERPIncom
         invoice.rechnungspositionen.forEach(item => {
           const itemData = [
             escapeTSVField(item.productCode),
-            escapeTSVField(item.productName), // Using productName as description
+            escapeTSVField(item.productName),
             item.quantity.toString(),
             item.unitPrice.toString(),
           ];
@@ -225,7 +205,7 @@ export function incomingInvoicesToTSV(invoices: IncomingInvoiceItem[] | ERPIncom
       }
     });
 
-  } else { // Standard mode (not ERP mode)
+  } else { 
     const regularInvoices = invoices as IncomingInvoiceItem[];
     const mainHeaders = [
       'PDF Datei', 'Rechnungsnummer', 'Datum', 'Lieferant Name', 'Lieferant Adresse',
