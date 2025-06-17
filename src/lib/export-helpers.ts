@@ -16,7 +16,7 @@ export function downloadFile(content: string, fileName: string, mimeType: string
 function escapeCSVField(field: string | number | undefined | null): string {
   if (field === undefined || field === null) return '';
   const stringField = String(field);
-  if (stringField.includes('"') || stringField.includes(',') || stringField.includes('\n')) {
+  if (stringField.includes('"') || stringField.includes(',') || stringField.includes('\n') || stringField.includes('\r')) {
     return `"${stringField.replace(/"/g, '""')}"`;
   }
   return stringField;
@@ -35,6 +35,8 @@ export function incomingInvoicesToCSV(invoices: IncomingInvoiceItem[]): string {
     'Zahlungsart',
     'Gesamtbetrag',
     'MwSt-Satz',
+    'Kunden-Nr.',
+    'Bestell-Nr.'
   ];
   const itemHeaders = ['Pos. Produkt Code', 'Pos. Produkt Name', 'Pos. Menge', 'Pos. Einzelpreis'];
   
@@ -51,6 +53,8 @@ export function incomingInvoicesToCSV(invoices: IncomingInvoiceItem[]): string {
       escapeCSVField(invoice.zahlungsart),
       invoice.gesamtbetrag?.toString() ?? '',
       escapeCSVField(invoice.mwstSatz),
+      escapeCSVField(invoice.kundenNummer),
+      escapeCSVField(invoice.bestellNummer),
     ];
 
     if (invoice.rechnungspositionen && invoice.rechnungspositionen.length > 0) {
@@ -64,27 +68,30 @@ export function incomingInvoicesToCSV(invoices: IncomingInvoiceItem[]): string {
         csvString += mainInvoiceData.join(',') + ',' + itemData.join(',') + '\n';
       });
     } else {
-      csvString += mainInvoiceData.join(',') + ',,,,\n'; 
+      // Ensure item headers are still present with empty values if no items
+      const emptyItemData = Array(itemHeaders.length).fill('');
+      csvString += mainInvoiceData.join(',') + ',' + emptyItemData.join(',') + '\n'; 
     }
   });
 
   return csvString;
 }
 
-// Minimal ERPNext CSV Export
+// Minimal ERPNext CSV Export (Pflichtfelder)
 export function incomingInvoicesToERPNextCSV(invoices: ERPIncomingInvoiceItem[]): string {
   if (!invoices || invoices.length === 0) return '';
 
   const headers = [
-    "supplier",              
-    "posting_date",          
-    "bill_no",               
-    "currency",              
-    "grand_total",           
-    "items/item_code",       
-    "items/description",     
-    "items/qty",             
-    "items/rate",            
+    "supplier", // Lieferant Name (mapped)
+    "posting_date", // Rechnungsdatum (YYYY-MM-DD)
+    "bill_no", // Rechnungsnummer (Supplier Invoice No)
+    "currency", // Währung (e.g., EUR)
+    "grand_total", // Gesamtbetrag
+    // Item details - these are typically required as a group
+    "items/item_code",
+    "items/description",
+    "items/qty",
+    "items/rate",
   ];
   
   let csvString = headers.join(',') + '\n';
@@ -92,7 +99,7 @@ export function incomingInvoicesToERPNextCSV(invoices: ERPIncomingInvoiceItem[])
   invoices.forEach((invoice) => {
     const mainInvoiceData = [
       escapeCSVField(invoice.lieferantName), 
-      escapeCSVField(invoice.datum), // Already YYYY-MM-DD from processing
+      escapeCSVField(invoice.datum), 
       escapeCSVField(invoice.rechnungsnummer), 
       escapeCSVField(invoice.wahrung || 'EUR'),
       invoice.gesamtbetrag?.toString() ?? '',
@@ -101,14 +108,16 @@ export function incomingInvoicesToERPNextCSV(invoices: ERPIncomingInvoiceItem[])
     if (invoice.rechnungspositionen && invoice.rechnungspositionen.length > 0) {
       invoice.rechnungspositionen.forEach(item => {
         const itemData = [
-          escapeCSVField(item.productCode),
-          escapeCSVField(item.productName), 
-          item.quantity.toString(),
-          item.unitPrice.toString(),
+          escapeCSVField(item.productCode), // item_code
+          escapeCSVField(item.productName), // description
+          item.quantity.toString(), // qty
+          item.unitPrice.toString(), // rate
         ];
         csvString += mainInvoiceData.join(',') + ',' + itemData.join(',') + '\n';
       });
     } else {
+       // If no items, ERPNext might still require the item columns, potentially empty or with a default placeholder item.
+       // For now, providing empty item data. This might need adjustment based on specific ERPNext import behavior.
        const emptyItemData = ['', '', '', '']; 
        csvString += mainInvoiceData.join(',') + ',' + emptyItemData.join(',') + '\n';
     }
@@ -117,7 +126,7 @@ export function incomingInvoicesToERPNextCSV(invoices: ERPIncomingInvoiceItem[])
   return csvString;
 }
 
-// More Complete ERPNext CSV Export
+// Complete ERPNext CSV Export
 export function incomingInvoicesToERPNextCSVComplete(invoices: ERPIncomingInvoiceItem[]): string {
   if (!invoices || invoices.length === 0) return '';
 
@@ -125,21 +134,22 @@ export function incomingInvoicesToERPNextCSVComplete(invoices: ERPIncomingInvoic
     "supplier",
     "posting_date",
     "bill_no", // Supplier Invoice No
-    "bill_date", // Often same as posting_date
-    "due_date",
+    "bill_date", // Invoice Date (Rechnungsdatum)
+    "due_date", // Fälligkeitsdatum
     "currency",
     "grand_total",
     "is_paid", // 0 or 1
     "debit_to", // Accounts Payable (Kontenrahmen)
-    "remarks", // General remarks for the invoice
+    "remarks", // Bemerkungen (Kunden-Nr. / Bestell-Nr.)
     // Item details
     "items/item_code",
     "items/description",
     "items/qty",
     "items/rate",
-    "items/item_group", // Placeholder
-    "items/warehouse", // Placeholder
-    "items/cost_center" // Placeholder
+    // ERPNext allows more item fields, these are common placeholders but may not be filled by AI
+    "items/item_group", 
+    "items/warehouse", 
+    "items/cost_center" 
   ];
   
   let csvString = headers.join(',') + '\n';
@@ -147,15 +157,15 @@ export function incomingInvoicesToERPNextCSVComplete(invoices: ERPIncomingInvoic
   invoices.forEach((invoice) => {
     const mainInvoiceData = [
       escapeCSVField(invoice.lieferantName), 
-      escapeCSVField(invoice.datum), // posting_date
+      escapeCSVField(invoice.datum), // posting_date (YYYY-MM-DD)
       escapeCSVField(invoice.rechnungsnummer),
-      escapeCSVField(invoice.billDate || invoice.datum), // bill_date
-      escapeCSVField(invoice.dueDate), // due_date
+      escapeCSVField(invoice.billDate || invoice.datum), // bill_date (YYYY-MM-DD)
+      escapeCSVField(invoice.dueDate), // due_date (YYYY-MM-DD)
       escapeCSVField(invoice.wahrung || 'EUR'),
       invoice.gesamtbetrag?.toString() ?? '',
       invoice.istBezahlt?.toString() ?? '0',
       escapeCSVField(invoice.kontenrahmen),
-      escapeCSVField(''), // remarks - empty for now
+      escapeCSVField(invoice.remarks), 
     ];
 
     if (invoice.rechnungspositionen && invoice.rechnungspositionen.length > 0) {
@@ -165,9 +175,9 @@ export function incomingInvoicesToERPNextCSVComplete(invoices: ERPIncomingInvoic
           escapeCSVField(item.productName), 
           item.quantity.toString(),
           item.unitPrice.toString(),
-          escapeCSVField(''), // item_group
-          escapeCSVField(''), // warehouse
-          escapeCSVField(''), // cost_center
+          escapeCSVField(''), // item_group (placeholder)
+          escapeCSVField(''), // warehouse (placeholder)
+          escapeCSVField(''), // cost_center (placeholder)
         ];
         csvString += mainInvoiceData.join(',') + ',' + itemData.join(',') + '\n';
       });
@@ -187,7 +197,7 @@ export function incomingInvoicesToJSON(invoices: IncomingInvoiceItem[] | ERPInco
 
 function escapeTSVField(field: string | number | undefined | null): string {
   if (field === undefined || field === null) return '';
-  return String(field).replace(/\t/g, ' ').replace(/\n/g, ' ');
+  return String(field).replace(/\t/g, ' ').replace(/\n/g, ' ').replace(/\r/g, ' ');
 }
 
 export function incomingInvoicesToTSV(invoices: IncomingInvoiceItem[] | ERPIncomingInvoiceItem[], erpMode: boolean, useMinimalErpExport: boolean): string {
@@ -210,55 +220,59 @@ export function incomingInvoicesToTSV(invoices: IncomingInvoiceItem[] | ERPIncom
     tsvString = headers.join('\t') + '\n';
 
     erpInvoices.forEach((invoice) => {
-      const mainInvoiceBase = [
-        escapeTSVField(invoice.lieferantName),
-        escapeTSVField(invoice.datum), // posting_date
-        escapeTSVField(invoice.rechnungsnummer),
-      ];
-      
-      let mainInvoiceDataSpecific: (string|number|undefined|null)[] = [];
+      let mainInvoiceData: (string|number|undefined|null)[] = [];
       if (useMinimalErpExport) {
-        mainInvoiceDataSpecific = [
-            escapeTSVField(invoice.wahrung || 'EUR'),
+        mainInvoiceData = [
+            invoice.lieferantName,
+            invoice.datum, 
+            invoice.rechnungsnummer,
+            invoice.wahrung || 'EUR',
             invoice.gesamtbetrag?.toString() ?? '',
         ];
       } else {
-         mainInvoiceDataSpecific = [
-            escapeTSVField(invoice.billDate || invoice.datum),
-            escapeTSVField(invoice.dueDate),
-            escapeTSVField(invoice.wahrung || 'EUR'),
+         mainInvoiceData = [
+            invoice.lieferantName,
+            invoice.datum, 
+            invoice.rechnungsnummer,
+            invoice.billDate || invoice.datum,
+            invoice.dueDate,
+            invoice.wahrung || 'EUR',
             invoice.gesamtbetrag?.toString() ?? '',
             invoice.istBezahlt?.toString() ?? '0',
-            escapeTSVField(invoice.kontenrahmen),
-            escapeTSVField(''), // remarks
+            invoice.kontenrahmen,
+            invoice.remarks,
          ];
       }
-      const mainInvoiceData = [...mainInvoiceBase, ...mainInvoiceDataSpecific.map(f => escapeTSVField(f))];
-
+      const mainInvoiceDataEscaped = mainInvoiceData.map(f => escapeTSVField(f));
 
       if (invoice.rechnungspositionen && invoice.rechnungspositionen.length > 0) {
         invoice.rechnungspositionen.forEach(item => {
-          const itemBase = [
-            escapeTSVField(item.productCode),
-            escapeTSVField(item.productName),
-            item.quantity.toString(),
-            item.unitPrice.toString(),
-          ];
-          let itemSpecific: string[] = [];
-          if (!useMinimalErpExport) {
-            itemSpecific = [
-                escapeTSVField(''), // item_group
-                escapeTSVField(''), // warehouse
-                escapeTSVField(''), // cost_center
+          let itemData: (string|number|undefined|null)[] = [];
+          if (useMinimalErpExport) {
+            itemData = [
+                item.productCode,
+                item.productName,
+                item.quantity.toString(),
+                item.unitPrice.toString(),
+            ];
+          } else {
+            itemData = [
+                item.productCode,
+                item.productName,
+                item.quantity.toString(),
+                item.unitPrice.toString(),
+                '', // item_group
+                '', // warehouse
+                '', // cost_center
             ];
           }
-          const itemData = [...itemBase, ...itemSpecific];
-          tsvString += mainInvoiceData.join('\t') + '\t' + itemData.join('\t') + '\n';
+          const itemDataEscaped = itemData.map(f => escapeTSVField(f));
+          tsvString += mainInvoiceDataEscaped.join('\t') + '\t' + itemDataEscaped.join('\t') + '\n';
         });
       } else {
         const emptyItemCount = useMinimalErpExport ? 4 : 7;
         const emptyItemData = Array(emptyItemCount).fill('');
-        tsvString += mainInvoiceData.join('\t') + '\t' + emptyItemData.join('\t') + '\n';
+        tsvString += mainInvoiceDataEscaped.join('\t') + '\t' + emptyItemData.join('\t') + '\n';
       }
     });
 
@@ -266,7 +280,7 @@ export function incomingInvoicesToTSV(invoices: IncomingInvoiceItem[] | ERPIncom
     const regularInvoices = invoices as IncomingInvoiceItem[];
     const mainHeaders = [
       'PDF Datei', 'Rechnungsnummer', 'Datum', 'Lieferant Name', 'Lieferant Adresse',
-      'Zahlungsziel', 'Zahlungsart', 'Gesamtbetrag', 'MwSt-Satz',
+      'Zahlungsziel', 'Zahlungsart', 'Gesamtbetrag', 'MwSt-Satz', 'Kunden-Nr.', 'Bestell-Nr.'
     ];
     const itemHeaders = ['Pos. Produkt Code', 'Pos. Produkt Name', 'Pos. Menge', 'Pos. Einzelpreis'];
     tsvString = mainHeaders.join('\t') + '\t' + itemHeaders.join('\t') + '\n';
@@ -282,6 +296,8 @@ export function incomingInvoicesToTSV(invoices: IncomingInvoiceItem[] | ERPIncom
         escapeTSVField(invoice.zahlungsart),
         invoice.gesamtbetrag?.toString() ?? '',
         escapeTSVField(invoice.mwstSatz),
+        escapeTSVField(invoice.kundenNummer),
+        escapeTSVField(invoice.bestellNummer),
       ];
 
       if (invoice.rechnungspositionen && invoice.rechnungspositionen.length > 0) {
@@ -295,11 +311,12 @@ export function incomingInvoicesToTSV(invoices: IncomingInvoiceItem[] | ERPIncom
           tsvString += mainInvoiceData.join('\t') + '\t' + itemData.join('\t') + '\n';
         });
       } else {
-        const emptyItemData = ['', '', '', ''];
+        const emptyItemData = Array(itemHeaders.length).fill('');
         tsvString += mainInvoiceData.join('\t') + '\t' + emptyItemData.join('\t') + '\n';
       }
     });
   }
   return tsvString;
 }
+
     

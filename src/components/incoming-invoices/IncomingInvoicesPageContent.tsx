@@ -14,6 +14,8 @@ import { Label } from '@/components/ui/label';
 import { readFileAsDataURL } from '@/lib/file-helpers';
 import { extractIncomingInvoiceData, type ExtractIncomingInvoiceDataOutput } from '@/ai/flows/extract-incoming-invoice-data';
 import type { IncomingInvoiceItem, ERPIncomingInvoiceItem, IncomingProcessingStatus } from '@/types/incoming-invoice';
+import { differenceInDays, addDays, parseISO } from 'date-fns';
+
 
 export function IncomingInvoicesPageContent() {
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
@@ -26,40 +28,70 @@ export function IncomingInvoicesPageContent() {
   const [erpMode, setErpMode] = useState(false);
   const [useMinimalErpExport, setUseMinimalErpExport] = useState(true);
 
+  // Updated supplierMap based on user prompt
   const supplierMap: Record<string, string> = {
-    "ALDI E-Commerce GmbH & Co. KG": "ALDI",
-    "Baluata, Bayer Rem Ug": "BAYER REM UG",
-    "RETOURA GmbH": "RETOURA",
-    "Lidl Digital International GmbH & Co. KG": "Lidl",
-    // Add more known long names to their ERP short names here
+    "LIDL": "Lidl",
+    "Lidl Digital Deutschland GmbH & Co. KG": "Lidl",
+    "Lidl Digital International GmbH & Co. KG": "Lidl", // Added from existing
+    "GD Artlands eTrading GmbH": "GD Artlands eTrading GmbH",
+    "RETOURA": "RETOURA",
+    "RETOURA GmbH": "RETOURA", // Added from existing
+    "doitBau GmbH & Co.KG": "doitBau",
+    "Kaufland": "Kaufland",
+    "ALDI": "ALDI E-Commerce", // User specified "ALDI E-Commerce" for ALDI
+    "ALDI E-Commerce GmbH & Co. KG": "ALDI E-Commerce", // ALDI mapping
+    "FIRMA HANDLOWA KABIS BOZENA KEDZIORA": "FIRMA HANDLOWA KABIS BOZENA KEDZIORA",
+    "Zweco UG": "Zweco UG",
+    "Baluata, Bayer Rem Ug": "BAYER REM UG", // From existing, user did not list it
   };
 
-  const kontenrahmenMap: Record<string, string> = {
-    "Lidl": "1740 - Verbindlichkeiten",
-    "ALDI": "1740 - Verbindlichkeiten",
-    // Add more supplier to account mappings
-  };
+  // Simplified Kontenrahmen - default for all
+  const DEFAULT_KONTENRAHMEN = "1740 - Verbindlichkeiten";
 
   const formatDateForERP = (dateString?: string): string | undefined => {
     if (!dateString) return undefined;
-    const datePartsDDMMYYYY = dateString.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
-    const datePartsYYYYMMDD = dateString.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-    
-    if (datePartsDDMMYYYY && datePartsDDMMYYYY[3] && datePartsDDMMYYYY[2] && datePartsDDMMYYYY[1]) {
-        return `${datePartsDDMMYYYY[3]}-${datePartsDDMMYYYY[2]}-${datePartsDDMMYYYY[1]}`;
-    } else if (datePartsYYYYMMDD) {
+    // Try YYYY-MM-DD first (AI should return this)
+    if (dateString.match(/^\d{4}-\d{2}-\d{2}$/)) {
         return dateString;
     }
+    // Try DD.MM.YYYY
+    const datePartsDDMMYYYY = dateString.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+    if (datePartsDDMMYYYY && datePartsDDMMYYYY[3] && datePartsDDMMYYYY[2] && datePartsDDMMYYYY[1]) {
+        return `${datePartsDDMMYYYY[3]}-${datePartsDDMMYYYY[2]}-${datePartsDDMMYYYY[1]}`;
+    }
+    // Fallback: try to parse with Date constructor
     try {
         const d = new Date(dateString);
         if (!isNaN(d.getTime())) {
              return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
         }
-    } catch (e) {
-        // date string might be invalid
-    }
-    return dateString; // Fallback if parsing fails or not in expected formats
+    } catch (e) { /* ignore */ }
+    return dateString; // Return original if all parsing fails
   };
+
+  const calculateDueDate = (invoiceDateStr?: string, paymentTerm?: string): string | undefined => {
+    if (!invoiceDateStr || !paymentTerm) return invoiceDateStr; // Return invoice date if no term
+    
+    const invoiceDate = parseISO(invoiceDateStr); // Expects YYYY-MM-DD
+    if (isNaN(invoiceDate.getTime())) return invoiceDateStr; // Invalid invoice date
+
+    const termLower = paymentTerm.toLowerCase();
+
+    if (termLower.includes("sofort") || termLower.includes("immediately")) {
+      return invoiceDateStr;
+    }
+
+    const daysMatch = termLower.match(/(\d+)\s*tage/); // e.g., "14 Tage"
+    if (daysMatch && daysMatch[1]) {
+      const days = parseInt(daysMatch[1], 10);
+      if (!isNaN(days)) {
+        const dueDate = addDays(invoiceDate, days);
+        return `${dueDate.getFullYear()}-${String(dueDate.getMonth() + 1).padStart(2, '0')}-${String(dueDate.getDate()).padStart(2, '0')}`;
+      }
+    }
+    return invoiceDateStr; // Fallback to invoice date if term not parsable
+  };
+
 
   const handleFilesSelected = useCallback((files: File[]) => {
     setSelectedFiles(files);
@@ -72,9 +104,8 @@ export function IncomingInvoicesPageContent() {
   }, []);
 
   const resetStateOnModeChange = () => {
-    // If there's data from a previous mode, clear it to avoid confusion or re-processing with wrong mode
-    if (extractedInvoices.length > 0 || erpProcessedInvoices.length > 0) {
-      setSelectedFiles([]); // Also clear selected files as processing context might change
+    if (extractedInvoices.length > 0 || erpProcessedInvoices.length > 0 || selectedFiles.length > 0) {
+      setSelectedFiles([]);
       setExtractedInvoices([]);
       setErpProcessedInvoices([]);
       setStatus('idle');
@@ -96,7 +127,7 @@ export function IncomingInvoicesPageContent() {
     setProgressValue(0);
     const regularResults: IncomingInvoiceItem[] = [];
     const erpResults: ERPIncomingInvoiceItem[] = [];
-    const yearCounters: Record<string, number> = {};
+    const yearCounters: Record<string, number> = {}; // For generating ACC-PINV-YYYY-NNNNN
 
     try {
       for (let i = 0; i < selectedFiles.length; i++) {
@@ -104,19 +135,22 @@ export function IncomingInvoicesPageContent() {
         setCurrentFileProgress(`Processing file ${i + 1} of ${selectedFiles.length}: ${file.name}`);
         
         const dataUri = await readFileAsDataURL(file);
-        const extractionResult: ExtractIncomingInvoiceDataOutput = await extractIncomingInvoiceData({ invoiceDataUri: dataUri });
+        const aiResult: ExtractIncomingInvoiceDataOutput = await extractIncomingInvoiceData({ invoiceDataUri: dataUri });
         
         const baseExtractedData: IncomingInvoiceItem = {
           pdfFileName: file.name,
-          rechnungsnummer: extractionResult.rechnungsnummer,
-          datum: extractionResult.datum,
-          lieferantName: extractionResult.lieferantName,
-          lieferantAdresse: extractionResult.lieferantAdresse,
-          zahlungsziel: extractionResult.zahlungsziel,
-          zahlungsart: extractionResult.zahlungsart,
-          gesamtbetrag: extractionResult.gesamtbetrag,
-          mwstSatz: extractionResult.mwstSatz,
-          rechnungspositionen: extractionResult.rechnungspositionen || [],
+          rechnungsnummer: aiResult.rechnungsnummer,
+          datum: aiResult.datum, // AI should provide YYYY-MM-DD
+          lieferantName: aiResult.lieferantName, // AI attempts mapping or returns original/UNBEKANNT
+          lieferantAdresse: aiResult.lieferantAdresse,
+          zahlungsziel: aiResult.zahlungsziel,
+          zahlungsart: aiResult.zahlungsart,
+          gesamtbetrag: aiResult.gesamtbetrag,
+          mwstSatz: aiResult.mwstSatz,
+          rechnungspositionen: aiResult.rechnungspositionen || [],
+          kundenNummer: aiResult.kundenNummer,
+          bestellNummer: aiResult.bestellNummer,
+          isPaidByAI: aiResult.isPaid,
         };
         
         if (!erpMode) {
@@ -124,31 +158,55 @@ export function IncomingInvoicesPageContent() {
         }
 
         if (erpMode) {
-          let finalLieferantName = extractionResult.lieferantName;
-          if (extractionResult.lieferantName && supplierMap[extractionResult.lieferantName]) {
-            finalLieferantName = supplierMap[extractionResult.lieferantName];
-          }
-
-          const postingDateERP = formatDateForERP(extractionResult.datum);
-          let dueDateERP = undefined;
-          const zahlungszielLower = (extractionResult.zahlungsziel || '').toLowerCase();
-          const zahlungsartLower = (extractionResult.zahlungsart || '').toLowerCase();
-          
-          if (postingDateERP) { // Only set due date if posting date is valid
-            if (zahlungszielLower.includes('sofort') || zahlungsartLower === 'sofort') {
-              dueDateERP = postingDateERP;
+          // Resolve Lieferant Name using the map if AI returned something generic or needs mapping
+          let finalLieferantName = aiResult.lieferantName; // Default to AI's output
+          if (aiResult.lieferantName && supplierMap[aiResult.lieferantName.toUpperCase()]) { // Check map using uppercase for robustness
+            finalLieferantName = supplierMap[aiResult.lieferantName.toUpperCase()];
+          } else if (aiResult.lieferantName && Object.values(supplierMap).includes(aiResult.lieferantName)) {
+            // AI might have directly returned a valid ERPNext name
+            finalLieferantName = aiResult.lieferantName;
+          } else if (aiResult.lieferantName) {
+             // Attempt partial match for common variations if AI didn't map
+            const foundKey = Object.keys(supplierMap).find(key => aiResult.lieferantName?.toLowerCase().includes(key.toLowerCase()));
+            if (foundKey) {
+                finalLieferantName = supplierMap[foundKey];
+            } else {
+                // If still no match, and AI returned "UNBEKANNT", keep it. Otherwise, use AI's extraction.
+                // If AI didn't return UNBEKANNT but we can't map, we might want to flag it. For now, use AI's value or UNBEKANNT.
+                finalLieferantName = (aiResult.lieferantName === "UNBEKANNT" || !aiResult.lieferantName) ? "UNBEKANNT" : aiResult.lieferantName;
             }
-            // Placeholder for more complex due date logic (e.g., "14 Tage netto")
+          } else {
+            finalLieferantName = "UNBEKANNT";
           }
 
 
+          const postingDateERP = formatDateForERP(aiResult.datum);
+          const dueDateERP = calculateDueDate(postingDateERP, aiResult.zahlungsziel);
+          
+          let remarks = '';
+          if (aiResult.kundenNummer) remarks += `Kunden-Nr.: ${aiResult.kundenNummer}`;
+          if (aiResult.bestellNummer) remarks += `${remarks ? ' / ' : ''}Bestell-Nr.: ${aiResult.bestellNummer}`;
+
+          let istBezahltStatus: 0 | 1 = 0; // Default to Not Paid
+          const zahlungszielLower = (aiResult.zahlungsziel || '').toLowerCase();
+          const zahlungsartLower = (aiResult.zahlungsart || '').toLowerCase();
+
+          if (aiResult.isPaid === true) { // AI explicitly identified "Bezahlt"
+            istBezahltStatus = 1;
+          } else if (zahlungszielLower.includes('sofort') || zahlungsartLower === 'sofort' || zahlungsartLower === 'lastschrift' || zahlungsartLower.includes('paypal')) {
+            istBezahltStatus = 1;
+          }
+          
           const erpInvoice: ERPIncomingInvoiceItem = { 
             ...baseExtractedData,
-            lieferantName: finalLieferantName,
+            lieferantName: finalLieferantName === "UNBEKANNT" ? baseExtractedData.lieferantName : finalLieferantName, // Use original if mapped to UNBEKANNT
             datum: postingDateERP, 
-            billDate: postingDateERP,
-            dueDate: dueDateERP,
+            billDate: postingDateERP, // For ERPNext 'Complete'
+            dueDate: dueDateERP,     // For ERPNext 'Complete'
             wahrung: 'EUR', 
+            istBezahlt: istBezahltStatus, // For ERPNext 'Complete'
+            kontenrahmen: DEFAULT_KONTENRAHMEN, // For ERPNext 'Complete'
+            remarks: remarks.trim(), // For ERPNext 'Complete'
           };
           
           let year = new Date().getFullYear().toString();
@@ -162,17 +220,6 @@ export function IncomingInvoicesPageContent() {
           yearCounters[year]++;
           erpInvoice.erpNextInvoiceName = `ACC-PINV-${year}-${String(yearCounters[year]).padStart(5, '0')}`;
           
-          erpInvoice.istBezahlt = (
-            zahlungszielLower.includes('sofort') || 
-            zahlungsartLower === 'sofort' ||
-            zahlungsartLower === 'lastschrift' 
-          ) ? 1 : 0;
-          
-          if (finalLieferantName && kontenrahmenMap[finalLieferantName]) {
-            erpInvoice.kontenrahmen = kontenrahmenMap[finalLieferantName];
-          } else {
-            erpInvoice.kontenrahmen = '1740 - Verbindlichkeiten'; // Default fallback
-          }
           erpResults.push(erpInvoice);
         }
         
@@ -269,7 +316,7 @@ export function IncomingInvoicesPageContent() {
             <Info className="h-4 w-4 text-primary" />
             <AlertTitle className="text-primary font-semibold">Get Started</AlertTitle>
             <AlertDescription className="text-primary/80">
-              Upload one or more PDF files. Extracted details for each invoice will be shown below.
+              Upload one or more PDF files. Extracted details for each invoice will be shown below. Toggle ERP Vorlage Mode for ERPNext specific processing.
             </AlertDescription>
           </Alert>
         )}
@@ -307,3 +354,5 @@ export function IncomingInvoicesPageContent() {
     </div>
   );
 }
+
+    

@@ -11,6 +11,9 @@ export interface IncomingInvoiceData {
   gesamtbetrag?: number;
   mwstSatz?: string;
   rechnungspositionen: LineItem[];
+  kundenNummer?: string; // Added
+  bestellNummer?: string; // Added
+  isPaidByAI?: boolean; // Renamed from isPaid to avoid conflict with erpNextInvoice.istBezahlt
 }
 
 export interface IncomingInvoiceItem extends IncomingInvoiceData {
@@ -19,11 +22,12 @@ export interface IncomingInvoiceItem extends IncomingInvoiceData {
 
 export interface ERPIncomingInvoiceItem extends IncomingInvoiceItem {
   erpNextInvoiceName?: string; // For UI reference only
-  istBezahlt?: 0 | 1;
+  istBezahlt?: 0 | 1; // This is the final 0/1 for ERPNext
   kontenrahmen?: string;
   wahrung?: string; // e.g., EUR
   billDate?: string; // YYYY-MM-DD
   dueDate?: string; // YYYY-MM-DD
+  remarks?: string; // Added
 }
 
 export type IncomingProcessingStatus = 'idle' | 'processing' | 'success' | 'error';
