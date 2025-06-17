@@ -1,7 +1,7 @@
 
 'use client';
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { IncomingInvoiceUploadForm } from '@/components/incoming-invoices/IncomingInvoiceUploadForm';
 import { IncomingInvoiceCard } from '@/components/incoming-invoices/IncomingInvoiceCard';
 import { ERPInvoiceTable } from '@/components/incoming-invoices/ERPInvoiceTable';
@@ -16,6 +16,16 @@ import { extractIncomingInvoiceData, type ExtractIncomingInvoiceDataOutput } fro
 import type { IncomingInvoiceItem, ERPIncomingInvoiceItem, IncomingProcessingStatus } from '@/types/incoming-invoice';
 import { addDays, parseISO } from 'date-fns';
 
+const LOCAL_STORAGE_PAGE_CACHE_KEY = 'incomingInvoicesPageCache';
+const LOCAL_STORAGE_MATCHER_DATA_KEY = 'processedIncomingInvoicesForMatcher';
+
+interface IncomingInvoicesPageCache {
+  extractedInvoices: IncomingInvoiceItem[];
+  erpProcessedInvoices: ERPIncomingInvoiceItem[];
+  erpMode: boolean;
+  useMinimalErpExport: boolean;
+  status: IncomingProcessingStatus;
+}
 
 export function IncomingInvoicesPageContent() {
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
@@ -28,16 +38,53 @@ export function IncomingInvoicesPageContent() {
   const [erpMode, setErpMode] = useState(false);
   const [useMinimalErpExport, setUseMinimalErpExport] = useState(true);
 
+  useEffect(() => {
+    try {
+      const cachedDataString = localStorage.getItem(LOCAL_STORAGE_PAGE_CACHE_KEY);
+      if (cachedDataString) {
+        const cachedData: IncomingInvoicesPageCache = JSON.parse(cachedDataString);
+        if (cachedData.status === 'success') {
+          setExtractedInvoices(cachedData.extractedInvoices || []);
+          setErpProcessedInvoices(cachedData.erpProcessedInvoices || []);
+          setErpMode(cachedData.erpMode || false);
+          setUseMinimalErpExport(cachedData.useMinimalErpExport === undefined ? true : cachedData.useMinimalErpExport);
+          setStatus('success'); // Restore to success so UI reflects loaded data
+        }
+      }
+    } catch (error) {
+      console.error("Failed to load incoming invoices page cache from localStorage:", error);
+      localStorage.removeItem(LOCAL_STORAGE_PAGE_CACHE_KEY);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (status === 'success') {
+      try {
+        const cacheToSave: IncomingInvoicesPageCache = {
+          extractedInvoices,
+          erpProcessedInvoices,
+          erpMode,
+          useMinimalErpExport,
+          status,
+        };
+        localStorage.setItem(LOCAL_STORAGE_PAGE_CACHE_KEY, JSON.stringify(cacheToSave));
+      } catch (error) {
+        console.error("Failed to save incoming invoices page cache to localStorage:", error);
+      }
+    }
+  }, [extractedInvoices, erpProcessedInvoices, erpMode, useMinimalErpExport, status]);
+
+
   const supplierMap: Record<string, string> = {
     "LIDL": "Lidl",
-    "Lidl Digital Deutschland GmbH & Co. KG": "Lidl",
-    "GD Artlands eTrading GmbH": "GD Artlands eTrading GmbH",
+    "LIDL DIGITAL DEUTSCHLAND GMBH & CO. KG": "Lidl",
+    "GD ARTLANDS ETRADING GMBH": "GD Artlands eTrading GmbH",
     "RETOURA": "RETOURA",
-    "doitBau GmbH & Co.KG": "doitBau",
-    "Kaufland": "Kaufland",
+    "DOITBAU GMBH & CO.KG": "doitBau",
+    "KAUFLAND": "Kaufland",
     "ALDI": "ALDI E-Commerce",
     "FIRMA HANDLOWA KABIS BOZENA KEDZIORA": "FIRMA HANDLOWA KABIS BOZENA KEDZIORA",
-    "Zweco UG": "Zweco UG"
+    "ZWECO UG": "Zweco UG"
   };
 
   const DEFAULT_KONTENRAHMEN = "1740 - Verbindlichkeiten";
@@ -65,10 +112,17 @@ export function IncomingInvoicesPageContent() {
     
     let invoiceDate: Date;
     try {
-        invoiceDate = parseISO(invoiceDateStr); // Expects YYYY-MM-DD
-         if (isNaN(invoiceDate.getTime())) return invoiceDateStr;
+        invoiceDate = parseISO(invoiceDateStr); 
+         if (isNaN(invoiceDate.getTime())) { // Check if parseISO resulted in a valid date
+            // Try parsing DD.MM.YYYY if YYYY-MM-DD failed or was not the input format
+            const parts = invoiceDateStr.match(/(\d{2})\.(\d{2})\.(\d{4})/);
+            if (parts) {
+                invoiceDate = parseISO(`${parts[3]}-${parts[2]}-${parts[1]}`);
+            }
+            if (isNaN(invoiceDate.getTime())) return invoiceDateStr; // Still invalid
+         }
     } catch (e) {
-        return invoiceDateStr; // Return original if parsing fails
+        return invoiceDateStr; 
     }
 
     const termLower = paymentTerm.toLowerCase();
@@ -97,26 +151,27 @@ export function IncomingInvoicesPageContent() {
     setErrorMessage(null);
     setProgressValue(0);
     setCurrentFileProgress('');
+    localStorage.removeItem(LOCAL_STORAGE_PAGE_CACHE_KEY); 
+    localStorage.removeItem(LOCAL_STORAGE_MATCHER_DATA_KEY);
   }, []);
 
   const resetStateOnModeChange = () => {
     const hasProcessedResults = extractedInvoices.length > 0 || erpProcessedInvoices.length > 0;
 
     if (hasProcessedResults) {
-      // If results from a previous processing exist, clear everything, including file selection
       setSelectedFiles([]); 
       setExtractedInvoices([]);
       setErpProcessedInvoices([]);
-      localStorage.removeItem('processedIncomingInvoicesForMatcher');
+      localStorage.removeItem(LOCAL_STORAGE_MATCHER_DATA_KEY);
+      localStorage.removeItem(LOCAL_STORAGE_PAGE_CACHE_KEY);
+    } else {
+       // If no results, but files were selected, do not clear selectedFiles
+       // This allows toggling ERP mode before processing
     }
-    // Always reset status and progress indicators, regardless of whether files were selected or results existed.
-    // This prepares for a fresh processing attempt if the user proceeds.
     setStatus('idle');
     setCurrentFileProgress('');
     setProgressValue(0);
     setErrorMessage(null);
-    // If no results, localStorage doesn't need clearing or is already clear from handleFilesSelected/initial state.
-    // If there were results, it's cleared above.
   }
 
   const handleProcessFiles = async () => {
@@ -144,7 +199,6 @@ export function IncomingInvoicesPageContent() {
         const dataUri = await readFileAsDataURL(file);
         const aiResult: ExtractIncomingInvoiceDataOutput = await extractIncomingInvoiceData({ invoiceDataUri: dataUri }, {model: 'googleai/gemini-1.5-flash-latest'});
         
-        // --- Start: Common processing for all invoices to prepare ERPIncomingInvoiceItem for Bank Matcher ---
         let finalLieferantName = aiResult.lieferantName;
         if (aiResult.lieferantName && supplierMap[aiResult.lieferantName.toUpperCase()]) {
           finalLieferantName = supplierMap[aiResult.lieferantName.toUpperCase()];
@@ -171,9 +225,10 @@ export function IncomingInvoicesPageContent() {
         let istBezahltStatus: 0 | 1 = 0;
         const zahlungszielLower = (aiResult.zahlungsziel || '').toLowerCase();
         const zahlungsartLower = (aiResult.zahlungsart || '').toLowerCase();
-        if (aiResult.isPaidByAI === true) { // Changed from aiResult.isPaid to aiResult.isPaidByAI
+        
+        if (aiResult.isPaidByAI === true) {
           istBezahltStatus = 1;
-        } else if (zahlungszielLower.includes('sofort') || zahlungsartLower === 'sofort' || zahlungsartLower === 'lastschrift' || zahlungsartLower.includes('paypal')) {
+        } else if (zahlungszielLower.includes('sofort') || zahlungsartLower === 'sofort' || zahlungsartLower === 'lastschrift' || zahlungsartLower.includes('paypal') || zahlungsartLower.includes('paid')) {
           istBezahltStatus = 1;
         }
         
@@ -196,7 +251,7 @@ export function IncomingInvoicesPageContent() {
           rechnungspositionen: aiResult.rechnungspositionen || [],
           kundenNummer: aiResult.kundenNummer,
           bestellNummer: aiResult.bestellNummer,
-          isPaidByAI: aiResult.isPaidByAI, // Changed from isPaid
+          isPaidByAI: aiResult.isPaidByAI,
           erpNextInvoiceName: erpNextInvoiceNameGenerated,
           billDate: postingDateERP,
           dueDate: dueDateERP,
@@ -206,7 +261,6 @@ export function IncomingInvoicesPageContent() {
           remarks: remarks.trim(),
         };
         allProcessedForMatcher.push(erpCompatibleInvoice);
-        // --- End: Common processing ---
 
         if (erpMode) {
           erpResultsDisplay.push(erpCompatibleInvoice);
@@ -224,7 +278,7 @@ export function IncomingInvoicesPageContent() {
               rechnungspositionen: aiResult.rechnungspositionen || [],
               kundenNummer: aiResult.kundenNummer,
               bestellNummer: aiResult.bestellNummer,
-              isPaidByAI: aiResult.isPaidByAI, // Changed from isPaid
+              isPaidByAI: aiResult.isPaidByAI, 
           });
         }
         
@@ -234,8 +288,8 @@ export function IncomingInvoicesPageContent() {
       setExtractedInvoices(regularResultsDisplay);
       setErpProcessedInvoices(erpResultsDisplay);
       
-      localStorage.setItem('processedIncomingInvoicesForMatcher', JSON.stringify(allProcessedForMatcher));
-      setStatus('success');
+      localStorage.setItem(LOCAL_STORAGE_MATCHER_DATA_KEY, JSON.stringify(allProcessedForMatcher));
+      setStatus('success'); // This will trigger the useEffect to save page cache
       setCurrentFileProgress('Processing complete!');
 
     } catch (error) {
@@ -276,7 +330,7 @@ export function IncomingInvoicesPageContent() {
               checked={erpMode}
               onCheckedChange={(checked) => {
                 setErpMode(checked);
-                resetStateOnModeChange();
+                resetStateOnModeChange(); 
               }}
               disabled={status === 'processing'}
             />
@@ -322,7 +376,7 @@ export function IncomingInvoicesPageContent() {
             <Info className="h-4 w-4 text-primary" />
             <AlertTitle className="text-primary font-semibold">Get Started</AlertTitle>
             <AlertDescription className="text-primary/80">
-              Upload one or more PDF files. Extracted details for each invoice will be shown below. Toggle ERP Vorlage Mode for ERPNext specific processing. Data will be saved for the Bank Matcher.
+              Upload one or more PDF files. Extracted details for each invoice will be shown below. Toggle ERP Vorlage Mode for ERPNext specific processing. Processed data is saved for the Bank Matcher.
             </AlertDescription>
           </Alert>
         )}
@@ -344,7 +398,7 @@ export function IncomingInvoicesPageContent() {
           </div>
         )}
 
-         {status === 'success' && displayInvoices.length === 0 && (
+         {status === 'success' && displayInvoices.length === 0 && selectedFiles.length > 0 && (
            <Alert className="my-6">
             <Info className="h-4 w-4" />
             <AlertTitle>No Data Extracted</AlertTitle>
@@ -360,4 +414,6 @@ export function IncomingInvoicesPageContent() {
     </div>
   );
 }
+    
+
     
