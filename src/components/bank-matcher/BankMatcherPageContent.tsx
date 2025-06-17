@@ -15,6 +15,7 @@ import { Progress } from '@/components/ui/progress';
 import { readFileAsDataURL } from '@/lib/file-helpers';
 import { extractBankStatementData, type BankTransactionAI } from '@/ai/flows/extract-bank-statement-data';
 import { v4 as uuidv4 } from 'uuid';
+import { BankMatcherActionButtons } from './BankMatcherActionButtons'; // Import the new component
 
 const LOCAL_STORAGE_MATCHER_DATA_KEY = 'processedIncomingInvoicesForMatcher';
 
@@ -97,7 +98,7 @@ export function BankMatcherPageContent() {
         const aiResult = await extractBankStatementData({ statementDataUri: dataUri }, {model: 'googleai/gemini-1.5-flash-latest'});
         
         parsedTxFromSource = (aiResult.transactions || []).map((tx: BankTransactionAI) => ({
-          id: tx.id || uuidv4(), // Ensure ID is always present
+          id: tx.id || uuidv4(), 
           date: tx.date,
           description: tx.description || '',
           amount: typeof tx.amount === 'number' ? tx.amount : 0,
@@ -260,68 +261,71 @@ export function BankMatcherPageContent() {
 
 
         {matchedTransactions.length > 0 && !isProcessing && (
-          <Card className="mt-8 shadow-lg">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 font-headline">
-                <ListChecks className="w-6 h-6 text-primary" />
-                Matching Results
-              </CardTitle>
-              <CardDescription>Review the matched and unmatched bank transactions.</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {matchedTransactions.map((match) => (
-                  <Card key={match.transaction.id} className={`border-l-4 ${getMatchStatusColorClasses(match.status)}`}>
-                    <CardHeader className="pb-3 pt-4 px-4">
-                      <div className="flex justify-between items-start">
-                        <div>
-                            <CardTitle className="text-base leading-tight">
-                            {match.transaction.description || 'N/A'}
-                            </CardTitle>
-                            <CardDescription className="text-xs mt-0.5">
-                                Tx Date: {new Date(match.transaction.date).toLocaleDateString()} | Payer/Recipient: {match.transaction.recipientOrPayer || 'N/A'}
-                            </CardDescription>
+          <>
+            <BankMatcherActionButtons matchedTransactions={matchedTransactions} />
+            <Card className="mt-8 shadow-lg">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 font-headline">
+                  <ListChecks className="w-6 h-6 text-primary" />
+                  Matching Results
+                </CardTitle>
+                <CardDescription>Review the matched and unmatched bank transactions.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {matchedTransactions.map((match) => (
+                    <Card key={match.transaction.id} className={`border-l-4 ${getMatchStatusColorClasses(match.status)}`}>
+                      <CardHeader className="pb-3 pt-4 px-4">
+                        <div className="flex justify-between items-start">
+                          <div>
+                              <CardTitle className="text-base leading-tight">
+                              {match.transaction.description || 'N/A'}
+                              </CardTitle>
+                              <CardDescription className="text-xs mt-0.5">
+                                  Tx Date: {new Date(match.transaction.date).toLocaleDateString()} | Payer/Recipient: {match.transaction.recipientOrPayer || 'N/A'}
+                              </CardDescription>
+                          </div>
+                          <div className={`text-right ml-2 flex-shrink-0`}>
+                               <span className={`px-2.5 py-1 rounded-full text-xs font-semibold shadow-sm ${getMatchStatusColorClasses(match.status)}`}>
+                                  {match.status}
+                               </span>
+                              {match.confidence !== undefined && match.confidence > 0 && (
+                                   <p className="text-xs text-muted-foreground mt-1 flex items-center justify-end">
+                                      <Percent className="inline h-3 w-3 mr-0.5" /> {(match.confidence * 100).toFixed(0)}%
+                                   </p>
+                              )}
+                          </div>
                         </div>
-                        <div className={`text-right ml-2 flex-shrink-0`}>
-                             <span className={`px-2.5 py-1 rounded-full text-xs font-semibold shadow-sm ${getMatchStatusColorClasses(match.status)}`}>
-                                {match.status}
-                             </span>
-                            {match.confidence !== undefined && match.confidence > 0 && (
-                                 <p className="text-xs text-muted-foreground mt-1 flex items-center justify-end">
-                                    <Percent className="inline h-3 w-3 mr-0.5" /> {(match.confidence * 100).toFixed(0)}%
-                                 </p>
-                            )}
-                        </div>
-                      </div>
-                       <p className="text-lg font-semibold text-foreground mt-1">
-                         <Banknote className="inline h-5 w-5 mr-1 text-primary/80" /> 
-                         {match.transaction.amount.toFixed(2)} {match.transaction.currency || 'EUR'}
-                       </p>
-                    </CardHeader>
-                    {match.matchedInvoice && (
-                        <CardContent className="px-4 pb-4 pt-0 border-t border-border/60">
-                        <p className="text-sm font-medium mt-2 mb-1 text-primary">Matched Invoice:</p>
-                        <div className="text-xs space-y-0.5 text-muted-foreground">
-                            <p><strong>Ref:</strong> {match.matchedInvoice.rechnungsnummer || 'N/A'}</p>
-                            <p><strong>Supplier:</strong> {match.matchedInvoice.lieferantName || 'N/A'}</p>
-                            <p><strong>Inv. Date:</strong> {match.matchedInvoice.datum ? new Date(match.matchedInvoice.datum).toLocaleDateString() : 'N/A'}</p>
-                            <p><strong>Inv. Total:</strong> {match.matchedInvoice.gesamtbetrag?.toFixed(2) || 'N/A'} {match.matchedInvoice.wahrung || 'EUR'}</p>
-                            <p><strong>File:</strong> {match.matchedInvoice.pdfFileName || 'N/A'}</p>
-                        </div>
-                        </CardContent>
-                    )}
-                    {match.status !== 'Matched' && !match.matchedInvoice && (
-                         <CardContent className="px-4 pb-3 pt-2">
-                            <p className="text-sm text-muted-foreground italic">
-                                {match.transaction.amount >=0 ? "Income transaction or not a payment." : "No suitable invoice found based on current criteria."}
-                            </p>
-                         </CardContent>
-                    )}
-                  </Card>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
+                         <p className="text-lg font-semibold text-foreground mt-1">
+                           <Banknote className="inline h-5 w-5 mr-1 text-primary/80" /> 
+                           {match.transaction.amount.toFixed(2)} {match.transaction.currency || 'EUR'}
+                         </p>
+                      </CardHeader>
+                      {match.matchedInvoice && (
+                          <CardContent className="px-4 pb-4 pt-0 border-t border-border/60">
+                          <p className="text-sm font-medium mt-2 mb-1 text-primary">Matched Invoice:</p>
+                          <div className="text-xs space-y-0.5 text-muted-foreground">
+                              <p><strong>Ref:</strong> {match.matchedInvoice.rechnungsnummer || 'N/A'}</p>
+                              <p><strong>Supplier:</strong> {match.matchedInvoice.lieferantName || 'N/A'}</p>
+                              <p><strong>Inv. Date:</strong> {match.matchedInvoice.datum ? new Date(match.matchedInvoice.datum).toLocaleDateString() : 'N/A'}</p>
+                              <p><strong>Inv. Total:</strong> {match.matchedInvoice.gesamtbetrag?.toFixed(2) || 'N/A'} {match.matchedInvoice.wahrung || 'EUR'}</p>
+                              <p><strong>File:</strong> {match.matchedInvoice.pdfFileName || 'N/A'}</p>
+                          </div>
+                          </CardContent>
+                      )}
+                      {match.status !== 'Matched' && !match.matchedInvoice && (
+                           <CardContent className="px-4 pb-3 pt-2">
+                              <p className="text-sm text-muted-foreground italic">
+                                  {match.transaction.amount >=0 ? "Income transaction or not a payment." : "No suitable invoice found based on current criteria."}
+                              </p>
+                           </CardContent>
+                      )}
+                    </Card>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          </>
         )}
         {!isProcessing && !bankStatementFile && bankTransactions.length > 0 && (
             <Alert className="my-6">
