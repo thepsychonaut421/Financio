@@ -72,7 +72,7 @@ const prompt = ai.definePrompt({
   name: 'extractInvoiceDataPrompt',
   input: {schema: ExtractInvoiceDataInputSchema},
   output: {schema: ExtractInvoiceDataOutputSchema},
-  model: 'googleai/gemini-1.5-flash-latest', // Explicitly set model
+  // Removed model property, will use global default from src/ai/genkit.ts
   prompt: `You are an expert in extracting data from invoices.
 
 You will receive an invoice as a data URI. Extract the following information from the invoice:
@@ -99,4 +99,3 @@ const extractInvoiceDataFlow = ai.defineFlow(
     return output!;
   }
 );
-

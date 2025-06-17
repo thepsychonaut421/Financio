@@ -103,7 +103,7 @@ const prompt = ai.definePrompt({
   name: 'extractBankStatementDataPrompt',
   input: {schema: ExtractBankStatementDataInputSchema},
   output: {schema: ExtractBankStatementDataOutputSchema},
-  model: 'googleai/gemini-2.0-flash', // Explicitly defining model as per guidelines
+  // Removed model property, will use global default from src/ai/genkit.ts
   prompt: `You are an expert AI assistant specialized in extracting transaction data from German bank statements (Kontoauszüge) provided as PDF data.
 You will receive a bank statement as a data URI. Extract all individual transactions listed. For each transaction, provide the following information:
 
@@ -133,4 +133,3 @@ const extractBankStatementDataFlow = ai.defineFlow(
     return output!;
   }
 );
-
