@@ -1,3 +1,4 @@
+
 'use client';
 
 import { Button } from '@/components/ui/button';
@@ -13,7 +14,7 @@ import type { IncomingInvoiceItem, ERPIncomingInvoiceItem } from '@/types/incomi
 import { Copy, FileJson, FileSpreadsheet } from 'lucide-react';
 
 interface IncomingInvoiceActionButtonsProps {
-  invoices: IncomingInvoiceItem[] | ERPIncomingInvoiceItem[]; // Can be either type
+  invoices: IncomingInvoiceItem[] | ERPIncomingInvoiceItem[];
   erpMode: boolean;
 }
 
@@ -25,11 +26,11 @@ export function IncomingInvoiceActionButtons({ invoices, erpMode }: IncomingInvo
       toast({ title: "No data", description: "There is no invoice data to copy.", variant: "destructive" });
       return;
     }
-    // For simplicity, TSV copy remains consistent for both modes, adjust if ERP mode needs different clipboard format
-    const tsvData = incomingInvoicesToTSV(invoices as IncomingInvoiceItem[]); // Cast for now
+    
+    const tsvData = incomingInvoicesToTSV(invoices, erpMode);
     try {
       await navigator.clipboard.writeText(tsvData);
-      toast({ title: "Copied to clipboard!", description: `Data for ${invoices.length} invoice(s) copied successfully.` });
+      toast({ title: "Copied to clipboard!", description: `Data for ${invoices.length} invoice(s) copied successfully in ${erpMode ? 'ERP' : 'standard'} format.` });
     } catch (err) {
       toast({ title: "Copy failed", description: "Could not copy data to clipboard.", variant: "destructive" });
       console.error('Failed to copy: ', err);
@@ -41,7 +42,7 @@ export function IncomingInvoiceActionButtons({ invoices, erpMode }: IncomingInvo
       toast({ title: "No data", description: "There is no invoice data to export.", variant: "destructive" });
       return;
     }
-    const jsonData = incomingInvoicesToJSON(invoices); // Works for both types due to structure
+    const jsonData = incomingInvoicesToJSON(invoices); 
     const fileName = erpMode ? 'erp_extracted_incoming_invoices.json' : 'extracted_incoming_invoices.json';
     downloadFile(jsonData, fileName, 'application/json;charset=utf-8;');
     toast({ title: "JSON Exported", description: `Data for ${invoices.length} invoice(s) exported to JSON.` });
@@ -74,7 +75,7 @@ export function IncomingInvoiceActionButtons({ invoices, erpMode }: IncomingInvo
     <div className="my-6 flex flex-col sm:flex-row justify-center items-center gap-3 sm:gap-4">
       <Button onClick={handleCopyToClipboard} variant="outline" className="w-full sm:w-auto">
         <Copy className="mr-2 h-4 w-4" />
-        Copy All to Clipboard
+        Copy All to Clipboard {erpMode ? "(ERP Format)" : ""}
       </Button>
       <Button onClick={handleExportJSON} variant="outline" className="w-full sm:w-auto">
         <FileJson className="mr-2 h-4 w-4" />
@@ -87,3 +88,5 @@ export function IncomingInvoiceActionButtons({ invoices, erpMode }: IncomingInvo
     </div>
   );
 }
+
+    

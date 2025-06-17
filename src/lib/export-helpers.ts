@@ -1,3 +1,4 @@
+
 import type { IncomingInvoiceItem, ERPIncomingInvoiceItem } from '@/types/incoming-invoice';
 
 export function downloadFile(content: string, fileName: string, mimeType: string): void {
@@ -74,7 +75,6 @@ export function incomingInvoicesToERPNextCSV(invoices: ERPIncomingInvoiceItem[])
   if (!invoices || invoices.length === 0) return '';
 
   const headers = [
-    "ERPNext Invoice Name",       // erpNextInvoiceName
     "Supplier Invoice No",        // rechnungsnummer
     "Posting Date",               // datum (format YYYY-MM-DD)
     "Supplier",                   // lieferantName
@@ -85,6 +85,7 @@ export function incomingInvoicesToERPNextCSV(invoices: ERPIncomingInvoiceItem[])
     "Total Taxes and Charges",    // mwstSatz (could be enhanced to calculate value)
     "Is Paid",                    // istBezahlt (0 or 1)
     "Accounts Payable",           // kontenrahmen
+    "Currency",                   // wahrung (e.g., EUR)
     "PDF File Name",              // pdfFileName
     "Item Code",                  // rechnungspositionen.productCode
     "Item Name",                  // rechnungspositionen.productName
@@ -95,20 +96,17 @@ export function incomingInvoicesToERPNextCSV(invoices: ERPIncomingInvoiceItem[])
   let csvString = headers.join(',') + '\n';
 
   invoices.forEach((invoice) => {
-    // Format date to YYYY-MM-DD for ERPNext
     let postingDate = invoice.datum || '';
     if (invoice.datum) {
-        const dateParts = invoice.datum.match(/(\d{2})\.(\d{2})\.(\d{4})/); // DD.MM.YYYY
+        const dateParts = invoice.datum.match(/(\d{2})\.(\d{2})\.(\d{4})/); 
         if (dateParts && dateParts[3] && dateParts[2] && dateParts[1]) {
             postingDate = `${dateParts[3]}-${dateParts[2]}-${dateParts[1]}`;
-        } else if (!invoice.datum.match(/^\d{4}-\d{2}-\d{2}$/)) { // If not already YYYY-MM-DD
-            postingDate = invoice.datum; // keep original if no match
+        } else if (!invoice.datum.match(/^\d{4}-\d{2}-\d{2}$/)) {
+            postingDate = invoice.datum; 
         }
     }
 
-
     const mainInvoiceData = [
-      escapeCSVField(invoice.erpNextInvoiceName),
       escapeCSVField(invoice.rechnungsnummer),
       escapeCSVField(postingDate),
       escapeCSVField(invoice.lieferantName),
@@ -116,9 +114,10 @@ export function incomingInvoicesToERPNextCSV(invoices: ERPIncomingInvoiceItem[])
       escapeCSVField(invoice.zahlungsziel),
       escapeCSVField(invoice.zahlungsart),
       invoice.gesamtbetrag?.toString() ?? '',
-      escapeCSVField(invoice.mwstSatz), // This is the rate, not the value. ERPNext might expect the actual tax amount.
+      escapeCSVField(invoice.mwstSatz), 
       invoice.istBezahlt?.toString() ?? '0',
       escapeCSVField(invoice.kontenrahmen),
+      escapeCSVField(invoice.wahrung || 'EUR'),
       escapeCSVField(invoice.pdfFileName),
     ];
 
@@ -130,11 +129,9 @@ export function incomingInvoicesToERPNextCSV(invoices: ERPIncomingInvoiceItem[])
           item.quantity.toString(),
           item.unitPrice.toString(),
         ];
-        // Repeat main invoice data for each item line
         csvString += mainInvoiceData.join(',') + ',' + itemData.join(',') + '\n';
       });
     } else {
-      // If no line items, still write the main invoice data with empty item columns
       csvString += mainInvoiceData.join(',') + ',,,,\n'; 
     }
   });
@@ -152,50 +149,100 @@ function escapeTSVField(field: string | number | undefined | null): string {
   return String(field).replace(/\t/g, ' ').replace(/\n/g, ' ');
 }
 
-export function incomingInvoicesToTSV(invoices: IncomingInvoiceItem[]): string {
+export function incomingInvoicesToTSV(invoices: IncomingInvoiceItem[] | ERPIncomingInvoiceItem[], erpMode: boolean): string {
   if (!invoices || invoices.length === 0) return '';
 
-  const mainHeaders = [
-    'PDF Datei',
-    'Rechnungsnummer',
-    'Datum',
-    'Lieferant Name',
-    'Lieferant Adresse',
-    'Zahlungsziel',
-    'Zahlungsart',
-    'Gesamtbetrag',
-    'MwSt-Satz',
-  ];
-  const itemHeaders = ['Pos. Produkt Code', 'Pos. Produkt Name', 'Pos. Menge', 'Pos. Einzelpreis'];
-  
-  let tsvString = mainHeaders.join('\t') + '\t' + itemHeaders.join('\t') + '\n';
+  let tsvString = '';
 
-  invoices.forEach((invoice) => {
-    const mainInvoiceData = [
-      escapeTSVField(invoice.pdfFileName),
-      escapeTSVField(invoice.rechnungsnummer),
-      escapeTSVField(invoice.datum),
-      escapeTSVField(invoice.lieferantName),
-      escapeTSVField(invoice.lieferantAdresse),
-      escapeTSVField(invoice.zahlungsziel),
-      escapeTSVField(invoice.zahlungsart),
-      invoice.gesamtbetrag?.toString() ?? '',
-      escapeTSVField(invoice.mwstSatz),
+  if (erpMode) {
+    const erpInvoices = invoices as ERPIncomingInvoiceItem[];
+    const headers = [
+      "Supplier Invoice No", "Posting Date", "Supplier", "Supplier Address", 
+      "Payment Terms Template", "Payment Method", "Grand Total", "Total Taxes and Charges", 
+      "Is Paid", "Accounts Payable", "Currency", "PDF File Name", 
+      "Item Code", "Item Name", "Qty", "Rate"
     ];
+    tsvString = headers.join('\t') + '\n';
 
-    if (invoice.rechnungspositionen && invoice.rechnungspositionen.length > 0) {
-      invoice.rechnungspositionen.forEach(item => {
-        const itemData = [
-          escapeTSVField(item.productCode),
-          escapeTSVField(item.productName),
-          item.quantity.toString(),
-          item.unitPrice.toString(),
-        ];
-        tsvString += mainInvoiceData.join('\t') + '\t' + itemData.join('\t') + '\n';
-      });
-    } else {
-      tsvString += mainInvoiceData.join('\t') + '\t\t\t\t\n';
-    }
-  });
+    erpInvoices.forEach((invoice) => {
+      let postingDate = invoice.datum || '';
+      if (invoice.datum) {
+          const dateParts = invoice.datum.match(/(\d{2})\.(\d{2})\.(\d{4})/);
+          if (dateParts && dateParts[3] && dateParts[2] && dateParts[1]) {
+              postingDate = `${dateParts[3]}-${dateParts[2]}-${dateParts[1]}`;
+          } else if (!invoice.datum.match(/^\d{4}-\d{2}-\d{2}$/)) {
+              postingDate = invoice.datum;
+          }
+      }
+
+      const mainInvoiceData = [
+        escapeTSVField(invoice.rechnungsnummer),
+        escapeTSVField(postingDate),
+        escapeTSVField(invoice.lieferantName),
+        escapeTSVField(invoice.lieferantAdresse),
+        escapeTSVField(invoice.zahlungsziel),
+        escapeTSVField(invoice.zahlungsart),
+        invoice.gesamtbetrag?.toString() ?? '',
+        escapeTSVField(invoice.mwstSatz),
+        invoice.istBezahlt?.toString() ?? '0',
+        escapeTSVField(invoice.kontenrahmen),
+        escapeTSVField(invoice.wahrung || 'EUR'),
+        escapeTSVField(invoice.pdfFileName),
+      ];
+
+      if (invoice.rechnungspositionen && invoice.rechnungspositionen.length > 0) {
+        invoice.rechnungspositionen.forEach(item => {
+          const itemData = [
+            escapeTSVField(item.productCode),
+            escapeTSVField(item.productName),
+            item.quantity.toString(),
+            item.unitPrice.toString(),
+          ];
+          tsvString += mainInvoiceData.join('\t') + '\t' + itemData.join('\t') + '\n';
+        });
+      } else {
+        tsvString += mainInvoiceData.join('\t') + '\t\t\t\t\n';
+      }
+    });
+
+  } else {
+    const regularInvoices = invoices as IncomingInvoiceItem[];
+    const mainHeaders = [
+      'PDF Datei', 'Rechnungsnummer', 'Datum', 'Lieferant Name', 'Lieferant Adresse',
+      'Zahlungsziel', 'Zahlungsart', 'Gesamtbetrag', 'MwSt-Satz',
+    ];
+    const itemHeaders = ['Pos. Produkt Code', 'Pos. Produkt Name', 'Pos. Menge', 'Pos. Einzelpreis'];
+    tsvString = mainHeaders.join('\t') + '\t' + itemHeaders.join('\t') + '\n';
+
+    regularInvoices.forEach((invoice) => {
+      const mainInvoiceData = [
+        escapeTSVField(invoice.pdfFileName),
+        escapeTSVField(invoice.rechnungsnummer),
+        escapeTSVField(invoice.datum),
+        escapeTSVField(invoice.lieferantName),
+        escapeTSVField(invoice.lieferantAdresse),
+        escapeTSVField(invoice.zahlungsziel),
+        escapeTSVField(invoice.zahlungsart),
+        invoice.gesamtbetrag?.toString() ?? '',
+        escapeTSVField(invoice.mwstSatz),
+      ];
+
+      if (invoice.rechnungspositionen && invoice.rechnungspositionen.length > 0) {
+        invoice.rechnungspositionen.forEach(item => {
+          const itemData = [
+            escapeTSVField(item.productCode),
+            escapeTSVField(item.productName),
+            item.quantity.toString(),
+            item.unitPrice.toString(),
+          ];
+          tsvString += mainInvoiceData.join('\t') + '\t' + itemData.join('\t') + '\n';
+        });
+      } else {
+        tsvString += mainInvoiceData.join('\t') + '\t\t\t\t\n';
+      }
+    });
+  }
   return tsvString;
 }
+
+    

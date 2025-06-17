@@ -1,3 +1,4 @@
+
 import type { ExtractedItem as LineItem } from '@/ai/schemas/invoice-item-schema';
 
 export interface IncomingInvoiceData {
@@ -17,9 +18,12 @@ export interface IncomingInvoiceItem extends IncomingInvoiceData {
 }
 
 export interface ERPIncomingInvoiceItem extends IncomingInvoiceItem {
-  erpNextInvoiceName?: string;
+  erpNextInvoiceName?: string; // For UI reference only
   istBezahlt?: 0 | 1;
   kontenrahmen?: string;
+  wahrung?: string; // e.g., EUR
 }
 
 export type IncomingProcessingStatus = 'idle' | 'processing' | 'success' | 'error';
+
+    

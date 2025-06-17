@@ -1,3 +1,4 @@
+
 'use client';
 
 import type { ERPIncomingInvoiceItem } from '@/types/incoming-invoice';
@@ -5,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableCaption } from '@/components/ui/table';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Badge } from '@/components/ui/badge';
-import { FileSpreadsheet, FileText, AlertTriangle } from 'lucide-react';
+import { FileSpreadsheet, AlertTriangle, Landmark } from 'lucide-react';
 
 interface ERPInvoiceTableProps {
   invoices: ERPIncomingInvoiceItem[];
@@ -23,9 +24,9 @@ const DetailItem: React.FC<{ label: string; value?: string | number | null; isBa
 
 export function ERPInvoiceTable({ invoices }: ERPInvoiceTableProps) {
   
-  const formatCurrency = (value: number | undefined) => {
+  const formatCurrency = (value: number | undefined, currency?: string) => {
     if (value === undefined) return 'N/A';
-    return new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(value);
+    return new Intl.NumberFormat('de-DE', { style: 'currency', currency: currency || 'EUR' }).format(value);
   }
 
   const formatDateForERP = (dateString?: string) => {
@@ -75,10 +76,10 @@ export function ERPInvoiceTable({ invoices }: ERPInvoiceTableProps) {
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between w-full">
                   <div className='text-left'>
                     <span className="font-semibold text-primary text-base block">
-                      {invoice.erpNextInvoiceName || 'N/A'}
+                      {invoice.rechnungsnummer || 'N/A'}
                     </span>
                     <span className="text-xs text-muted-foreground block">
-                       (Source: {invoice.pdfFileName} - Rechnungsnr: {invoice.rechnungsnummer || 'N/A'})
+                       (Source: {invoice.pdfFileName} - ERP Ref: {invoice.erpNextInvoiceName || 'N/A'})
                     </span>
                   </div>
                   <Badge variant={invoice.istBezahlt === 1 ? 'default' : 'outline'} className="mt-2 sm:mt-0">
@@ -88,17 +89,18 @@ export function ERPInvoiceTable({ invoices }: ERPInvoiceTableProps) {
               </AccordionTrigger>
               <AccordionContent className="px-4 pb-4 space-y-3">
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-2 p-3 border rounded-md bg-background/70">
-                  <DetailItem label="ERPNext Invoice Name" value={invoice.erpNextInvoiceName} isBadge />
+                  <DetailItem label="ERP Ref. (UI)" value={invoice.erpNextInvoiceName} isBadge />
                   <DetailItem label="Supplier Invoice No" value={invoice.rechnungsnummer} />
                   <DetailItem label="Posting Date (ERP)" value={formatDateForERP(invoice.datum)} />
                   <DetailItem label="Supplier" value={invoice.lieferantName} />
                   <DetailItem label="Supplier Address" value={invoice.lieferantAdresse} />
                   <DetailItem label="Payment Terms" value={invoice.zahlungsziel} />
                   <DetailItem label="Payment Method" value={invoice.zahlungsart} />
-                  <DetailItem label="Grand Total" value={formatCurrency(invoice.gesamtbetrag)} />
+                  <DetailItem label="Grand Total" value={formatCurrency(invoice.gesamtbetrag, invoice.wahrung)} />
                   <DetailItem label="VAT Rate" value={invoice.mwstSatz} />
                   <DetailItem label="Is Paid" value={invoice.istBezahlt === 1 ? 'Yes (1)' : 'No (0)'} />
                   <DetailItem label="Accounts Payable" value={invoice.kontenrahmen} isBadge />
+                  <DetailItem label="Currency" value={invoice.wahrung} />
                   <DetailItem label="Original PDF" value={invoice.pdfFileName} />
                 </div>
 
@@ -121,7 +123,7 @@ export function ERPInvoiceTable({ invoices }: ERPInvoiceTableProps) {
                               <TableCell className="font-medium">{item.productCode || 'N/A'}</TableCell>
                               <TableCell>{item.productName || 'N/A'}</TableCell>
                               <TableCell className="text-right">{item.quantity ?? 'N/A'}</TableCell>
-                              <TableCell className="text-right">{formatCurrency(item.unitPrice)}</TableCell>
+                              <TableCell className="text-right">{formatCurrency(item.unitPrice, invoice.wahrung)}</TableCell>
                             </TableRow>
                           ))}
                         </TableBody>
@@ -141,3 +143,6 @@ export function ERPInvoiceTable({ invoices }: ERPInvoiceTableProps) {
     </Card>
   );
 }
+
+
+    
