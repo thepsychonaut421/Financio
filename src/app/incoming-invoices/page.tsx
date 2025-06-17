@@ -25,6 +25,13 @@ export default function IncomingInvoicesPage() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [erpMode, setErpMode] = useState(false);
 
+  const supplierMap: Record<string, string> = {
+    "ALDI E-Commerce GmbH & Co. KG": "ALDI",
+    "Baluata, Bayer Rem Ug": "BAYER REM UG",
+    "RETOURA GmbH": "RETOURA",
+    // Add more known long names to their ERP short names here
+  };
+
   const handleFilesSelected = useCallback((files: File[]) => {
     setSelectedFiles(files);
     setExtractedInvoices([]); 
@@ -57,28 +64,43 @@ export default function IncomingInvoicesPage() {
         const dataUri = await readFileAsDataURL(file);
         const extractionResult: ExtractIncomingInvoiceDataOutput = await extractIncomingInvoiceData({ invoiceDataUri: dataUri });
         
-        const baseInvoice: IncomingInvoiceItem = {
+        const baseExtractedData = {
           pdfFileName: file.name,
-          ...extractionResult,
+          rechnungsnummer: extractionResult.rechnungsnummer,
+          datum: extractionResult.datum,
+          lieferantAdresse: extractionResult.lieferantAdresse,
+          zahlungsziel: extractionResult.zahlungsziel,
+          zahlungsart: extractionResult.zahlungsart,
+          gesamtbetrag: extractionResult.gesamtbetrag,
+          mwstSatz: extractionResult.mwstSatz,
+          rechnungspositionen: extractionResult.rechnungspositionen || [],
         };
         
         if (!erpMode) {
-          regularResults.push(baseInvoice);
+          regularResults.push({
+            ...baseExtractedData,
+            lieferantName: extractionResult.lieferantName, // Original name for non-ERP mode
+          });
         }
 
         if (erpMode) {
+          let finalLieferantName = extractionResult.lieferantName;
+          if (extractionResult.lieferantName && supplierMap[extractionResult.lieferantName]) {
+            finalLieferantName = supplierMap[extractionResult.lieferantName];
+          }
+
           const erpInvoice: ERPIncomingInvoiceItem = { 
-            ...baseInvoice,
-            wahrung: 'EUR', // Default currency
+            ...baseExtractedData,
+            lieferantName: finalLieferantName, // Normalized or original supplier name
+            wahrung: 'EUR', 
           };
 
-          // Generate ERPNext Invoice Name for UI reference
           if (extractionResult.datum) {
-            const dateParts = extractionResult.datum.match(/(\d{2})\.(\d{2})\.(\d{4})/); // DD.MM.YYYY
+            const dateParts = extractionResult.datum.match(/(\d{2})\.(\d{2})\.(\d{4})/); 
             let year = new Date().getFullYear().toString();
             if (dateParts && dateParts[3]) {
               year = dateParts[3];
-            } else if (extractionResult.datum.match(/^\d{4}-\d{2}-\d{2}$/)) { // YYYY-MM-DD
+            } else if (extractionResult.datum.match(/^\d{4}-\d{2}-\d{2}$/)) { 
                 year = extractionResult.datum.substring(0,4);
             }
             
@@ -94,7 +116,6 @@ export default function IncomingInvoicesPage() {
             erpInvoice.erpNextInvoiceName = `ACC-PINV-${currentYear}-${String(yearCounters[currentYear]).padStart(5, '0')}`;
           }
 
-          // Determine Ist bezahlt
           const zahlungszielLower = (extractionResult.zahlungsziel || '').toLowerCase();
           const zahlungsartLower = (extractionResult.zahlungsart || '').toLowerCase();
           erpInvoice.istBezahlt = (
@@ -103,10 +124,12 @@ export default function IncomingInvoicesPage() {
             zahlungsartLower === 'lastschrift'
           ) ? 1 : 0;
           
-          // Determine Kontenrahmen
-          if (extractionResult.lieferantName && extractionResult.lieferantName.toLowerCase().includes('lidl')) {
+          if (finalLieferantName && finalLieferantName.toLowerCase().includes('lidl')) {
             erpInvoice.kontenrahmen = '1740 - Verbindlichkeiten';
-          } else {
+          } else if (finalLieferantName && finalLieferantName.toLowerCase().includes('aldi')) {
+             erpInvoice.kontenrahmen = '1740 - Verbindlichkeiten'; // Example, adjust as needed
+          }
+          else {
             erpInvoice.kontenrahmen = ''; 
           }
           erpResults.push(erpInvoice);
@@ -158,12 +181,13 @@ export default function IncomingInvoicesPage() {
             checked={erpMode}
             onCheckedChange={(checked) => {
               setErpMode(checked);
-              // Reset results when switching modes if files are already processed, to avoid mismatched data display
               if (status === 'success' || extractedInvoices.length > 0 || erpProcessedInvoices.length > 0) {
-                 setSelectedFiles([]); // This will also clear displayed invoices via handleFilesSelected effect if it's re-triggered
+                 setSelectedFiles([]); 
                  setExtractedInvoices([]);
                  setErpProcessedInvoices([]);
                  setStatus('idle');
+                 setCurrentFileProgress('');
+                 setProgressValue(0);
               }
             }}
             disabled={status === 'processing'}
@@ -209,7 +233,6 @@ export default function IncomingInvoicesPage() {
             {erpMode ? (
               <ERPInvoiceTable invoices={erpProcessedInvoices} />
             ) : (
-              // Ensure extractedInvoices are passed if not in ERP mode
               (extractedInvoices.length > 0 ? extractedInvoices : displayInvoices as IncomingInvoiceItem[]).map((invoice, index) => (
                 <IncomingInvoiceCard key={invoice.pdfFileName + '-' + index} invoice={invoice} />
               ))
@@ -233,5 +256,4 @@ export default function IncomingInvoicesPage() {
     </div>
   );
 }
-
     
