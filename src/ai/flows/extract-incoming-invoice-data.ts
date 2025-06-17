@@ -26,7 +26,8 @@ const ExtractIncomingInvoiceDataOutputSchema = z.object({
   datum: z.string().optional().describe('The invoice date (Datum), preferably in YYYY-MM-DD or DD.MM.YYYY format.'),
   lieferantName: z.string().optional().describe('The name of the supplier (Lieferant).'),
   lieferantAdresse: z.string().optional().describe('The full address of the supplier (Adresse Lieferant).'),
-  zahlungsziel: z.string().optional().describe('The payment terms (Zahlungsziel), e.g., "14 Tage netto".'),
+  zahlungsziel: z.string().optional().describe('The payment terms (Zahlungsziel), e.g., "14 Tage netto", "sofort zahlbar".'),
+  zahlungsart: z.string().optional().describe('The payment method (Zahlungsart), e.g., "Überweisung", "Sofort", "PayPal".'),
   gesamtbetrag: z.number().optional().describe('The total amount of the invoice (Gesamtbetrag) as a numeric value.'),
   mwstSatz: z.string().optional().describe('The VAT rate (MwSt.-Satz or USt.-Satz), e.g., "19%" or "7%".'),
   rechnungspositionen: z.array(InvoiceLineItemSchema).describe('An array of line items (Rechnungspositionen) from the invoice, including productCode, productName, quantity, and unitPrice.')
@@ -36,26 +37,20 @@ export type ExtractIncomingInvoiceDataOutput = z.infer<typeof ExtractIncomingInv
 // Helper function for product code normalization
 function normalizeProductCode(code: any): string {
   let strCode = String(code || '').trim().replace(/\n/g, ' ');
-  // Check if it's in scientific notation (e.g., "1.23e+5", "1.23E-5", "4.335747e+11")
-  // This regex matches numbers possibly signed, possibly with decimals, followed by E/e, possibly signed exponent.
   if (/^[-+]?[0-9]*\.?[0-9]+([eE][-+]?[0-9]+)$/.test(strCode)) {
     const num = Number(strCode);
-    // Check if conversion to Number is valid and finite
     if (!isNaN(num) && isFinite(num)) {
-      // Convert number back to string in full decimal form
-      // Number.toString() usually handles this correctly for reasonable numbers.
       return num.toString();
     }
   }
-  return strCode; // Return trimmed/cleaned or original if not scientific or not convertible
+  return strCode;
 }
 
 
 export async function extractIncomingInvoiceData(input: ExtractIncomingInvoiceDataInput): Promise<ExtractIncomingInvoiceDataOutput> {
   const rawOutput = await extractIncomingInvoiceDataFlow(input);
 
-  // Normalize the output
-  const normalizedOutput: ExtractIncomingInvoiceDataOutput = { ...rawOutput };
+  const normalizedOutput: Partial<ExtractIncomingInvoiceDataOutput> = { ...rawOutput };
 
   if (normalizedOutput.lieferantName) {
     normalizedOutput.lieferantName = String(normalizedOutput.lieferantName || '').trim().replace(/\n/g, ' ');
@@ -63,17 +58,22 @@ export async function extractIncomingInvoiceData(input: ExtractIncomingInvoiceDa
   if (normalizedOutput.lieferantAdresse) {
     normalizedOutput.lieferantAdresse = String(normalizedOutput.lieferantAdresse || '').trim().replace(/\n/g, ' ');
   }
+  if (normalizedOutput.zahlungsziel) {
+    normalizedOutput.zahlungsziel = String(normalizedOutput.zahlungsziel || '').trim().replace(/\n/g, ' ');
+  }
+   if (normalizedOutput.zahlungsart) {
+    normalizedOutput.zahlungsart = String(normalizedOutput.zahlungsart || '').trim().replace(/\n/g, ' ');
+  }
 
   if (normalizedOutput.rechnungspositionen) {
     normalizedOutput.rechnungspositionen = normalizedOutput.rechnungspositionen.map(item => ({
       ...item,
       productCode: normalizeProductCode(item.productCode),
       productName: String(item.productName || '').trim().replace(/\n/g, ' '),
-      // quantity and unitPrice are numbers, no string normalization needed beyond what Zod handles.
     }));
   }
   
-  return normalizedOutput;
+  return normalizedOutput as ExtractIncomingInvoiceDataOutput;
 }
 
 const prompt = ai.definePrompt({
@@ -87,7 +87,8 @@ You will receive an invoice as a data URI. Extract the following information met
 - Datum: The date of the invoice. Try to format it as YYYY-MM-DD if possible, otherwise use the format on the invoice.
 - Lieferant Name: The name of the company that issued the invoice (supplier). Ensure this is a clean string.
 - Lieferant Adresse: The full postal address of the supplier. Ensure this is a clean string.
-- Zahlungsziel: The payment terms specified on the invoice (e.g., "14 Tage netto", "sofort zahlbar").
+- Zahlungsziel: The payment terms specified on the invoice (e.g., "14 Tage netto", "sofort zahlbar"). Clean any newline characters.
+- Zahlungsart: The payment method specified (e.g., "Überweisung", "PayPal", "Sofort", "Lastschrift"). Clean any newline characters. If not explicitly mentioned, try to infer it from payment details if possible, or leave it empty.
 - Gesamtbetrag: The final total amount of the invoice. This should be a numerical value. Parse it carefully, considering currency symbols or thousands separators if present.
 - MwSt.-Satz (or USt.-Satz): The Value Added Tax rate applied (e.g., "19%", "7%"). If multiple VAT rates are present for different items and a summary rate is not obvious, this can be omitted or you can list the most prominent one.
 - Rechnungspositionen: A list of all individual items or services billed on the invoice. For each item, extract:
@@ -109,8 +110,6 @@ const extractIncomingInvoiceDataFlow = ai.defineFlow(
   },
   async input => {
     const {output} = await prompt(input);
-    // The actual normalization will be done in the exported wrapper function
     return output!; 
   }
 );
-

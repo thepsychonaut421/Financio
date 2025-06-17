@@ -3,28 +3,34 @@
 import React, { useState, useCallback } from 'react';
 import { IncomingInvoiceUploadForm } from '@/components/incoming-invoices/IncomingInvoiceUploadForm';
 import { IncomingInvoiceCard } from '@/components/incoming-invoices/IncomingInvoiceCard';
+import { ERPInvoiceTable } from '@/components/incoming-invoices/ERPInvoiceTable';
 import { IncomingInvoiceActionButtons } from '@/components/incoming-invoices/IncomingInvoiceActionButtons';
 import { Progress } from '@/components/ui/progress';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { AlertCircle, Info } from 'lucide-react';
+import { AlertCircle, Info, FileText, Settings2 } from 'lucide-react';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
 import { readFileAsDataURL } from '@/lib/file-helpers';
 import { extractIncomingInvoiceData, ExtractIncomingInvoiceDataOutput } from '@/ai/flows/extract-incoming-invoice-data';
-import type { IncomingInvoiceItem, IncomingProcessingStatus } from '@/types/incoming-invoice';
+import type { IncomingInvoiceItem, ERPIncomingInvoiceItem, IncomingProcessingStatus } from '@/types/incoming-invoice';
 
 export default function IncomingInvoicesPage() {
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [extractedInvoices, setExtractedInvoices] = useState<IncomingInvoiceItem[]>([]);
+  const [erpProcessedInvoices, setErpProcessedInvoices] = useState<ERPIncomingInvoiceItem[]>([]);
   const [status, setStatus] = useState<IncomingProcessingStatus>('idle');
-  const [progress, setProgress] = useState(0);
+  const [progressValue, setProgressValue] = useState(0);
   const [currentFileProgress, setCurrentFileProgress] = useState('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [erpMode, setErpMode] = useState(false);
 
   const handleFilesSelected = useCallback((files: File[]) => {
     setSelectedFiles(files);
     setExtractedInvoices([]); 
+    setErpProcessedInvoices([]);
     setStatus('idle');
     setErrorMessage(null);
-    setProgress(0);
+    setProgressValue(0);
     setCurrentFileProgress('');
   }, []);
 
@@ -37,10 +43,13 @@ export default function IncomingInvoicesPage() {
 
     setStatus('processing');
     setErrorMessage(null);
-    setProgress(0);
+    setProgressValue(0);
     setExtractedInvoices([]);
+    setErpProcessedInvoices([]);
     
     const results: IncomingInvoiceItem[] = [];
+    const erpResults: ERPIncomingInvoiceItem[] = [];
+    const yearCounters: Record<string, number> = {};
 
     try {
       for (let i = 0; i < selectedFiles.length; i++) {
@@ -50,15 +59,58 @@ export default function IncomingInvoicesPage() {
         const dataUri = await readFileAsDataURL(file);
         const extractionResult: ExtractIncomingInvoiceDataOutput = await extractIncomingInvoiceData({ invoiceDataUri: dataUri });
         
-        results.push({
+        const baseInvoice: IncomingInvoiceItem = {
           pdfFileName: file.name,
           ...extractionResult,
-        });
+        };
+        results.push(baseInvoice);
+
+        if (erpMode) {
+          const erpInvoice: ERPIncomingInvoiceItem = { ...baseInvoice };
+
+          // Generate ERPNext Invoice Name
+          if (extractionResult.datum) {
+            const dateParts = extractionResult.datum.match(/(\d{2})\.(\d{2})\.(\d{4})/); // DD.MM.YYYY
+            let year = new Date().getFullYear().toString();
+            if (dateParts && dateParts[3]) {
+              year = dateParts[3];
+            } else if (extractionResult.datum.match(/^\d{4}-\d{2}-\d{2}$/)) { // YYYY-MM-DD
+                year = extractionResult.datum.substring(0,4);
+            }
+            
+            if (!yearCounters[year]) {
+              yearCounters[year] = 0;
+            }
+            yearCounters[year]++;
+            erpInvoice.erpNextInvoiceName = `ACC-PINV-${year}-${String(yearCounters[year]).padStart(5, '0')}`;
+          } else {
+             // Fallback if date is not available
+            const currentYear = new Date().getFullYear().toString();
+            if (!yearCounters[currentYear]) yearCounters[currentYear] = 0;
+            yearCounters[currentYear]++;
+            erpInvoice.erpNextInvoiceName = `ACC-PINV-${currentYear}-${String(yearCounters[currentYear]).padStart(5, '0')}`;
+          }
+
+
+          // Determine Ist bezahlt
+          erpInvoice.istBezahlt = (extractionResult.zahlungsziel && extractionResult.zahlungsziel.toLowerCase().includes('sofort')) ? 1 : 0;
+          
+          // Determine Kontenrahmen
+          if (extractionResult.lieferantName && extractionResult.lieferantName.toLowerCase().includes('lidl')) {
+            erpInvoice.kontenrahmen = '1740 - Verbindlichkeiten';
+          } else {
+            erpInvoice.kontenrahmen = ''; // Or some other default
+          }
+          erpResults.push(erpInvoice);
+        }
         
-        setProgress(Math.round(((i + 1) / selectedFiles.length) * 100));
+        setProgressValue(Math.round(((i + 1) / selectedFiles.length) * 100));
       }
       
       setExtractedInvoices(results);
+      if (erpMode) {
+        setErpProcessedInvoices(erpResults);
+      }
       setStatus('success');
       setCurrentFileProgress('Processing complete!');
 
@@ -74,12 +126,14 @@ export default function IncomingInvoicesPage() {
     }
   };
 
+  const displayInvoices = erpMode ? erpProcessedInvoices : extractedInvoices;
+
   return (
     <div className="container mx-auto px-4 py-8 md:px-8 md:py-12">
       <header className="mb-8 text-center">
         <h1 className="text-3xl md:text-4xl font-headline font-bold text-primary">Incoming Invoice Details</h1>
         <p className="text-muted-foreground mt-2">
-          Upload German PDF invoices (Eingangsrechnungen) to extract comprehensive details.
+          Upload German PDF invoices (Eingangsrechnungen) to extract comprehensive details. Switch to ERP Vorlage Mode for ERPNext-compatible data.
         </p>
       </header>
 
@@ -91,9 +145,23 @@ export default function IncomingInvoicesPage() {
           selectedFileCount={selectedFiles.length}
         />
 
+        <div className="flex items-center justify-center space-x-3 p-4 bg-card border rounded-lg shadow-sm">
+          <Switch
+            id="erp-mode-switch"
+            checked={erpMode}
+            onCheckedChange={setErpMode}
+            disabled={status === 'processing'}
+          />
+          <Label htmlFor="erp-mode-switch" className="text-base font-medium">
+            ERP Vorlage Mode
+          </Label>
+          <Settings2 className="h-5 w-5 text-muted-foreground" />
+        </div>
+
+
         {status === 'processing' && (
           <div className="my-6 p-4 border rounded-lg shadow-sm bg-card">
-            <Progress value={progress} className="w-full mb-2" />
+            <Progress value={progressValue} className="w-full mb-2" />
             <p className="text-sm text-center text-muted-foreground">{currentFileProgress}</p>
           </div>
         )}
@@ -106,7 +174,7 @@ export default function IncomingInvoicesPage() {
           </Alert>
         )}
         
-        {status === 'idle' && extractedInvoices.length === 0 && selectedFiles.length === 0 && (
+        {status === 'idle' && displayInvoices.length === 0 && selectedFiles.length === 0 && (
            <Alert className="my-6 bg-primary/5 border-primary/20">
             <Info className="h-4 w-4 text-primary" />
             <AlertTitle className="text-primary font-semibold">Get Started</AlertTitle>
@@ -116,16 +184,23 @@ export default function IncomingInvoicesPage() {
           </Alert>
         )}
 
-        {(status === 'success' || (status !== 'processing' && extractedInvoices.length > 0)) && (
+        {(status === 'success' || (status !== 'processing' && displayInvoices.length > 0)) && (
           <div className="mt-8 space-y-6">
-            <IncomingInvoiceActionButtons invoices={extractedInvoices} />
-            {extractedInvoices.map((invoice, index) => (
-              <IncomingInvoiceCard key={invoice.pdfFileName + '-' + index} invoice={invoice} />
-            ))}
+            <IncomingInvoiceActionButtons 
+              invoices={erpMode ? erpProcessedInvoices : extractedInvoices} 
+              erpMode={erpMode} 
+            />
+            {erpMode ? (
+              <ERPInvoiceTable invoices={erpProcessedInvoices} />
+            ) : (
+              extractedInvoices.map((invoice, index) => (
+                <IncomingInvoiceCard key={invoice.pdfFileName + '-' + index} invoice={invoice} />
+              ))
+            )}
           </div>
         )}
 
-         {status === 'success' && extractedInvoices.length === 0 && (
+         {status === 'success' && displayInvoices.length === 0 && (
            <Alert className="my-6">
             <Info className="h-4 w-4" />
             <AlertTitle>No Data Extracted</AlertTitle>

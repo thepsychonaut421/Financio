@@ -6,6 +6,7 @@ export interface IncomingInvoiceData {
   lieferantName?: string;
   lieferantAdresse?: string;
   zahlungsziel?: string;
+  zahlungsart?: string; 
   gesamtbetrag?: number;
   mwstSatz?: string;
   rechnungspositionen: LineItem[];
@@ -13,6 +14,12 @@ export interface IncomingInvoiceData {
 
 export interface IncomingInvoiceItem extends IncomingInvoiceData {
   pdfFileName: string; 
+}
+
+export interface ERPIncomingInvoiceItem extends IncomingInvoiceItem {
+  erpNextInvoiceName?: string;
+  istBezahlt?: 0 | 1;
+  kontenrahmen?: string;
 }
 
 export type IncomingProcessingStatus = 'idle' | 'processing' | 'success' | 'error';
