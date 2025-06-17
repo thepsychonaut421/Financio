@@ -1,11 +1,12 @@
 'use client';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { ListOrdered, ReceiptText } from 'lucide-react';
+import { ListOrdered, ReceiptText, Landmark } from 'lucide-react';
 
 const navLinks = [
   { href: '/', label: 'Line Item Extractor', icon: <ListOrdered className="w-5 h-5" /> },
   { href: '/incoming-invoices', label: 'Incoming Invoices', icon: <ReceiptText className="w-5 h-5" /> },
+  { href: '/bank-matcher', label: 'Bank Matcher', icon: <Landmark className="w-5 h-5" /> },
 ];
 
 export function AppHeader() {
