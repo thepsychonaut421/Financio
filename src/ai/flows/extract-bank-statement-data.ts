@@ -63,7 +63,7 @@ function ensureDateYYYYMMDD(dateStrRaw: string | undefined): string {
   const fallbackDate = '1900-01-01'; // Placeholder for unparsable dates
 
   if (!dateStrRaw || dateStrRaw.trim() === '') {
-    console.warn('AI provided an empty or undefined date string. Using fallback.');
+    console.warn('AI provided an empty or undefined date string for a transaction. Using fallback date "1900-01-01".');
     return fallbackDate;
   }
 
@@ -86,15 +86,6 @@ function ensureDateYYYYMMDD(dateStrRaw: string | undefined): string {
     return `${match[3]}-${match[2].padStart(2, '0')}-${match[1].padStart(2, '0')}`;
   }
   
-  // Try MM/DD/YYYY (less common for German statements, but as a fallback)
-  match = dateStr.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-  if (match) {
-     // This regex is ambiguous (DD/MM vs MM/DD). Prioritize DD/MM if day > 12.
-     // For simplicity here, assume MM/DD if DD.MM and DD/MM failed.
-     // A more robust solution might involve date-fns.parse with multiple format strings.
-    return `${match[3]}-${match[1].padStart(2, '0')}-${match[2].padStart(2, '0')}`;
-  }
-
   // Try YYYY.MM.DD
   match = dateStr.match(/^(\d{4})\.(\d{1,2})\.(\d{1,2})$/);
   if (match) {
@@ -105,6 +96,14 @@ function ensureDateYYYYMMDD(dateStrRaw: string | undefined): string {
   match = dateStr.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})$/);
   if (match) {
     return `${match[1]}-${match[2].padStart(2, '0')}-${match[3].padStart(2, '0')}`;
+  }
+
+  // Try MM/DD/YYYY (less common for German statements, but as a fallback after other attempts)
+  match = dateStr.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (match) {
+    // This regex is ambiguous (DD/MM vs MM/DD).
+    // At this point, other DD/MM formats have been tried.
+    return `${match[3]}-${match[1].padStart(2, '0')}-${match[2].padStart(2, '0')}`;
   }
 
   // Fallback for other potential formats, trying Date constructor
@@ -133,7 +132,7 @@ export async function extractBankStatementData(input: ExtractBankStatementDataIn
   const normalizedTransactions: BankTransactionAI[] = rawTransactionsFromAI.map(aiTx => {
     let parsedAmount = parseGermanNumberFromString(aiTx.amount);
     if (parsedAmount === null) {
-        console.warn(`Could not parse amount for transaction: ${aiTx.description}. Defaulting to 0.`);
+        console.warn(`Could not parse amount for transaction (description: "${aiTx.description || 'N/A'}"). Defaulting amount to 0.`);
         parsedAmount = 0;
     }
     
