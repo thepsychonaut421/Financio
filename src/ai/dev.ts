@@ -1,6 +1,6 @@
 
-import { config } from 'dotenv';
-config();
+// import { config } from 'dotenv'; // Removed
+// config(); // Removed
 
 import '@/ai/flows/normalize-and-deduplicate-data.ts';
 import '@/ai/flows/extract-invoice-data.ts';
@@ -11,4 +11,3 @@ import '@/ai/flows/suggest-pdf-filename.ts'; // Added new flow
 // but for this specific use case (direct import for type safety), it's not strictly necessary.
 // If you had Genkit tools or other flows that needed to dynamically find this schema, you might add:
 // import '@/ai/schemas/invoice-item-schema';
-
