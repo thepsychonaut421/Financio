@@ -62,7 +62,7 @@ export function itemsToCustomArtikelCSV(data: ExtractedItem[]): string {
   if (!data || data.length === 0) {
     return '';
   }
-  const headers = ['Artikel-Code', 'Artikelbezeichnung', 'Artikelgruppe', 'Standardmaßeinheit'];
+  const headers = ['Artikel-Code', 'Artikelname', 'Artikelgruppe', 'Standardmaßeinheit'];
   const csvRows = [
     headers.join(','), // header row
     ...data.map(item =>
