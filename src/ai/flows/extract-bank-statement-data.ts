@@ -59,29 +59,69 @@ function parseGermanNumberFromString(numStr: any): number | null {
 }
 
 // Helper to ensure date is YYYY-MM-DD
-function ensureDateYYYYMMDD(dateStr: string | undefined): string {
-  if (!dateStr) return new Date().toISOString().split('T')[0]; // Fallback, should not happen
-  // Try DD.MM.YYYY
-  const matchDMY = dateStr.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
-  if (matchDMY) {
-    const day = matchDMY[1].padStart(2, '0');
-    const month = matchDMY[2].padStart(2, '0');
-    const year = matchDMY[3];
-    return `${year}-${month}-${day}`;
+function ensureDateYYYYMMDD(dateStrRaw: string | undefined): string {
+  const fallbackDate = '1900-01-01'; // Placeholder for unparsable dates
+
+  if (!dateStrRaw || dateStrRaw.trim() === '') {
+    console.warn('AI provided an empty or undefined date string. Using fallback.');
+    return fallbackDate;
   }
-  // Try YYYY-MM-DD (already correct)
-  if (dateStr.match(/^\d{4}-\d{2}-\d{2}$/)) {
+
+  const dateStr = dateStrRaw.trim();
+
+  // Try YYYY-MM-DD
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
     return dateStr;
   }
+
+  // Try DD.MM.YYYY
+  let match = dateStr.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+  if (match) {
+    return `${match[3]}-${match[2].padStart(2, '0')}-${match[1].padStart(2, '0')}`;
+  }
+
+  // Try DD/MM/YYYY
+  match = dateStr.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (match) {
+    return `${match[3]}-${match[2].padStart(2, '0')}-${match[1].padStart(2, '0')}`;
+  }
+  
+  // Try MM/DD/YYYY (less common for German statements, but as a fallback)
+  match = dateStr.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (match) {
+     // This regex is ambiguous (DD/MM vs MM/DD). Prioritize DD/MM if day > 12.
+     // For simplicity here, assume MM/DD if DD.MM and DD/MM failed.
+     // A more robust solution might involve date-fns.parse with multiple format strings.
+    return `${match[3]}-${match[1].padStart(2, '0')}-${match[2].padStart(2, '0')}`;
+  }
+
+  // Try YYYY.MM.DD
+  match = dateStr.match(/^(\d{4})\.(\d{1,2})\.(\d{1,2})$/);
+  if (match) {
+    return `${match[1]}-${match[2].padStart(2, '0')}-${match[3].padStart(2, '0')}`;
+  }
+  
+  // Try YYYY/MM/DD
+  match = dateStr.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})$/);
+  if (match) {
+    return `${match[1]}-${match[2].padStart(2, '0')}-${match[3].padStart(2, '0')}`;
+  }
+
   // Fallback for other potential formats, trying Date constructor
   try {
     const d = new Date(dateStr);
+    // Check if the date constructor successfully parsed it into a valid date
     if (!isNaN(d.getTime())) {
-      return d.toISOString().split('T')[0];
+      // Further check: ensure year is somewhat reasonable to avoid epoch dates from bad parses
+      const year = d.getFullYear();
+      if (year > 1900 && year < 2100) {
+        return d.toISOString().split('T')[0];
+      }
     }
   } catch (e) { /* ignore if parsing fails */ }
-  console.warn(`Could not parse date from AI output: ${dateStr}. Returning as is or fallback.`);
-  return dateStr; // Return original if AI couldn't format and other methods fail
+
+  console.warn(`Could not parse date from AI output: "${dateStr}". Returning fallback date "${fallbackDate}".`);
+  return fallbackDate; 
 }
 
 

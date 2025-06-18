@@ -31,7 +31,7 @@ const AIOutputSchema = z.object({
   zahlungsart: z.string().optional().describe('The payment method (Zahlungsart), e.g., "Überweisung", "Sofort", "PayPal", "Lastschrift".'),
   gesamtbetrag: z.number().optional().describe('The total amount of the invoice (Gesamtbetrag) as a numeric value.'),
   mwstSatz: z.string().optional().describe('The VAT rate (MwSt.-Satz or USt.-Satz), e.g., "19%" or "7%".'),
-  rechnungspositionen: z.array(AILineItemSchema).describe('An array of line items (Rechnungspositionen) from the invoice, including productCode, productName, quantity, and unitPrice. Quantity and unitPrice may be omitted if not found.'),
+  rechnungspositionen: z.array(AILineItemSchema).describe('An array of line items (Rechnungspositionen) from the invoice, including productCode, productName, quantity, and unitPrice. If quantity or unitPrice are not found, use 0 and 0.0 respectively.'),
   kundenNummer: z.string().optional().describe('The customer number (Kunden-Nr.) if present.'),
   bestellNummer: z.string().optional().describe('The order number (Bestell-Nr., Bestellnummer) if present and distinct from Rechnungsnummer.'),
   isPaid: z.boolean().optional().describe('Whether the invoice is marked as paid ("Bezahlt"). True if paid, false or undefined otherwise.')
@@ -147,8 +147,8 @@ Extraction Rules for Invoices:
 9.  Rechnungspositionen (Line Items): A list of all individual items or services. For each item, extract:
     *   productCode (item_code): The product code or article number (e.g., EAN). If not available, leave empty. This should be a plain string.
     *   productName (description): The name or description of the product/service. Clean string.
-    *   quantity (qty): The quantity. If not explicitly stated for an item, you may omit this field for that specific item.
-    *   unitPrice (rate): The price per unit. If not explicitly stated for an item, you may omit this field for that specific item.
+    *   quantity (qty): The quantity. If not explicitly stated for an item, use 0 for quantity.
+    *   unitPrice (rate): The price per unit. If not explicitly stated for an item, use 0.0 for unitPrice.
 
 10. KundenNummer (Customer Number): Extract if labeled "Kunden-Nr." or similar.
 11. BestellNummer (Order Number): Extract if labeled "Bestell-Nr.", "Bestellnummer", or similar, AND it is clearly distinct from the Rechnungsnummer.

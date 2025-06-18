@@ -74,8 +74,8 @@ You will receive an invoice as a data URI. Extract the following information fro
 
 - productCode: The product code from the invoice. This should be a plain string of characters and/or digits, exactly as it appears. Avoid scientific notation.
 - productName: The name of the product. Ensure this is a clean string.
-- quantity: The quantity of the product. If not clearly stated, you may omit this.
-- unitPrice: The unit price of the product. If not clearly stated, you may omit this.
+- quantity: The quantity of the product. If not clearly stated, use 0 for quantity.
+- unitPrice: The unit price of the product. If not clearly stated, use 0.0 for unitPrice.
 
 Return the information as a JSON array of objects under the key "invoiceDetails".
 
