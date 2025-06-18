@@ -22,8 +22,7 @@ const PdfExtractorPageContent = dynamic(
           </div>
         </main>
       </div>
-    ),
-    ssr: false 
+    )
   }
 );
 

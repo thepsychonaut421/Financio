@@ -23,8 +23,7 @@ const PdfOrganizerPageContent = dynamic(
           <Skeleton className="h-96 w-full" />
         </main>
       </div>
-    ),
-    ssr: false
+    )
   }
 );
 

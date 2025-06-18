@@ -23,8 +23,7 @@ const BankStatementExtractorPageContent = dynamic(
           <Skeleton className="h-64 w-full" />
         </main>
       </div>
-    ),
-    ssr: false
+    )
   }
 );
 

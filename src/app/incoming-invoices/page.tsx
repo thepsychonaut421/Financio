@@ -22,8 +22,7 @@ const IncomingInvoicesPageContent = dynamic(
           </div>
         </main>
       </div>
-    ),
-    ssr: false 
+    )
   }
 );
 
