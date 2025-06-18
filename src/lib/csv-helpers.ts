@@ -1,5 +1,13 @@
 import type { ExtractedItem } from '@/types/invoice';
 
+function escapeCSVFieldValue(field: string | number): string {
+  const stringField = String(field);
+  if (stringField.includes('"') || stringField.includes(',') || stringField.includes('\n') || stringField.includes('\r')) {
+    return `"${stringField.replace(/"/g, '""')}"`;
+  }
+  return stringField;
+}
+
 export function arrayToCSV(data: ExtractedItem[]): string {
   if (!data || data.length === 0) {
     return '';
@@ -9,8 +17,8 @@ export function arrayToCSV(data: ExtractedItem[]): string {
     headers.join(','), // header row
     ...data.map(item =>
       [
-        `"${item.productCode.replace(/"/g, '""')}"`, // Escape double quotes
-        `"${item.productName.replace(/"/g, '""')}"`,
+        escapeCSVFieldValue(item.productCode),
+        escapeCSVFieldValue(item.productName),
         item.quantity,
         item.unitPrice,
       ].join(',')
@@ -48,4 +56,22 @@ export function itemsToTSV(data: ExtractedItem[]): string {
     ),
   ];
   return tsvRows.join('\n');
+}
+
+export function itemsToCustomArtikelCSV(data: ExtractedItem[]): string {
+  if (!data || data.length === 0) {
+    return '';
+  }
+  const headers = ['Artikel-Code', 'Artikelgruppe', 'Standardmaß'];
+  const csvRows = [
+    headers.join(','), // header row
+    ...data.map(item =>
+      [
+        escapeCSVFieldValue(item.productCode),
+        'Produkte', // Static value
+        'Stk',      // Static value
+      ].join(',')
+    ),
+  ];
+  return csvRows.join('\n');
 }
