@@ -19,7 +19,7 @@ const AIModelOutputTransactionSchema = z.object({
   description: z.string().describe('The transaction description, booking text (Buchungstext), or purpose (Verwendungszweck).'),
   amount: z.number().describe('The transaction amount. IMPORTANT: Payments (debits, Soll, S) must be NEGATIVE. Income (credits, Haben, H) must be POSITIVE. Parse German numbers (e.g., "1.234,56" or "1234,56") to float.'),
   currency: z.string().optional().default('EUR').describe('The currency (e.g., EUR). Default to EUR if not specified.'),
-  recipientOrPayer: z.string().optional().describe('The recipient or payer (Empfänger/Zahlungspflichtiger or Auftraggeber/Empfänger).'),
+  recipientOrPayer: z.string().optional().describe('The recipient (Empfänger/Zahlungspflichtiger) if an outgoing payment, or payer (Auftraggeber/Einzahler) if an incoming payment. Extract from labels or infer from description.'),
 });
 
 // Schema for the final, processed bank transaction data used by the application. ID is mandatory and system-generated.
@@ -165,7 +165,13 @@ You will receive a bank statement as a data URI. Extract all individual transact
 - description: The transaction description or booking text (Buchungstext or Verwendungszweck). Include as much detail as possible from this field.
 - amount: The transaction amount. IMPORTANT: Represent payments (debits, Soll, S, -) as NEGATIVE numbers and income (credits, Haben, H, +) as POSITIVE numbers. Parse German number formats correctly (e.g., "1.234,56" should become 1234.56, "- 50,00" should become -50.00).
 - currency: The currency of the transaction (e.g., EUR). If not explicitly stated, assume EUR.
-- recipientOrPayer: The recipient or payer (Empfänger/Zahlungspflichtiger or Auftraggeber/Empfänger). If the transaction is a payment, this is often the recipient. If it's income, this is often the payer.
+- recipientOrPayer: The recipient (Empfänger/Zahlungspflichtiger) if it's an outgoing payment (negative amount), or the payer (Auftraggeber/Einzahler) if it's an incoming payment (positive amount).
+  *   First, look for explicit labels in the transaction details like "Empfänger:", "Begünst.:", "ZahlgPfl:", "Auftraggeber:", etc., and extract the name following it.
+  *   If no explicit label is found, carefully examine the 'description' (Buchungstext/Verwendungszweck).
+      *   For outgoing payments (where amount is negative): If a company name (e.g., "Amazon Payments", "Netflix DE", "Vodafone Gmbh", "E.ON Energie", "Stadtwerke Musterstadt") or a person's name is clearly identifiable as the entity to whom the money was sent, extract that name as the recipient.
+      *   For incoming payments (where amount is positive): If a company or person's name is clearly identifiable as the source of the money, extract that name as the payer.
+  *   Prioritize names that appear to be distinct entities rather than generic terms or parts of the transaction purpose itself unless they clearly denote the counterparty.
+  *   If a clear recipient or payer cannot be reliably determined from the available information, leave this field empty. Do not guess or extract ambiguous information.
 
 Focus on extracting data from tabular transaction listings. Pay attention to column headers like "Datum", "Buchungstag", "Valuta", "Buchungstext", "Verwendungszweck", "Betrag", "Währung", "Empfänger/Auftraggeber", "Begünstigter/Zahlungspflichtiger".
 Some statements might use "S" or "H" next to the amount, or a "-" sign to indicate Soll (debit/negative) or Haben (credit/positive). Ensure the sign of the amount reflects this.
@@ -187,3 +193,4 @@ const extractBankStatementDataFlow = ai.defineFlow(
     return output!; // output will be { transactions: AIModelOutputTransactionSchema[] }
   }
 );
+
