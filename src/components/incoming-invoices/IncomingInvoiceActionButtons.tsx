@@ -12,15 +12,23 @@ import {
   downloadFile 
 } from '@/lib/export-helpers';
 import type { IncomingInvoiceItem, ERPIncomingInvoiceItem } from '@/types/incoming-invoice';
-import { Copy, FileJson, FileSpreadsheet } from 'lucide-react';
+import { Copy, FileJson, FileSpreadsheet, ExternalLink } from 'lucide-react';
 
 interface IncomingInvoiceActionButtonsProps {
   invoices: IncomingInvoiceItem[] | ERPIncomingInvoiceItem[];
   erpMode: boolean;
   useMinimalErpExport: boolean;
+  onExportToERPNext: () => void;
+  isExportingToERPNext: boolean;
 }
 
-export function IncomingInvoiceActionButtons({ invoices, erpMode, useMinimalErpExport }: IncomingInvoiceActionButtonsProps) {
+export function IncomingInvoiceActionButtons({ 
+  invoices, 
+  erpMode, 
+  useMinimalErpExport,
+  onExportToERPNext,
+  isExportingToERPNext
+}: IncomingInvoiceActionButtonsProps) {
   const { toast } = useToast();
 
   const handleCopyToClipboard = async () => {
@@ -81,7 +89,7 @@ export function IncomingInvoiceActionButtons({ invoices, erpMode, useMinimalErpE
   const erpExportLabel = useMinimalErpExport ? "Minimal" : "Complete";
 
   return (
-    <div className="my-6 flex flex-col sm:flex-row justify-center items-center gap-3 sm:gap-4">
+    <div className="my-6 flex flex-col sm:flex-row flex-wrap justify-center items-center gap-3 sm:gap-4">
       <Button onClick={handleCopyToClipboard} variant="outline" className="w-full sm:w-auto">
         <Copy className="mr-2 h-4 w-4" />
         Copy All {erpMode ? `(ERP ${erpExportLabel})` : ""}
@@ -94,8 +102,16 @@ export function IncomingInvoiceActionButtons({ invoices, erpMode, useMinimalErpE
         <FileSpreadsheet className="mr-2 h-4 w-4" />
         Export All as CSV {erpMode ? `(ERP ${erpExportLabel})` : ""}
       </Button>
+      {erpMode && (
+        <Button 
+          onClick={onExportToERPNext} 
+          className="w-full sm:w-auto"
+          disabled={isExportingToERPNext || invoices.length === 0}
+        >
+          <ExternalLink className="mr-2 h-4 w-4" />
+          {isExportingToERPNext ? 'Exporting...' : 'Export to ERPNext'}
+        </Button>
+      )}
     </div>
   );
 }
-
-    

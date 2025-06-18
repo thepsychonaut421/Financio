@@ -15,6 +15,7 @@ import { readFileAsDataURL } from '@/lib/file-helpers';
 import { extractIncomingInvoiceData, type ExtractIncomingInvoiceDataOutput } from '@/ai/flows/extract-incoming-invoice-data';
 import type { IncomingInvoiceItem, ERPIncomingInvoiceItem, IncomingProcessingStatus } from '@/types/incoming-invoice';
 import { addDays, parseISO } from 'date-fns';
+import { useToast } from '@/hooks/use-toast';
 
 const LOCAL_STORAGE_PAGE_CACHE_KEY = 'incomingInvoicesPageCache';
 const LOCAL_STORAGE_MATCHER_DATA_KEY = 'processedIncomingInvoicesForMatcher';
@@ -37,17 +38,18 @@ export function IncomingInvoicesPageContent() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [erpMode, setErpMode] = useState(false);
   const [useMinimalErpExport, setUseMinimalErpExport] = useState(true);
+  const [isExportingToERPNext, setIsExportingToERPNext] = useState(false);
+  const { toast } = useToast();
 
   useEffect(() => {
     try {
       const cachedDataString = localStorage.getItem(LOCAL_STORAGE_PAGE_CACHE_KEY);
       if (cachedDataString) {
         const parsedJson = JSON.parse(cachedDataString);
-        // Validate the structure of parsedJson before casting
         if (
           parsedJson &&
           typeof parsedJson === 'object' &&
-          'status' in parsedJson && // Ensure 'status' property exists
+          'status' in parsedJson && 
           parsedJson.status === 'success'
         ) {
           const cachedData = parsedJson as IncomingInvoicesPageCache;
@@ -58,7 +60,6 @@ export function IncomingInvoicesPageContent() {
           setUseMinimalErpExport(typeof cachedData.useMinimalErpExport === 'boolean' ? cachedData.useMinimalErpExport : true);
           setStatus('success'); 
         } else {
-          // Cached data is not in the expected format or not a 'success' state.
           console.warn("Cached data for incoming invoices is invalid or not a 'success' state, clearing.");
           localStorage.removeItem(LOCAL_STORAGE_PAGE_CACHE_KEY);
         }
@@ -89,7 +90,7 @@ export function IncomingInvoicesPageContent() {
 
   const supplierMap: Record<string, string> = {
     "LIDL": "Lidl",
-    "LIDL DIGITAL DEUTSCHLAND GMBH & CO. KG": "Lidl", // Case-insensitive match in prompt, but keep consistent here.
+    "LIDL DIGITAL DEUTSCHLAND GMBH & CO. KG": "Lidl", 
     "GD ARTLANDS ETRADING GMBH": "GD Artlands eTrading GmbH",
     "RETOURA": "RETOURA",
     "DOITBAU GMBH & CO.KG": "doitBau",
@@ -176,8 +177,6 @@ export function IncomingInvoicesPageContent() {
       setErpProcessedInvoices([]);
       localStorage.removeItem(LOCAL_STORAGE_MATCHER_DATA_KEY);
       localStorage.removeItem(LOCAL_STORAGE_PAGE_CACHE_KEY);
-    } else {
-       // If no results, but files were selected, do not clear selectedFiles
     }
     setStatus('idle');
     setCurrentFileProgress('');
@@ -212,18 +211,15 @@ export function IncomingInvoicesPageContent() {
         
         let finalLieferantName = aiResult.lieferantName;
 
-        // Normalize supplier name based on supplierMap (case-insensitive check for keys)
         if (aiResult.lieferantName) {
             const upperCaseLieferantName = aiResult.lieferantName.toUpperCase();
-            if (supplierMap[upperCaseLieferantName]) { // Direct match with case-normalized key
+            if (supplierMap[upperCaseLieferantName]) { 
                 finalLieferantName = supplierMap[upperCaseLieferantName];
             } else {
-                // Check if the AI returned one of the *values* from supplierMap
                 const matchedValue = Object.values(supplierMap).find(val => val.toLowerCase() === aiResult.lieferantName?.toLowerCase());
                 if (matchedValue) {
                     finalLieferantName = matchedValue;
                 } else {
-                     // Fallback: try to find a partial match in keys (less reliable)
                     const foundKey = Object.keys(supplierMap).find(key => upperCaseLieferantName.includes(key.toUpperCase()));
                     if (foundKey) {
                         finalLieferantName = supplierMap[foundKey];
@@ -245,10 +241,9 @@ export function IncomingInvoicesPageContent() {
         if (aiResult.bestellNummer) remarks += `${remarks ? ' / ' : ''}Bestell-Nr.: ${aiResult.bestellNummer}`;
 
         let istBezahltStatus: 0 | 1 = 0;
-        // Prefer AI's direct assessment of payment if available
-        if (aiResult.isPaid === true) { // Checking `isPaid` from AI Output
+        if (aiResult.isPaid === true) { 
           istBezahltStatus = 1;
-        } else { // Fallback to keyword check in payment terms/method
+        } else { 
             const zahlungszielLower = (aiResult.zahlungsziel || '').toLowerCase();
             const zahlungsartLower = (aiResult.zahlungsart || '').toLowerCase();
             if (zahlungszielLower.includes('sofort') || zahlungsartLower === 'sofort' || zahlungsartLower === 'lastschrift' || zahlungsartLower.includes('paypal') || zahlungsartLower.includes('paid')) {
@@ -275,12 +270,12 @@ export function IncomingInvoicesPageContent() {
           rechnungspositionen: aiResult.rechnungspositionen || [],
           kundenNummer: aiResult.kundenNummer,
           bestellNummer: aiResult.bestellNummer,
-          isPaidByAI: aiResult.isPaid, // Store what AI returned directly
+          isPaidByAI: aiResult.isPaid, 
           erpNextInvoiceName: erpNextInvoiceNameGenerated,
           billDate: postingDateERP,
           dueDate: dueDateERP,
           wahrung: 'EUR',
-          istBezahlt: istBezahltStatus, // This is the final 0/1 for ERPNext
+          istBezahlt: istBezahltStatus, 
           kontenrahmen: DEFAULT_KONTENRAHMEN,
           remarks: remarks.trim(),
         };
@@ -293,7 +288,7 @@ export function IncomingInvoicesPageContent() {
               pdfFileName: file.name,
               rechnungsnummer: aiResult.rechnungsnummer,
               datum: aiResult.datum, 
-              lieferantName: aiResult.lieferantName, // Show original AI extraction here
+              lieferantName: aiResult.lieferantName, 
               lieferantAdresse: aiResult.lieferantAdresse,
               zahlungsziel: aiResult.zahlungsziel,
               zahlungsart: aiResult.zahlungsart,
@@ -327,6 +322,51 @@ export function IncomingInvoicesPageContent() {
       setCurrentFileProgress('Processing failed.');
     }
   };
+
+  const handleExportToERPNext = async () => {
+    if (!erpMode || erpProcessedInvoices.length === 0) {
+      toast({
+        title: "No ERP Data",
+        description: "No data available in ERP Vorlage Mode to export to ERPNext.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsExportingToERPNext(true);
+    try {
+      const response = await fetch('/api/erpnext/export-invoice', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ invoices: erpProcessedInvoices }),
+      });
+
+      const result = await response.json();
+
+      if (response.ok) {
+        toast({
+          title: "Export Successful",
+          description: result.message || "Invoices submitted to ERPNext.",
+        });
+        // Optionally, clear or mark invoices as exported
+      } else {
+        throw new Error(result.error || `Server responded with ${response.status}`);
+      }
+    } catch (error) {
+      console.error("Failed to export to ERPNext:", error);
+      const message = error instanceof Error ? error.message : "Unknown error during ERPNext export.";
+      toast({
+        title: "ERPNext Export Failed",
+        description: message,
+        variant: "destructive",
+      });
+    } finally {
+      setIsExportingToERPNext(false);
+    }
+  };
+
 
   const displayInvoices = erpMode ? erpProcessedInvoices : extractedInvoices;
 
@@ -410,7 +450,9 @@ export function IncomingInvoicesPageContent() {
             <IncomingInvoiceActionButtons 
               invoices={displayInvoices} 
               erpMode={erpMode}
-              useMinimalErpExport={useMinimalErpExport} 
+              useMinimalErpExport={useMinimalErpExport}
+              onExportToERPNext={handleExportToERPNext}
+              isExportingToERPNext={isExportingToERPNext}
             />
             {erpMode ? (
               <ERPInvoiceTable invoices={erpProcessedInvoices} />
@@ -441,3 +483,4 @@ export function IncomingInvoicesPageContent() {
     
 
     
+
