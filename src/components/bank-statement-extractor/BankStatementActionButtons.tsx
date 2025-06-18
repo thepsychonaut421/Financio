@@ -7,10 +7,11 @@ import {
   bankTransactionsToCSV,
   bankTransactionsToTSV,
   bankTransactionsToJSON,
+  bankTransactionsToERPNextBankRecCSV, // Added new export function
   downloadFile 
-} from '@/lib/exportBankStatementData'; // Assuming this new helper file
+} from '@/lib/exportBankStatementData'; 
 import type { BankTransactionAI } from '@/ai/flows/extract-bank-statement-data';
-import { Copy, FileJson, FileSpreadsheet } from 'lucide-react';
+import { Copy, FileJson, FileSpreadsheet, Landmark } from 'lucide-react'; // Added Landmark
 
 interface BankStatementActionButtonsProps {
   transactions: BankTransactionAI[];
@@ -58,12 +59,23 @@ export function BankStatementActionButtons({ transactions }: BankStatementAction
     toast({ title: "CSV Exported", description: `Data for ${transactions.length} transaction(s) exported to CSV.` });
   };
 
+  const handleExportERPNextBankRec = () => {
+    if (transactions.length === 0) {
+      toast({ title: "No data", description: "There are no transactions to export for ERPNext Bank Rec.", variant: "destructive" });
+      return;
+    }
+    const csvData = bankTransactionsToERPNextBankRecCSV(transactions);
+    const fileName = 'erpnext_bank_reconciliation.csv';
+    downloadFile(csvData, fileName, 'text/csv;charset=utf-8;');
+    toast({ title: "ERPNext Bank Rec. CSV Exported", description: `Data for ${transactions.length} transaction(s) exported.` });
+  };
+
   if (transactions.length === 0) {
     return null;
   }
 
   return (
-    <div className="my-6 flex flex-col sm:flex-row justify-center items-center gap-3 sm:gap-4">
+    <div className="my-6 flex flex-col sm:flex-row flex-wrap justify-center items-center gap-3 sm:gap-4">
       <Button onClick={handleCopyToClipboard} variant="outline" className="w-full sm:w-auto">
         <Copy className="mr-2 h-4 w-4" />
         Copy All (TSV)
@@ -75,6 +87,10 @@ export function BankStatementActionButtons({ transactions }: BankStatementAction
       <Button onClick={handleExportCSV} className="w-full sm:w-auto">
         <FileSpreadsheet className="mr-2 h-4 w-4" />
         Export All as CSV
+      </Button>
+      <Button onClick={handleExportERPNextBankRec} variant="secondary" className="w-full sm:w-auto">
+        <Landmark className="mr-2 h-4 w-4" />
+        Export ERPNext Bank Rec.
       </Button>
     </div>
   );

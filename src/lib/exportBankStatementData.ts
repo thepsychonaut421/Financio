@@ -30,11 +30,11 @@ function escapeTSVField(field: string | number | undefined | null): string {
     return String(field).replace(/\t/g, ' ').replace(/\n/g, ' ').replace(/\r/g, ' ');
 }
 
-const HEADERS = [
+const STANDARD_HEADERS = [
   'ID', 'Date', 'Description', 'Amount', 'Currency', 'Recipient/Payer'
 ];
 
-function getTransactionRowData(transaction: BankTransactionAI): (string | number | undefined | null)[] {
+function getTransactionRowDataStandard(transaction: BankTransactionAI): (string | number | undefined | null)[] {
   return [
     transaction.id,
     transaction.date,
@@ -49,8 +49,8 @@ export function bankTransactionsToCSV(transactions: BankTransactionAI[]): string
   if (!transactions || transactions.length === 0) return '';
 
   const csvRows = [
-    HEADERS.join(','),
-    ...transactions.map(tx => getTransactionRowData(tx).map(escapeCSVField).join(','))
+    STANDARD_HEADERS.join(','),
+    ...transactions.map(tx => getTransactionRowDataStandard(tx).map(escapeCSVField).join(','))
   ];
   return csvRows.join('\n');
 }
@@ -59,22 +59,51 @@ export function bankTransactionsToTSV(transactions: BankTransactionAI[]): string
   if (!transactions || transactions.length === 0) return '';
 
   const tsvRows = [
-    HEADERS.join('\t'),
-    ...transactions.map(tx => getTransactionRowData(tx).map(escapeTSVField).join('\t'))
+    STANDARD_HEADERS.join('\t'),
+    ...transactions.map(tx => getTransactionRowDataStandard(tx).map(escapeTSVField).join('\t'))
   ];
   return tsvRows.join('\n');
 }
 
 export function bankTransactionsToJSON(transactions: BankTransactionAI[]): string {
   const structuredData = transactions.map(tx => {
-    const rowArray = getTransactionRowData(tx);
+    const rowArray = getTransactionRowDataStandard(tx);
     const rowObject: Record<string, any> = {};
-    HEADERS.forEach((header, index) => {
-      // Create JSON-friendly keys (e.g., "Recipient/Payer" -> "recipient_payer")
+    STANDARD_HEADERS.forEach((header, index) => {
       const jsonKey = header.replace(/\//g, '_').replace(/\s+/g, '_').toLowerCase();
       rowObject[jsonKey] = rowArray[index];
     });
     return rowObject;
   });
   return JSON.stringify(structuredData, null, 2);
+}
+
+// ERPNext Bank Reconciliation Tool Export
+const ERPNEXT_BANK_REC_HEADERS = [
+  'Datum', 'Einzahlung', 'Auszahlung', 'Beschreibung', 'Referenznummer', 'Bankkonto', 'Währung'
+];
+
+function getTransactionRowDataERPNextBankRec(transaction: BankTransactionAI): (string | number | undefined | null)[] {
+  const einzahlung = transaction.amount > 0 ? transaction.amount : 0;
+  const auszahlung = transaction.amount < 0 ? Math.abs(transaction.amount) : 0;
+  
+  return [
+    transaction.date, // Already YYYY-MM-DD
+    einzahlung,
+    auszahlung,
+    transaction.description,
+    transaction.recipientOrPayer || '', // Use recipientOrPayer as Referenznummer
+    'HAUPTKONTO', // Placeholder for Bankkonto
+    transaction.currency,
+  ];
+}
+
+export function bankTransactionsToERPNextBankRecCSV(transactions: BankTransactionAI[]): string {
+  if (!transactions || transactions.length === 0) return '';
+
+  const csvRows = [
+    ERPNEXT_BANK_REC_HEADERS.join(','),
+    ...transactions.map(tx => getTransactionRowDataERPNextBankRec(tx).map(escapeCSVField).join(','))
+  ];
+  return csvRows.join('\n');
 }
