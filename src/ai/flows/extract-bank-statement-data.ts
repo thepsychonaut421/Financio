@@ -60,7 +60,7 @@ function parseGermanNumberFromString(numStr: any): number | null {
 
 // Helper to ensure date is YYYY-MM-DD
 function ensureDateYYYYMMDD(dateStrRaw: string | undefined): string {
-  const fallbackDate = '1900-01-01'; // Placeholder for unparsable dates
+  const fallbackDate = '1900-01-01'; 
 
   if (!dateStrRaw || dateStrRaw.trim() === '') {
     console.warn('AI provided an empty or undefined date string for a transaction. Using fallback date "1900-01-01".');
@@ -69,55 +69,50 @@ function ensureDateYYYYMMDD(dateStrRaw: string | undefined): string {
 
   const dateStr = dateStrRaw.trim();
 
-  // Try YYYY-MM-DD
-  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) { // YYYY-MM-DD
     return dateStr;
   }
 
-  // Try DD.MM.YYYY
-  let match = dateStr.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
-  if (match) {
-    return `${match[3]}-${match[2].padStart(2, '0')}-${match[1].padStart(2, '0')}`;
-  }
-
-  // Try DD/MM/YYYY
-  match = dateStr.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  let match = dateStr.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/); // DD.MM.YYYY
   if (match) {
     return `${match[3]}-${match[2].padStart(2, '0')}-${match[1].padStart(2, '0')}`;
   }
   
-  // Try YYYY.MM.DD
-  match = dateStr.match(/^(\d{4})\.(\d{1,2})\.(\d{1,2})$/);
+  match = dateStr.match(/^(\d{4})\.(\d{1,2})\.(\d{1,2})$/); // YYYY.MM.DD
   if (match) {
     return `${match[1]}-${match[2].padStart(2, '0')}-${match[3].padStart(2, '0')}`;
   }
+
+  match = dateStr.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/); // DD/MM/YYYY
+  if (match) {
+    return `${match[3]}-${match[2].padStart(2, '0')}-${match[1].padStart(2, '0')}`;
+  }
   
-  // Try YYYY/MM/DD
-  match = dateStr.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})$/);
+  match = dateStr.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})$/); // YYYY/MM/DD
   if (match) {
     return `${match[1]}-${match[2].padStart(2, '0')}-${match[3].padStart(2, '0')}`;
   }
 
   // Try MM/DD/YYYY (less common for German statements, but as a fallback after other attempts)
-  match = dateStr.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-  if (match) {
-    // This regex is ambiguous (DD/MM vs MM/DD).
-    // At this point, other DD/MM formats have been tried.
-    return `${match[3]}-${match[1].padStart(2, '0')}-${match[2].padStart(2, '0')}`;
+  // This regex is ambiguous with DD/MM/YYYY. Ensure it's tried after more specific DD.MM.YYYY or DD/MM/YYYY.
+  if (dateStr.includes('/')) { // Basic check for slash, could be M/D/YYYY or MM/DD/YYYY
+      match = dateStr.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+      if (match) {
+          // To disambiguate, we could check if month > 12, but that's heuristics.
+          // For now, assume if other DD/MM styles failed, this might be MM/DD.
+          return `${match[3]}-${match[1].padStart(2, '0')}-${match[2].padStart(2, '0')}`;
+      }
   }
-
-  // Fallback for other potential formats, trying Date constructor
+  
   try {
     const d = new Date(dateStr);
-    // Check if the date constructor successfully parsed it into a valid date
     if (!isNaN(d.getTime())) {
-      // Further check: ensure year is somewhat reasonable to avoid epoch dates from bad parses
       const year = d.getFullYear();
-      if (year > 1900 && year < 2100) {
+      if (year > 1900 && year < 2100) { // Basic sanity check for year
         return d.toISOString().split('T')[0];
       }
     }
-  } catch (e) { /* ignore if parsing fails */ }
+  } catch (e) { /* ignore */ }
 
   console.warn(`Could not parse date from AI output: "${dateStr}". Returning fallback date "${fallbackDate}".`);
   return fallbackDate; 
@@ -125,7 +120,6 @@ function ensureDateYYYYMMDD(dateStrRaw: string | undefined): string {
 
 
 export async function extractBankStatementData(input: ExtractBankStatementDataInput): Promise<ExtractBankStatementDataOutput> {
-  // The flow returns an object with a transactions property: { transactions: AIModelOutputTransactionSchema[] }
   const flowResult = await extractBankStatementDataFlow(input);
   const rawTransactionsFromAI = flowResult.transactions || [];
 
@@ -139,7 +133,7 @@ export async function extractBankStatementData(input: ExtractBankStatementDataIn
     const finalDate = ensureDateYYYYMMDD(aiTx.date);
 
     return {
-        id: uuidv4(), // Always generate a new, unique ID, ignoring any 'id' from AI
+        id: uuidv4(), 
         date: finalDate,
         description: aiTx.description || '',
         amount: parsedAmount,
@@ -154,10 +148,11 @@ export async function extractBankStatementData(input: ExtractBankStatementDataIn
 const prompt = ai.definePrompt({
   name: 'extractBankStatementDataPrompt',
   input: {schema: ExtractBankStatementDataInputSchema},
-  // The prompt's output schema matches what the AI model attempts to fill
   output: {schema: z.object({ transactions: z.array(AIModelOutputTransactionSchema) }) },
   prompt: `You are an expert AI assistant specialized in extracting transaction data from German bank statements (Kontoauszüge) provided as PDF data.
-You will receive a bank statement as a data URI. Extract all individual transactions listed. For each transaction, provide the following information:
+You will receive a bank statement as a data URI. Your primary task is to meticulously extract ALL individual transactions listed on the statement. It is critical that no transaction is missed. Even if a transaction line has an unusual format or is missing some information, you should still attempt to extract what is available. Pay close attention to every line item that could represent a financial movement.
+
+For each transaction, provide the following information:
 
 - id: The transaction reference number if present on the statement. If not, this can be omitted. (The system will assign its own unique ID later).
 - date: The transaction date (Buchungsdatum or Wertstellungsdatum). CRITICAL: Convert this date to YYYY-MM-DD format. For example, if the PDF shows "18.01.2025", you MUST output "2025-01-18". If it's already "2025-01-18", keep it as is.
@@ -165,10 +160,10 @@ You will receive a bank statement as a data URI. Extract all individual transact
 - amount: The transaction amount. IMPORTANT: Represent payments (debits, Soll, S, -) as NEGATIVE numbers and income (credits, Haben, H, +) as POSITIVE numbers. Parse German number formats correctly (e.g., "1.234,56" should become 1234.56, "- 50,00" should become -50.00).
 - currency: The currency of the transaction (e.g., EUR). If not explicitly stated, assume EUR.
 - recipientOrPayer: The recipient (Empfänger/Zahlungspflichtiger) if it's an outgoing payment (negative amount), or the payer (Auftraggeber/Einzahler) if it's an incoming payment (positive amount).
-  *   First, look for explicit labels in the transaction details like "Empfänger:", "Begünst.:", "ZahlgPfl:", "Auftraggeber:", etc., and extract the name following it.
+  *   First, look for explicit labels in the transaction details like "Empfänger:", "Begünst.:", "ZahlgPfl:", "Auftraggeber:", "Von:", "An:" etc., and extract the name following it.
   *   If no explicit label is found, carefully examine the 'description' (Buchungstext/Verwendungszweck).
       *   For outgoing payments (where amount is negative): If a company name (e.g., "Amazon Payments", "Netflix DE", "Vodafone Gmbh", "E.ON Energie", "Stadtwerke Musterstadt") or a person's name is clearly identifiable as the entity to whom the money was sent, extract that name as the recipient.
-      *   For incoming payments (where amount is positive): If a company or person's name is clearly identifiable as the source of the money, extract that name as the payer.
+      *   For incoming payments (where amount is positive): If a company or person's name (e.g., "Max Mustermann", "Firma ABC GmbH", "Gehalt", "Mieteinnahme") is clearly identifiable as the source of the money, extract that name as the payer.
   *   Prioritize names that appear to be distinct entities rather than generic terms or parts of the transaction purpose itself unless they clearly denote the counterparty.
   *   If a clear recipient or payer cannot be reliably determined from the available information, leave this field empty. Do not guess or extract ambiguous information.
 
@@ -180,16 +175,15 @@ Return the information as a JSON object with a key "transactions" containing an 
 Bank Statement PDF: {{media url=statementDataUri}}`,
 });
 
-// The flow's outputSchema should reflect what the prompt is configured to output.
 const extractBankStatementDataFlow = ai.defineFlow(
   {
     name: 'extractBankStatementDataFlow',
     inputSchema: ExtractBankStatementDataInputSchema,
-    outputSchema: z.object({ transactions: z.array(AIModelOutputTransactionSchema) }), // This matches the prompt's output schema
+    outputSchema: z.object({ transactions: z.array(AIModelOutputTransactionSchema) }),
   },
   async input => {
     const {output} = await prompt(input, {model: 'googleai/gemini-1.5-flash-latest'});
-    return output!; // output will be { transactions: AIModelOutputTransactionSchema[] }
+    return output!;
   }
 );
 
