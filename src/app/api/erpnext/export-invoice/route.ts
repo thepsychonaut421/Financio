@@ -8,7 +8,7 @@ import { NextResponse } from 'next/server';
 import type { ERPIncomingInvoiceItem } from '@/types/incoming-invoice';
 
 // These should be loaded from environment variables
-const ERPNEXT_API_URL = process.env.ERNEXT_API_URL; // e.g., https://your-erpnext-domain.com/api/resource/Purchase Invoice
+const ERPNEXT_API_URL = process.env.ERNEXT_API_URL; 
 const ERPNEXT_API_KEY = process.env.ERNEXT_API_KEY;
 const ERPNEXT_API_SECRET = process.env.ERNEXT_API_SECRET;
 
