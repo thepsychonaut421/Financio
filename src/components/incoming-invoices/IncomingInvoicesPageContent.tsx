@@ -349,28 +349,35 @@ export function IncomingInvoicesPageContent() {
       });
 
       if (!response.ok) {
-        let errorBody = `Server responded with ${response.status} ${response.statusText}`;
+        let detailedErrorMessage = `Server Error: ${response.status} ${response.statusText || ''}`.trim();
+        // Try to parse the error body as JSON first
         try {
-          // Try to parse the error body as JSON, as our API route should send JSON errors
           const errorResult = await response.json();
-          errorBody = errorResult.error || errorResult.message || errorBody;
-        } catch (e) {
-          // If parsing as JSON fails, it might be an HTML error page or plain text
+          if (errorResult.error) { // Prioritize .error field
+            detailedErrorMessage = errorResult.error;
+          } else if (errorResult.message) { // Then .message field
+            detailedErrorMessage = errorResult.message;
+          }
+          // If neither .error nor .message, detailedErrorMessage remains the status/statusText
+        } catch (jsonError) {
+          // Parsing JSON failed, so the response was not JSON (e.g., HTML error page)
           try {
             const textError = await response.text();
-            if (textError) {
-               // A simple heuristic to avoid showing a full HTML page in the toast
+            if (textError && textError.trim() !== '') {
               if (textError.toLowerCase().includes("<html")) {
-                 errorBody = `Server error ${response.status}. Please check server logs.`;
+                // Avoid showing full HTML in toast
+                detailedErrorMessage = `Server error ${response.status}. Please check server logs for details.`;
               } else {
-                errorBody = textError.substring(0, 200); // Truncate long non-JSON errors
+                // Show first part of text error
+                detailedErrorMessage = textError.substring(0, 250);
               }
             }
-          } catch (textE) {
-            // Failed to get text body either, stick with status
+            // If textError is empty, detailedErrorMessage remains status/statusText
+          } catch (textParseError) {
+            // Failed to get text body, detailedErrorMessage remains status/statusText
           }
         }
-        throw new Error(errorBody);
+        throw new Error(detailedErrorMessage);
       }
 
       // Handle 204 No Content specifically, as .json() would fail
@@ -517,4 +524,5 @@ export function IncomingInvoicesPageContent() {
     
 
     
+
 
