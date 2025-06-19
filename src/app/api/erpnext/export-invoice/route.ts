@@ -13,9 +13,16 @@ const ERPNEXT_API_KEY = process.env.ERNEXT_API_KEY;
 const ERPNEXT_API_SECRET = process.env.ERNEXT_API_SECRET;
 
 export async function POST(request: Request) {
+  // Log environment variables for debugging
+  console.log('API Route /api/erpnext/export-invoice called.');
+  console.log('ERNEXT_API_URL:', ERPNEXT_API_URL);
+  console.log('ERNEXT_API_KEY:', ERPNEXT_API_KEY);
+  console.log('ERNEXT_API_SECRET:', ERPNEXT_API_SECRET);
+
   if (!ERNEXT_API_URL || !ERNEXT_API_KEY || !ERNEXT_API_SECRET) {
+    console.error('ERPNext API credentials missing or not configured. Ensure .env variables are set and server is restarted.');
     return NextResponse.json(
-      { error: 'ERPNext API credentials are not configured on the server.' },
+      { error: 'ERPNext API credentials are not configured on the server. Please check server logs and .env file.' },
       { status: 500 }
     );
   }
@@ -87,7 +94,7 @@ export async function POST(request: Request) {
         */
         // SIMULATING API CALL FOR NOW
         await new Promise(resolve => setTimeout(resolve, 500)); // Simulate network delay
-        console.log("Simulating ERPNext API call for invoice:", invoice.rechnungsnummer, "Payload:", erpNextPayload);
+        console.log("Simulating ERPNext API call for invoice:", invoice.rechnungsnummer, "Payload:", JSON.stringify(erpNextPayload, null, 2));
         // if (Math.random() < 0.1) throw new Error("Simulated API error for " + invoice.rechnungsnummer); // Simulate occasional error
         // *******************************************************************
         
@@ -95,7 +102,7 @@ export async function POST(request: Request) {
 
       } catch (e: any) {
         errorCount++;
-        errors.push({ invoiceNumber: invoice.rechnungsnummer || invoice.pdfFileName, error: e.message || "Unknown error" });
+        errors.push({ invoiceNumber: invoice.rechnungsnummer || invoice.pdfFileName, error: e.message || "Unknown error during individual invoice export" });
         console.error(`Failed to export invoice ${invoice.rechnungsnummer} to ERPNext:`, e);
       }
     }
@@ -113,7 +120,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ message: `${successCount} invoice(s) successfully submitted to ERPNext.` });
 
   } catch (error: any) {
-    console.error('Error in /api/erpnext/export-invoice:', error);
-    return NextResponse.json({ error: error.message || 'An unexpected error occurred on the server.' }, { status: 500 });
+    console.error('Critical Error in /api/erpnext/export-invoice:', error);
+    return NextResponse.json({ error: error.message || 'An unexpected critical error occurred on the server.' }, { status: 500 });
   }
 }
