@@ -15,12 +15,13 @@ const ERPNEXT_API_SECRET = process.env.ERNEXT_API_SECRET;
 export async function POST(request: Request) {
   // Log environment variables for debugging
   console.log('API Route /api/erpnext/export-invoice called.');
-  console.log('ERNEXT_API_URL:', ERPNEXT_API_URL);
-  console.log('ERNEXT_API_KEY:', ERPNEXT_API_KEY);
-  console.log('ERNEXT_API_SECRET:', ERPNEXT_API_SECRET);
+  console.log('ERNEXT_API_URL:', process.env.ERNEXT_API_URL);
+  console.log('ERNEXT_API_KEY:', process.env.ERNEXT_API_KEY);
+  console.log('ERNEXT_API_SECRET:', process.env.ERNEXT_API_SECRET);
 
-  if (!ERNEXT_API_URL || !ERNEXT_API_KEY || !ERNEXT_API_SECRET) {
+  if (!process.env.ERNEXT_API_URL || !process.env.ERNEXT_API_KEY || !process.env.ERNEXT_API_SECRET) {
     console.error('ERPNext API credentials missing or not configured. Ensure .env variables are set and server is restarted.');
+    console.log('Attempting to return JSON error for missing credentials.'); // Added log
     return NextResponse.json(
       { error: 'ERPNext API credentials are not configured on the server. Please check server logs and .env file.' },
       { status: 500 }
@@ -75,10 +76,10 @@ export async function POST(request: Request) {
         // You'll need to replace this with a proper fetch call to your ERPNext instance.
         // Example using fetch:
         /*
-        const response = await fetch(ERNEXT_API_URL, { // Ensure ERPNEXT_API_URL points to the Purchase Invoice endpoint
+        const response = await fetch(process.env.ERNEXT_API_URL, { // Ensure ERPNEXT_API_URL points to the Purchase Invoice endpoint
           method: 'POST',
           headers: {
-            'Authorization': `token ${ERNEXT_API_KEY}:${ERNEXT_API_SECRET}`,
+            'Authorization': `token ${process.env.ERNEXT_API_KEY}:${process.env.ERNEXT_API_SECRET}`,
             'Content-Type': 'application/json',
             'Accept': 'application/json',
           },
