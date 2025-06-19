@@ -8,9 +8,9 @@ import { NextResponse } from 'next/server';
 import type { ERPIncomingInvoiceItem } from '@/types/incoming-invoice';
 
 // These should be loaded from environment variables
-const ERPNEXT_API_URL = process.env.ERNEXT_API_URL; 
-const ERPNEXT_API_KEY = process.env.ERNEXT_API_KEY;
-const ERPNEXT_API_SECRET = process.env.ERNEXT_API_SECRET;
+// const ERPNEXT_API_URL = process.env.ERNEXT_API_URL; 
+// const ERPNEXT_API_KEY = process.env.ERNEXT_API_KEY;
+// const ERPNEXT_API_SECRET = process.env.ERNEXT_API_SECRET;
 
 export async function POST(request: Request) {
   // Log environment variables for debugging
@@ -19,6 +19,8 @@ export async function POST(request: Request) {
   console.log('ERNEXT_API_KEY:', process.env.ERNEXT_API_KEY);
   console.log('ERNEXT_API_SECRET:', process.env.ERNEXT_API_SECRET);
 
+  /*
+  // Temporarily commented out for development if ERPNext credentials are not yet available
   if (!process.env.ERNEXT_API_URL || !process.env.ERNEXT_API_KEY || !process.env.ERNEXT_API_SECRET) {
     console.error('ERPNext API credentials missing or not configured. Ensure .env variables are set and server is restarted.');
     console.log('Attempting to return JSON error for missing credentials.'); // Added log
@@ -27,6 +29,7 @@ export async function POST(request: Request) {
       { status: 500 }
     );
   }
+  */
 
   try {
     const { invoices } = (await request.json()) as { invoices: ERPIncomingInvoiceItem[] };
