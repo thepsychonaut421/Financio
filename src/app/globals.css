@@ -2,9 +2,7 @@
 @tailwind components;
 @tailwind utilities;
 
-body {
-  font-family: 'Inter', sans-serif; /* Updated to Inter as per style guidelines */
-}
+/* Removed explicit font-family: 'Inter' here, next/font will handle it via className on <html> or CSS variable */
 
 @layer base {
   :root {
@@ -87,5 +85,6 @@ body {
   }
   body {
     @apply bg-background text-foreground;
+    /* font-family is now handled by next/font via className on <html> */
   }
 }
