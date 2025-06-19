@@ -1,7 +1,7 @@
 
 'use client';
 
-import React, { useState, useCallback, ChangeEvent } from 'react';
+import React, { useState, useCallback, ChangeEvent, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -33,6 +33,11 @@ export function PdfOrganizerPageContent() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [overallProgress, setOverallProgress] = useState(0);
   const [currentFileProgressText, setCurrentFileProgressText] = useState('');
+  const [currentYear, setCurrentYear] = useState<string>('');
+
+  useEffect(() => {
+    setCurrentYear(new Date().getFullYear().toString());
+  }, []);
 
   const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
     if (event.target.files && event.target.files.length > 0) {
@@ -302,7 +307,7 @@ export function PdfOrganizerPageContent() {
       </main>
 
       <footer className="text-center mt-12 py-4 border-t">
-        <p className="text-sm text-muted-foreground">&copy; {new Date().getFullYear()} PDF Suite. Powered by AI.</p>
+        <p className="text-sm text-muted-foreground">&copy; {currentYear} PDF Suite. Powered by AI.</p>
       </footer>
     </div>
   );

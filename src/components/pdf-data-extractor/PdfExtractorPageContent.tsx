@@ -1,7 +1,7 @@
 
 'use client';
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { PdfUploadForm } from '@/components/pdf-data-extractor/PdfUploadForm';
 import { InvoiceDataTable } from '@/components/pdf-data-extractor/InvoiceDataTable';
 import { ActionButtons } from '@/components/pdf-data-extractor/ActionButtons';
@@ -21,6 +21,11 @@ export function PdfExtractorPageContent() {
   const [progress, setProgress] = useState(0);
   const [currentFileProgress, setCurrentFileProgress] = useState('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [currentYear, setCurrentYear] = useState<string>('');
+
+  useEffect(() => {
+    setCurrentYear(new Date().getFullYear().toString());
+  }, []);
 
   const handleFilesSelected = useCallback((files: File[]) => {
     setSelectedFiles(files);
@@ -142,7 +147,7 @@ export function PdfExtractorPageContent() {
         )}
       </main>
       <footer className="text-center mt-12 py-4 border-t">
-        <p className="text-sm text-muted-foreground">&copy; {new Date().getFullYear()} PDF Data Extractor. Powered by AI.</p>
+        <p className="text-sm text-muted-foreground">&copy; {currentYear} PDF Data Extractor. Powered by AI.</p>
       </footer>
     </div>
   );

@@ -1,7 +1,7 @@
 
 'use client';
 
-import React, { useState, useCallback, ChangeEvent } from 'react';
+import React, { useState, useCallback, ChangeEvent, useEffect } from 'react';
 import { BankStatementUploadForm } from '@/components/bank-statement-extractor/BankStatementUploadForm';
 import { BankStatementDataTable } from '@/components/bank-statement-extractor/BankStatementDataTable';
 import { BankStatementActionButtons } from '@/components/bank-statement-extractor/BankStatementActionButtons';
@@ -21,6 +21,11 @@ export function BankStatementExtractorPageContent() {
   const [progress, setProgress] = useState(0);
   const [currentFileProgress, setCurrentFileProgress] = useState('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [currentYear, setCurrentYear] = useState<string>('');
+
+  useEffect(() => {
+    setCurrentYear(new Date().getFullYear().toString());
+  }, []);
 
   const handleFilesSelected = useCallback((files: File[]) => {
     setSelectedFiles(files);
@@ -135,7 +140,7 @@ export function BankStatementExtractorPageContent() {
         )}
       </main>
       <footer className="text-center mt-12 py-4 border-t">
-        <p className="text-sm text-muted-foreground">&copy; {new Date().getFullYear()} PDF Suite. Powered by AI.</p>
+        <p className="text-sm text-muted-foreground">&copy; {currentYear} PDF Suite. Powered by AI.</p>
       </footer>
     </div>
   );

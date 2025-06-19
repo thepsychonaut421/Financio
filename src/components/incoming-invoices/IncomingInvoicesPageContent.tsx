@@ -40,6 +40,11 @@ export function IncomingInvoicesPageContent() {
   const [useMinimalErpExport, setUseMinimalErpExport] = useState(true);
   const [isExportingToERPNext, setIsExportingToERPNext] = useState(false);
   const { toast } = useToast();
+  const [currentYear, setCurrentYear] = useState<string>('');
+
+  useEffect(() => {
+    setCurrentYear(new Date().getFullYear().toString());
+  }, []);
 
   useEffect(() => {
     try {
@@ -251,11 +256,11 @@ export function IncomingInvoicesPageContent() {
             }
         }
         
-        let year = new Date().getFullYear().toString();
-        if (postingDateERP) { year = postingDateERP.substring(0,4); }
-        if (!yearCounters[year]) { yearCounters[year] = 0; }
-        yearCounters[year]++;
-        const erpNextInvoiceNameGenerated = `ACC-PINV-${year}-${String(yearCounters[year]).padStart(5, '0')}`;
+        let yearToUse = new Date().getFullYear().toString();
+        if (postingDateERP) { yearToUse = postingDateERP.substring(0,4); }
+        if (!yearCounters[yearToUse]) { yearCounters[yearToUse] = 0; }
+        yearCounters[yearToUse]++;
+        const erpNextInvoiceNameGenerated = `ACC-PINV-${yearToUse}-${String(yearCounters[yearToUse]).padStart(5, '0')}`;
 
         const erpCompatibleInvoice: ERPIncomingInvoiceItem = {
           pdfFileName: file.name,
@@ -475,7 +480,7 @@ export function IncomingInvoicesPageContent() {
         )}
       </main>
       <footer className="text-center mt-12 py-4 border-t">
-        <p className="text-sm text-muted-foreground">&copy; {new Date().getFullYear()} PDF Data Extractor. Powered by AI.</p>
+        <p className="text-sm text-muted-foreground">&copy; {currentYear} PDF Data Extractor. Powered by AI.</p>
       </footer>
     </div>
   );
@@ -483,4 +488,3 @@ export function IncomingInvoicesPageContent() {
     
 
     
-

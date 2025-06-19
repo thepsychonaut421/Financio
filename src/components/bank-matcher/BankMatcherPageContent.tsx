@@ -29,6 +29,11 @@ export function BankMatcherPageContent() {
   const [progressValue, setProgressValue] = useState(0);
   const [currentFileProgressText, setCurrentFileProgressText] = useState('');
   const [availableInvoices, setAvailableInvoices] = useState<ERPIncomingInvoiceItem[]>([]);
+  const [currentYear, setCurrentYear] = useState<string>('');
+
+  useEffect(() => {
+    setCurrentYear(new Date().getFullYear().toString());
+  }, []);
 
   useEffect(() => {
     const storedInvoicesString = localStorage.getItem(LOCAL_STORAGE_MATCHER_DATA_KEY);
@@ -365,7 +370,7 @@ export function BankMatcherPageContent() {
       </main>
 
       <footer className="text-center mt-12 py-4 border-t">
-        <p className="text-sm text-muted-foreground">&copy; {new Date().getFullYear()} PDF Data Extractor & Bank Matcher. Powered by AI.</p>
+        <p className="text-sm text-muted-foreground">&copy; {currentYear} PDF Data Extractor & Bank Matcher. Powered by AI.</p>
       </footer>
     </div>
   );
