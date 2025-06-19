@@ -348,17 +348,46 @@ export function IncomingInvoicesPageContent() {
         body: JSON.stringify({ invoices: erpProcessedInvoices }),
       });
 
-      const result = await response.json();
+      if (!response.ok) {
+        let errorBody = `Server responded with ${response.status} ${response.statusText}`;
+        try {
+          // Try to parse the error body as JSON, as our API route should send JSON errors
+          const errorResult = await response.json();
+          errorBody = errorResult.error || errorResult.message || errorBody;
+        } catch (e) {
+          // If parsing as JSON fails, it might be an HTML error page or plain text
+          try {
+            const textError = await response.text();
+            if (textError) {
+               // A simple heuristic to avoid showing a full HTML page in the toast
+              if (textError.toLowerCase().includes("<html")) {
+                 errorBody = `Server error ${response.status}. Please check server logs.`;
+              } else {
+                errorBody = textError.substring(0, 200); // Truncate long non-JSON errors
+              }
+            }
+          } catch (textE) {
+            // Failed to get text body either, stick with status
+          }
+        }
+        throw new Error(errorBody);
+      }
 
-      if (response.ok) {
+      // Handle 204 No Content specifically, as .json() would fail
+      if (response.status === 204) {
+        toast({
+          title: "Export Successful",
+          description: "Invoices submitted to ERPNext (server returned no content).",
+        });
+      } else {
+        // For other 2xx statuses, expect JSON
+        const result = await response.json();
         toast({
           title: "Export Successful",
           description: result.message || "Invoices submitted to ERPNext.",
         });
-        // Optionally, clear or mark invoices as exported
-      } else {
-        throw new Error(result.error || `Server responded with ${response.status}`);
       }
+      // Optionally, clear or mark invoices as exported
     } catch (error) {
       console.error("Failed to export to ERPNext:", error);
       const message = error instanceof Error ? error.message : "Unknown error during ERPNext export.";
@@ -488,3 +517,4 @@ export function IncomingInvoicesPageContent() {
     
 
     
+
