@@ -1,19 +1,19 @@
 
 'use client';
 
-import React, { useEffect } from 'react'; 
+import React, { useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import Link from 'next/link';
-import { LogIn, ShieldCheck } from 'lucide-react';
+import { UserPlus, ShieldCheck } from 'lucide-react';
 import Image from 'next/image';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
 
-export function LoginPageContent() {
-  const { login, isAuthenticated, isLoading } = useAuth();
+export function SignupPageContent() {
+  const { login, isAuthenticated, isLoading } = useAuth(); // Using login for simulated signup
   const router = useRouter();
 
   useEffect(() => {
@@ -22,8 +22,10 @@ export function LoginPageContent() {
     }
   }, [isLoading, isAuthenticated, router]);
 
-  const handleLogin = (event: React.FormEvent) => {
+  const handleSignup = (event: React.FormEvent) => {
     event.preventDefault();
+    // In a real app, you'd collect form data and call a signup API
+    // For this simulation, we'll just use the existing login function
     login(); 
   };
 
@@ -34,7 +36,6 @@ export function LoginPageContent() {
         </div>
     );
   }
-
 
   return (
     <div className="flex flex-col items-center justify-center min-h-[calc(100vh-4rem)] bg-gradient-to-br from-primary/5 via-background to-background p-4">
@@ -51,50 +52,63 @@ export function LoginPageContent() {
                 priority
             />
           </Link>
-          <CardTitle className="text-3xl font-bold font-headline text-primary">Secure Login</CardTitle>
+          <CardTitle className="text-3xl font-bold font-headline text-primary">Create Account</CardTitle>
           <CardDescription className="text-muted-foreground">
-            Access your PDF Suite dashboard.
+            Join PDF Suite and streamline your document workflow.
           </CardDescription>
         </CardHeader>
         <CardContent className="p-6 sm:p-8 space-y-6">
-          <form onSubmit={handleLogin} className="space-y-6">
+          <form onSubmit={handleSignup} className="space-y-6">
             <div className="space-y-2">
-              <Label htmlFor="email" className="font-medium">Email Address</Label>
+              <Label htmlFor="name" className="font-medium">Full Name</Label>
               <Input 
-                id="email" 
+                id="name" 
+                type="text" 
+                placeholder="Your Name" 
+                required 
+                className="h-12 text-base"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="email-signup" className="font-medium">Email Address</Label>
+              <Input 
+                id="email-signup" 
                 type="email" 
                 placeholder="you@example.com" 
                 required 
                 className="h-12 text-base"
-                defaultValue="test@example.com"
               />
             </div>
             <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="password" className="font-medium">Password</Label>
-                <Link href="#" className="text-sm text-primary hover:underline hover:text-primary/80 transition-colors">
-                  Forgot password?
-                </Link>
-              </div>
+              <Label htmlFor="password-signup" className="font-medium">Password</Label>
               <Input 
-                id="password" 
+                id="password-signup" 
                 type="password" 
                 required 
-                placeholder="Enter your password" 
+                placeholder="Choose a strong password" 
                 className="h-12 text-base"
-                defaultValue="password"
+              />
+            </div>
+             <div className="space-y-2">
+              <Label htmlFor="confirm-password-signup" className="font-medium">Confirm Password</Label>
+              <Input 
+                id="confirm-password-signup" 
+                type="password" 
+                required 
+                placeholder="Confirm your password" 
+                className="h-12 text-base"
               />
             </div>
             <Button type="submit" className="w-full font-semibold text-base py-6" size="lg">
-              <LogIn className="mr-2 h-5 w-5" /> Sign In
+              <UserPlus className="mr-2 h-5 w-5" /> Sign Up
             </Button>
           </form>
         </CardContent>
         <CardFooter className="flex flex-col items-center space-y-3 p-6 bg-muted/50">
           <p className="text-sm text-muted-foreground">
-            Don&apos;t have an account?{' '}
-            <Link href="/signup" className="font-semibold text-primary hover:underline hover:text-primary/80 transition-colors">
-              Create an Account
+            Already have an account?{' '}
+            <Link href="/login" className="font-semibold text-primary hover:underline hover:text-primary/80 transition-colors">
+              Sign In
             </Link>
           </p>
            <p className="text-xs text-muted-foreground/80 flex items-center">
