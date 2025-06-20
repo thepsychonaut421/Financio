@@ -106,7 +106,8 @@ export function IncomingInvoicesPageContent() {
     "FAVORIO C/O HATRACO GMBH": "Favorio c/o Hatraco GmbH",
     "HATRACO GMBH": "Hatraco GmbH",
     "CUMO GMBH": "CUMO GmbH",
-    "SELLIXX GMBH": "SELLIXX GmbH"
+    "SELLIXX GMBH": "SELLIXX GmbH",
+    "UNBEKANNT": "UNBEKANNT" // Ensure UNBEKANNT maps to itself if AI returns it
   };
   
   const DEFAULT_KONTENRAHMEN = "1740 - Verbindlichkeiten";
@@ -219,32 +220,26 @@ export function IncomingInvoicesPageContent() {
         
         let finalLieferantName = aiResult.lieferantName;
 
-        // Post-process supplier name based on the map if AI didn't perfectly match
-        // The AI is already instructed to use the map, so this is a fallback or refinement.
-        if (aiResult.lieferantName && aiResult.lieferantName !== "UNBEKANNT") {
+        if (aiResult.lieferantName) {
             const upperCaseExtractedName = aiResult.lieferantName.toUpperCase();
             if (supplierMap[upperCaseExtractedName]) { 
                 finalLieferantName = supplierMap[upperCaseExtractedName];
             } else {
-                // Attempt partial match of known keys within a longer extracted name
-                const foundKey = Object.keys(supplierMap).find(key => upperCaseExtractedName.includes(key));
+                const foundKey = Object.keys(supplierMap).find(key => key !== "UNBEKANNT" && upperCaseExtractedName.includes(key));
                 if (foundKey) {
                     finalLieferantName = supplierMap[foundKey];
                 } else {
-                  // Check if AI returned one of the canonical names directly (value from the map)
                   const matchedValueFromMapValues = Object.values(supplierMap).find(val => val.toLowerCase() === aiResult.lieferantName?.toLowerCase());
                   if (matchedValueFromMapValues) {
                       finalLieferantName = matchedValueFromMapValues;
                   } else {
-                    // If still no match, use the AI's output, or default to UNBEKANNT if it wasn't already that
-                    finalLieferantName = aiResult.lieferantName; // Keep AI's original if not "UNBEKANNT" and no map hit
+                    finalLieferantName = aiResult.lieferantName; 
                   }
                 }
             }
-        } else if (!aiResult.lieferantName) { // If AI returned empty or undefined
+        } else { 
             finalLieferantName = "UNBEKANNT";
         }
-        // If aiResult.lieferantName was "UNBEKANNT", finalLieferantName remains "UNBEKANNT"
 
 
         const postingDateERP = formatDateForERP(aiResult.datum);
@@ -270,10 +265,12 @@ export function IncomingInvoicesPageContent() {
         if (!yearCounters[yearToUse]) { yearCounters[yearToUse] = 0; }
         yearCounters[yearToUse]++;
         const erpNextInvoiceNameGenerated = `ACC-PINV-${yearToUse}-${String(yearCounters[yearToUse]).padStart(5, '0')}`;
+        
+        const rechnungsnummerToUse = aiResult.rechnungsnummer || erpNextInvoiceNameGenerated;
 
         const erpCompatibleInvoice: ERPIncomingInvoiceItem = {
           pdfFileName: file.name,
-          rechnungsnummer: aiResult.rechnungsnummer,
+          rechnungsnummer: rechnungsnummerToUse,
           datum: postingDateERP, 
           lieferantName: finalLieferantName,
           lieferantAdresse: aiResult.lieferantAdresse,
@@ -300,9 +297,9 @@ export function IncomingInvoicesPageContent() {
         } else {
           regularResultsDisplay.push({
               pdfFileName: file.name,
-              rechnungsnummer: aiResult.rechnungsnummer,
+              rechnungsnummer: rechnungsnummerToUse, // Use the potentially fallback rechnungsnummer here too for consistency
               datum: aiResult.datum, 
-              lieferantName: finalLieferantName, // Show normalized name even in non-ERP for consistency
+              lieferantName: finalLieferantName,
               lieferantAdresse: aiResult.lieferantAdresse,
               zahlungsziel: aiResult.zahlungsziel,
               zahlungsart: aiResult.zahlungsart,
@@ -404,7 +401,7 @@ export function IncomingInvoicesPageContent() {
           toast({
             title: "Export Status",
             description: result.message,
-            variant: response.status === 207 ? "default" : "default", // Use default for 207 (Multi-Status)
+            variant: response.status === 207 ? "default" : "default", 
           });
         } else {
            toast({
@@ -414,7 +411,6 @@ export function IncomingInvoicesPageContent() {
         }
         if (result.errors && result.errors.length > 0) {
           console.error("[ExportERP] Individual invoice errors:", result.errors);
-          // Potentially display these errors more prominently if needed
         }
       }
     } catch (error: any) {
