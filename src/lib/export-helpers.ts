@@ -18,7 +18,13 @@ export function downloadFile(content: string | Blob, fileName: string, mimeType:
 
 function escapeCSVField(field: string | number | undefined | null): string {
   if (field === undefined || field === null) return '';
-  const stringField = String(field);
+  let stringField = String(field);
+
+  // Prefix with an apostrophe if it's a long string of digits to force Excel to treat as text
+  if (/^\d+$/.test(stringField) && stringField.length >= 10) {
+    stringField = "'" + stringField;
+  }
+
   if (stringField.includes('"') || stringField.includes(',') || stringField.includes('\n') || stringField.includes('\r')) {
     return `"${stringField.replace(/"/g, '""')}"`;
   }
@@ -89,35 +95,35 @@ export function incomingInvoicesToERPNextCSVComplete(invoices: ERPIncomingInvoic
     "update_stock", "set_posting_time",
   ];
 
-  // Item Level Headers based on user's "perfect formula" image
   const itemHeaders = [
-    "ID (Items)",
-    "Accepted Qty (Items)",
-    "Accepted Qty in Stock UOM (Items)",
-    "Amount (Items)",
-    "Amount (Company Currency) (Items)",
-    "Item Name (Items)",
-    "Rate (Items)",
-    "Rate (Company Currency) (Items)",
-    "UOM (Items)",
-    "UOM Conversion Factor (Items)",
-    "items.expense_account" // Crucial field from user's image
+    "ID (Items)", // item_code
+    "Accepted Qty (Items)", // qty
+    "Accepted Qty in Stock UOM (Items)", // stock_qty
+    "Amount (Items)", // amount
+    "Amount (Company Currency) (Items)", // base_amount
+    "Item Name (Items)", // item_name
+    "Rate (Items)", // rate
+    "Rate (Company Currency) (Items)", // base_rate
+    "UOM (Items)", // uom
+    "UOM Conversion Factor (Items)", // conversion_factor
+    "items.expense_account" // expense_account for item
   ];
+
 
   const allHeaders = [...invoiceLevelHeaders, ...itemHeaders];
   let csvString = allHeaders.map(escapeCSVField).join(',') + '\n';
 
-  const DEFAULT_EXPENSE_ACCOUNT = "6000 - Wareneingang"; // As per user feedback and image
+  const DEFAULT_EXPENSE_ACCOUNT = "6000 - Wareneingang";
 
   invoices.forEach((invoice, invoiceIndex) => {
     const invoiceLevelDataEscaped = [
       escapeCSVField(invoice.lieferantName),
       escapeCSVField(invoice.rechnungsnummer),
-      escapeCSVField(invoice.billDate), // Should be YYYY-MM-DD
-      escapeCSVField(invoice.datum),    // Should be YYYY-MM-DD (posting_date)
-      escapeCSVField(invoice.dueDate),  // Should be YYYY-MM-DD
+      escapeCSVField(invoice.billDate),
+      escapeCSVField(invoice.datum),
+      escapeCSVField(invoice.dueDate),
       escapeCSVField(invoice.wahrung || 'EUR'),
-      escapeCSVField(""), // credit_to is left blank
+      escapeCSVField(""), // credit_to
       escapeCSVField(invoice.istBezahlt?.toString() ?? '0'),
       escapeCSVField(invoice.remarks),
       escapeCSVField('1'), // update_stock
@@ -133,22 +139,21 @@ export function incomingInvoicesToERPNextCSVComplete(invoices: ERPIncomingInvoic
         const itemAmount = itemQty * itemRate;
 
         const itemDataEscaped = [
-          escapeCSVField(itemCodeValue),                       // ID (Items)
-          escapeCSVField(itemQty.toString()),                  // Accepted Qty (Items)
-          escapeCSVField(itemQty.toString()),                  // Accepted Qty in Stock UOM (Items)
-          escapeCSVField(itemAmount.toFixed(2)),               // Amount (Items)
-          escapeCSVField(itemAmount.toFixed(2)),               // Amount (Company Currency) (Items) - Assuming invoice currency = company currency
-          escapeCSVField(itemNameValue),                       // Item Name (Items)
-          escapeCSVField(itemRate.toFixed(2)),                 // Rate (Items)
-          escapeCSVField(itemRate.toFixed(2)),                 // Rate (Company Currency) (Items) - Assuming invoice currency = company currency
-          escapeCSVField("Stk"),                               // UOM (Items) - Default to "Stk" or "Nos"
-          escapeCSVField('1'),                                 // UOM Conversion Factor (Items)
-          escapeCSVField(DEFAULT_EXPENSE_ACCOUNT)              // items.expense_account
+          escapeCSVField(itemCodeValue),
+          escapeCSVField(itemQty.toString()),
+          escapeCSVField(itemQty.toString()), // Accepted Qty in Stock UOM
+          escapeCSVField(itemAmount.toFixed(2)),
+          escapeCSVField(itemAmount.toFixed(2)), // Amount (Company Currency)
+          escapeCSVField(itemNameValue),
+          escapeCSVField(itemRate.toFixed(2)),
+          escapeCSVField(itemRate.toFixed(2)), // Rate (Company Currency)
+          escapeCSVField("Stk"), // UOM
+          escapeCSVField('1'), // UOM Conversion Factor
+          escapeCSVField(DEFAULT_EXPENSE_ACCOUNT) // items.expense_account
         ];
         csvString += [...invoiceLevelDataEscaped, ...itemDataEscaped].join(',') + '\n';
       });
     } else {
-      // Placeholder item for invoices without lines
       const placeholderItemCode = "DEFAULT_PLACEHOLDER_ITEM";
       const placeholderItemName = `Placeholder Item (Invoice: ${invoice.rechnungsnummer || `INV${invoiceIndex + 1}`})`;
       const placeholderQty = 1;
@@ -156,17 +161,17 @@ export function incomingInvoicesToERPNextCSVComplete(invoices: ERPIncomingInvoic
       const placeholderAmount = placeholderRate * placeholderQty;
 
       const placeholderItemDataEscaped = [
-        escapeCSVField(placeholderItemCode),                  // ID (Items)
-        escapeCSVField(placeholderQty.toString()),            // Accepted Qty (Items)
-        escapeCSVField(placeholderQty.toString()),            // Accepted Qty in Stock UOM (Items)
-        escapeCSVField(placeholderAmount.toFixed(2)),         // Amount (Items)
-        escapeCSVField(placeholderAmount.toFixed(2)),         // Amount (Company Currency) (Items)
-        escapeCSVField(placeholderItemName),                  // Item Name (Items)
-        escapeCSVField(placeholderRate.toFixed(2)),           // Rate (Items)
-        escapeCSVField(placeholderRate.toFixed(2)),           // Rate (Company Currency) (Items)
-        escapeCSVField("Nos"),                                // UOM (Items)
-        escapeCSVField('1'),                                  // UOM Conversion Factor (Items)
-        escapeCSVField(DEFAULT_EXPENSE_ACCOUNT)               // items.expense_account
+        escapeCSVField(placeholderItemCode),
+        escapeCSVField(placeholderQty.toString()),
+        escapeCSVField(placeholderQty.toString()), // Accepted Qty in Stock UOM
+        escapeCSVField(placeholderAmount.toFixed(2)),
+        escapeCSVField(placeholderAmount.toFixed(2)), // Amount (Company Currency)
+        escapeCSVField(placeholderItemName),
+        escapeCSVField(placeholderRate.toFixed(2)),
+        escapeCSVField(placeholderRate.toFixed(2)), // Rate (Company Currency)
+        escapeCSVField("Nos"), // UOM for placeholder
+        escapeCSVField('1'),   // UOM Conversion Factor for placeholder
+        escapeCSVField(DEFAULT_EXPENSE_ACCOUNT) // items.expense_account for placeholder
       ];
       csvString += [...invoiceLevelDataEscaped, ...placeholderItemDataEscaped].join(',') + '\n';
     }
@@ -181,7 +186,15 @@ export function incomingInvoicesToJSON(invoices: IncomingInvoiceItem[] | ERPInco
 
 function escapeTSVField(field: string | number | undefined | null): string {
   if (field === undefined || field === null) return '';
-  return String(field).replace(/\t/g, ' ').replace(/\n/g, ' ').replace(/\r/g, ' ');
+  let stringField = String(field);
+  
+  // For TSV, Excel usually doesn't auto-convert numbers as aggressively,
+  // but prefixing very long numbers can still be a good practice if issues arise.
+  // For now, we'll keep it simpler for TSV and only replace control characters.
+  // if (/^\d+$/.test(stringField) && stringField.length >= 10) {
+  //   stringField = "'" + stringField;
+  // }
+  return stringField.replace(/\t/g, ' ').replace(/\n/g, ' ').replace(/\r/g, ' ');
 }
 
 export function incomingInvoicesToTSV(invoices: IncomingInvoiceItem[] | ERPIncomingInvoiceItem[], erpMode: boolean): string {
@@ -196,18 +209,11 @@ export function incomingInvoicesToTSV(invoices: IncomingInvoiceItem[] | ERPIncom
     "update_stock", "set_posting_time",
   ];
 
-  const itemHeadersERP = [ // Based on user's "perfect formula" image
-    "ID (Items)",
-    "Accepted Qty (Items)",
-    "Accepted Qty in Stock UOM (Items)",
-    "Amount (Items)",
-    "Amount (Company Currency) (Items)",
-    "Item Name (Items)",
-    "Rate (Items)",
-    "Rate (Company Currency) (Items)",
-    "UOM (Items)",
-    "UOM Conversion Factor (Items)",
-    "items.expense_account"
+  const itemHeadersERP = [
+    "ID (Items)", "Accepted Qty (Items)", "Accepted Qty in Stock UOM (Items)",
+    "Amount (Items)", "Amount (Company Currency) (Items)", "Item Name (Items)",
+    "Rate (Items)", "Rate (Company Currency) (Items)", "UOM (Items)",
+    "UOM Conversion Factor (Items)", "items.expense_account"
   ];
   
   const standardModeHeaders = [
@@ -248,17 +254,17 @@ export function incomingInvoicesToTSV(invoices: IncomingInvoiceItem[] | ERPIncom
             const itemAmount = itemQty * itemRate;
 
             const itemData = [
-                itemCodeValue,                       // ID (Items)
-                itemQty.toString(),                  // Accepted Qty (Items)
-                itemQty.toString(),                  // Accepted Qty in Stock UOM (Items)
-                itemAmount.toFixed(2),               // Amount (Items)
-                itemAmount.toFixed(2),               // Amount (Company Currency) (Items)
-                itemNameValue,                       // Item Name (Items)
-                itemRate.toFixed(2),                 // Rate (Items)
-                itemRate.toFixed(2),                 // Rate (Company Currency) (Items)
-                "Stk",                               // UOM (Items)
-                '1',                                 // UOM Conversion Factor (Items)
-                DEFAULT_EXPENSE_ACCOUNT_TSV          // items.expense_account
+                itemCodeValue,
+                itemQty.toString(),
+                itemQty.toString(),
+                itemAmount.toFixed(2),
+                itemAmount.toFixed(2),
+                itemNameValue,
+                itemRate.toFixed(2),
+                itemRate.toFixed(2),
+                "Stk",
+                '1',
+                DEFAULT_EXPENSE_ACCOUNT_TSV
             ];
             const itemDataEscaped = itemData.map(f => escapeTSVField(f));
             tsvString += [...invoiceLevelDataEscaped, ...itemDataEscaped].join('\t') + '\n';
@@ -271,17 +277,17 @@ export function incomingInvoicesToTSV(invoices: IncomingInvoiceItem[] | ERPIncom
             const placeholderAmount = placeholderRate * placeholderQty;
             
             const placeholderItemDataEscaped = [
-                escapeTSVField(placeholderItemCode),                  // ID (Items)
-                escapeTSVField(placeholderQty.toString()),            // Accepted Qty (Items)
-                escapeTSVField(placeholderQty.toString()),            // Accepted Qty in Stock UOM (Items)
-                escapeTSVField(placeholderAmount.toFixed(2)),         // Amount (Items)
-                escapeTSVField(placeholderAmount.toFixed(2)),         // Amount (Company Currency) (Items)
-                escapeTSVField(placeholderItemName),                  // Item Name (Items)
-                escapeTSVField(placeholderRate.toFixed(2)),           // Rate (Items)
-                escapeTSVField(placeholderRate.toFixed(2)),           // Rate (Company Currency) (Items)
-                escapeTSVField("Nos"),                                // UOM (Items)
-                escapeTSVField('1'),                                  // UOM Conversion Factor (Items)
-                escapeTSVField(DEFAULT_EXPENSE_ACCOUNT_TSV)           // items.expense_account
+                escapeTSVField(placeholderItemCode),
+                escapeTSVField(placeholderQty.toString()),
+                escapeTSVField(placeholderQty.toString()),
+                escapeTSVField(placeholderAmount.toFixed(2)),
+                escapeTSVField(placeholderAmount.toFixed(2)),
+                escapeTSVField(placeholderItemName),
+                escapeTSVField(placeholderRate.toFixed(2)),
+                escapeTSVField(placeholderRate.toFixed(2)),
+                escapeTSVField("Nos"),
+                escapeTSVField('1'),
+                escapeTSVField(DEFAULT_EXPENSE_ACCOUNT_TSV)
             ];
             tsvString += [...invoiceLevelDataEscaped, ...placeholderItemDataEscaped].join('\t') + '\n';
         }
@@ -324,16 +330,15 @@ export function incomingInvoicesToTSV(invoices: IncomingInvoiceItem[] | ERPIncom
 export function erpInvoicesToSupplierCSV(invoices: ERPIncomingInvoiceItem[]): string {
   if (!invoices || invoices.length === 0) return '';
 
-  // "Formula perfecta" headers based on user's visual feedback
   const supplierHeaders = [
-    "ID", // Will be blank, ERPNext generates this on import
+    "ID",
     "Supplier Name",
     "Supplier Type",
     "Tax ID",
-    "Primary Address", // Changed from "Address Line 1" to match image implications
-    "Email Id", 
-    "Mobile No", 
-    "Website" 
+    "Primary Address",
+    "Email Id",
+    "Mobile No",
+    "Website"
   ];
 
   let csvString = supplierHeaders.map(escapeCSVField).join(',') + '\n';
