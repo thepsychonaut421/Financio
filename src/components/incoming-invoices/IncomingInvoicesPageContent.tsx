@@ -16,7 +16,9 @@ import { extractIncomingInvoiceData, type ExtractIncomingInvoiceDataOutput } fro
 import type { IncomingInvoiceItem, ERPIncomingInvoiceItem, IncomingProcessingStatus } from '@/types/incoming-invoice';
 import { addDays, parseISO, isValid, format as formatDateFns } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
-import { erpInvoicesToSupplierCSV, downloadFile } from '@/lib/export-helpers'; // Added erpInvoicesToSupplierCSV & downloadFile
+import { erpInvoicesToSupplierCSV, downloadFile, incomingInvoicesToERPNextCSVComplete } from '@/lib/export-helpers';
+import JSZip from 'jszip';
+
 
 const LOCAL_STORAGE_PAGE_CACHE_KEY = 'incomingInvoicesPageCache';
 const LOCAL_STORAGE_MATCHER_DATA_KEY = 'processedIncomingInvoicesForMatcher';
@@ -25,7 +27,6 @@ interface IncomingInvoicesPageCache {
   extractedInvoices: IncomingInvoiceItem[];
   erpProcessedInvoices: ERPIncomingInvoiceItem[];
   erpMode: boolean;
-  useMinimalErpExport: boolean;
   status: IncomingProcessingStatus;
 }
 
@@ -39,8 +40,8 @@ export function IncomingInvoicesPageContent() {
   const [currentFileProgress, setCurrentFileProgress] = useState('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [erpMode, setErpMode] = useState(false);
-  const [useMinimalErpExport, setUseMinimalErpExport] = useState(false); // Default to "complete" export
   const [isExportingToERPNext, setIsExportingToERPNext] = useState(false);
+  const [isExportingZip, setIsExportingZip] = useState(false);
   const { toast } = useToast();
   const [currentYear, setCurrentYear] = useState<string>('');
 
@@ -65,7 +66,6 @@ export function IncomingInvoicesPageContent() {
           setExtractedInvoices(Array.isArray(cachedData.extractedInvoices) ? cachedData.extractedInvoices : []);
           setErpProcessedInvoices(Array.isArray(cachedData.erpProcessedInvoices) ? cachedData.erpProcessedInvoices : []);
           setErpMode(typeof cachedData.erpMode === 'boolean' ? cachedData.erpMode : false);
-          setUseMinimalErpExport(typeof cachedData.useMinimalErpExport === 'boolean' ? cachedData.useMinimalErpExport : false);
           setStatus('success'); 
         } else {
           localStorage.removeItem(LOCAL_STORAGE_PAGE_CACHE_KEY);
@@ -84,7 +84,6 @@ export function IncomingInvoicesPageContent() {
           extractedInvoices,
           erpProcessedInvoices,
           erpMode,
-          useMinimalErpExport,
           status,
         };
         localStorage.setItem(LOCAL_STORAGE_PAGE_CACHE_KEY, JSON.stringify(cacheToSave));
@@ -92,27 +91,27 @@ export function IncomingInvoicesPageContent() {
         console.error("Failed to save incoming invoices page cache to localStorage:", error);
       }
     }
-  }, [extractedInvoices, erpProcessedInvoices, erpMode, useMinimalErpExport, status]);
+  }, [extractedInvoices, erpProcessedInvoices, erpMode, status]);
   
   const supplierMap: Record<string, string> = {
     "LIDL": "Lidl",
     "LIDL DIGITAL DEUTSCHLAND GMBH & CO. KG": "Lidl",
-    "GD ARTLANDS ETRADING GMBH": "GD Artlands eTrading GmbH",
+    "GD ARTLANDS ETRADING GMBH": "GD Artlands eTrading GmbH", // ERP Name
     "RETOURA": "RETOURA",
-    "DOITBAU GMBH & CO.KG": "doitBau",
+    "DOITBAU GMBH & CO.KG": "doitBau", // ERP Name (example, confirm actual)
     "KAUFLAND": "Kaufland",
-    "ALDI": "ALDI E-Commerce",
+    "ALDI": "ALDI E-Commerce", // ERP Name (example, confirm actual)
     "FIRMA HANDLOWA KABIS BOZENA KEDZIORA": "FIRMA HANDLOWA KABIS BOZENA KEDZIORA",
-    "ZWECO UG": "Zweco UG",
-    "FAVORIO C/O HATRACO GMBH": "Favorio c/o Hatraco GmbH",
-    "HATRACO GMBH": "Hatraco GmbH",
-    "CUMO GMBH": "CUMO GmbH",
-    "SELLIXX GMBH": "SELLIXX GmbH",
-    "UNBEKANNT": "UNBEKANNT_SUPPLIER_PLACEHOLDER",
-    "UNBEKANNT_SUPPLIER_AI_EXTRACTED": "UNBEKANNT_SUPPLIER_PLACEHOLDER", // Handle previous placeholder
+    "ZWECO UG": "Zweco UG", // ERP Name (example, confirm actual)
+    "FAVORIO C/O HATRACO GMBH": "Favorio c/o Hatraco GmbH", // ERP Name
+    "HATRACO GMBH": "Hatraco GmbH", // ERP Name
+    "CUMO GMBH": "CUMO GmbH", // ERP Name
+    "SELLIXX GMBH": "SELLIXX GmbH", // ERP Name
+    "UNBEKANNT": "UNBEKANNT_SUPPLIER_PLACEHOLDER", 
+    "UNBEKANNT_SUPPLIER_AI_EXTRACTED": "UNBEKANNT_SUPPLIER_PLACEHOLDER",
   };
   
-  const DEFAULT_KREDITOR_ACCOUNT = ""; // Will be blank in CSV
+  const DEFAULT_KREDITOR_ACCOUNT = ""; 
 
   const formatDateForERP = (dateString?: string): string | undefined => {
     if (!dateString || dateString.trim() === '') return undefined;
@@ -218,11 +217,13 @@ export function IncomingInvoicesPageContent() {
         
         let finalLieferantName = (aiResult.lieferantName || "").trim();
         const upperCaseExtractedName = finalLieferantName.toUpperCase();
+
         if (supplierMap[upperCaseExtractedName]) {
             finalLieferantName = supplierMap[upperCaseExtractedName];
-        } else if (finalLieferantName === "" || upperCaseExtractedName === "UNBEKANNT" || upperCaseExtractedName === "UNBEKANNT_SUPPLIER_AI_EXTRACTED") {
+        } else if (finalLieferantName === "" || finalLieferantName === "UNBEKANNT" || finalLieferantName === "UNBEKANNT_SUPPLIER_AI_EXTRACTED") {
             finalLieferantName = "UNBEKANNT_SUPPLIER_PLACEHOLDER"; 
         }
+
 
         const postingDateERP = formatDateForERP(aiResult.datum);
         const billDateERP = postingDateERP;
@@ -245,14 +246,20 @@ export function IncomingInvoicesPageContent() {
         if (postingDateERP) {
             const parsedYear = postingDateERP.substring(0,4);
             if (!isNaN(parseInt(parsedYear))) yearToUse = parsedYear;
-        } else if (aiResult.datum) {
-            const parsedFallbackDate = new Date(aiResult.datum);
-            if(isValid(parsedFallbackDate)) yearToUse = parsedFallbackDate.getFullYear().toString();
+        } else if (aiResult.datum) { // Fallback if postingDateERP is undefined
+            try {
+              const parsedFallbackDate = new Date(aiResult.datum); // Try to parse directly
+              if(isValid(parsedFallbackDate)) yearToUse = parsedFallbackDate.getFullYear().toString();
+            } catch (e) { /* ignore */ }
         }
+        
         if (!yearCounters[yearToUse]) { yearCounters[yearToUse] = 0; }
         yearCounters[yearToUse]++;
-        const erpNextInvoiceNameGenerated = `ACC-PINV-${yearToUse}-${String(yearCounters[yearToUse]).padStart(5, '0')}`;
-        const rechnungsnummerToUse = aiResult.rechnungsnummer || erpNextInvoiceNameGenerated;
+        // const erpNextInvoiceNameGenerated = `ACC-PINV-${yearToUse}-${String(yearCounters[yearToUse]).padStart(5, '0')}`;
+        // We don't generate this ID anymore for CSV export, ERPNext handles it. But keep for internal reference if needed.
+        const internalRefId = `INTERNAL-${yearToUse}-${String(yearCounters[yearToUse]).padStart(5, '0')}`;
+        const rechnungsnummerToUse = aiResult.rechnungsnummer || internalRefId;
+
 
         const erpCompatibleInvoice: ERPIncomingInvoiceItem = {
           pdfFileName: file.name,
@@ -268,7 +275,7 @@ export function IncomingInvoicesPageContent() {
           kundenNummer: aiResult.kundenNummer,
           bestellNummer: aiResult.bestellNummer,
           isPaidByAI: aiResult.isPaid,
-          erpNextInvoiceName: erpNextInvoiceNameGenerated,
+          erpNextInvoiceName: internalRefId, // For UI reference
           billDate: billDateERP,
           dueDate: dueDateERP,
           wahrung: 'EUR',
@@ -284,7 +291,7 @@ export function IncomingInvoicesPageContent() {
           regularResultsDisplay.push({
               pdfFileName: file.name,
               rechnungsnummer: rechnungsnummerToUse,
-              datum: aiResult.datum,
+              datum: aiResult.datum, // Original date for non-ERP display
               lieferantName: finalLieferantName,
               lieferantAdresse: aiResult.lieferantAdresse,
               zahlungsziel: aiResult.zahlungsziel,
@@ -370,13 +377,65 @@ export function IncomingInvoicesPageContent() {
     const csvData = erpInvoicesToSupplierCSV(erpProcessedInvoices);
     downloadFile(csvData, 'erpnext_suppliers_for_import.csv', 'text/csv;charset=utf-8;');
     
-    // Count unique suppliers for the toast message
-    const uniqueSupplierNames = new Set(erpProcessedInvoices.map(inv => (inv.lieferantName || '').trim()).filter(name => name));
+    const uniqueSupplierNames = new Set(erpProcessedInvoices.map(inv => (inv.lieferantName || '').trim()).filter(name => name && name !== "UNBEKANNT_SUPPLIER_PLACEHOLDER"));
     toast({
       title: "Suppliers CSV Exported",
       description: `Supplier data for ${uniqueSupplierNames.size} unique supplier(s) ready for ERPNext import.`,
     });
   };
+
+  const handleExportInvoicesAsZip = async () => {
+    if (!erpMode || erpProcessedInvoices.length === 0) {
+      toast({
+        title: "No ERP Data",
+        description: "No invoices in ERP Vorlage Mode to export as ZIP.",
+        variant: "destructive",
+      });
+      return;
+    }
+    setIsExportingZip(true);
+    const zip = new JSZip();
+    let fileCount = 0;
+
+    try {
+      for (let i = 0; i < erpProcessedInvoices.length; i++) {
+        const invoice = erpProcessedInvoices[i];
+        const csvString = incomingInvoicesToERPNextCSVComplete([invoice]); // Pass as array of one
+        
+        // Sanitize filename: replace non-alphanumeric with underscore, limit length
+        const safeInvoiceNumber = (invoice.rechnungsnummer || `invoice_${i + 1}`).replace(/[^a-zA-Z0-9_.-]/g, '_').substring(0, 50);
+        const filename = `ERPNext_Invoice_${safeInvoiceNumber}.csv`;
+        
+        zip.file(filename, csvString);
+        fileCount++;
+      }
+
+      if (fileCount > 0) {
+        const zipBlob = await zip.generateAsync({ type: "blob" });
+        downloadFile(zipBlob as any, "erpnext_individual_invoices.zip", "application/zip"); // Cast because downloadFile expects string
+        toast({
+          title: "ZIP Export Successful",
+          description: `${fileCount} invoice(s) exported as individual CSVs in a ZIP file.`,
+        });
+      } else {
+        toast({
+          title: "ZIP Export Empty",
+          description: "No invoices were processed for the ZIP file.",
+          variant: "destructive",
+        });
+      }
+    } catch (error: any) {
+      console.error("Error creating ZIP file:", error);
+      toast({
+        title: "ZIP Export Failed",
+        description: error.message || "Could not create ZIP file.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsExportingZip(false);
+    }
+  };
+
 
   const displayInvoices = erpMode ? erpProcessedInvoices : extractedInvoices;
 
@@ -413,7 +472,7 @@ export function IncomingInvoicesPageContent() {
             </Label>
             <Settings2 className="h-5 w-5 text-muted-foreground" />
           </div>
-          {erpMode && ( // "Minimal Export" toggle is now effectively managed by which export button is pressed
+          {erpMode && (
             <div className="flex items-center space-x-3 border-t sm:border-t-0 sm:border-l pt-4 sm:pt-0 sm:pl-4 mt-4 sm:mt-0">
                <FileCog className="h-5 w-5 text-muted-foreground" />
                <Label className="text-sm font-medium">
@@ -453,10 +512,11 @@ export function IncomingInvoicesPageContent() {
             <IncomingInvoiceActionButtons 
               invoices={displayInvoices} 
               erpMode={erpMode}
-              useMinimalErpExport={useMinimalErpExport} // Prop kept for structure, specific export buttons now handle format
               onExportToERPNext={handleExportToERPNext}
               isExportingToERPNext={isExportingToERPNext}
-              onExportSuppliersERPNext={handleExportSuppliersERPNext} // Pass new handler
+              onExportSuppliersERPNext={handleExportSuppliersERPNext}
+              onExportInvoicesAsZip={handleExportInvoicesAsZip} // Pass new handler
+              isExportingZip={isExportingZip} // Pass new status
             />
             {erpMode ? (
               <ERPInvoiceTable invoices={erpProcessedInvoices} />
