@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { UploadCloud, FileText, XCircle, AlertCircle, Info, ListChecks, Banknote, Percent, ArrowUpDown, Trash2 } from 'lucide-react';
+import { UploadCloud, FileText, XCircle, AlertCircle, Info, ListChecks, Banknote, Percent, ArrowUpDown, Trash2, RotateCcw, Home } from 'lucide-react'; // Added RotateCcw, Home
 import type { BankTransaction, MatchedTransaction, MatchStatus } from '@/lib/bank-matcher/types';
 import type { ERPIncomingInvoiceItem } from '@/types/incoming-invoice';
 import { parseBankStatementCSV } from '@/lib/bank-matcher/bankStatementParser';
@@ -38,7 +38,6 @@ interface BankMatcherPageCache {
   sortKey: BankMatcherSortKey | null;
   sortOrder: SortOrder;
   statusMessage: string | null;
-  // bankStatementFileNames: string[]; // Storing names might be enough if re-parsing is okay
 }
 
 const sortOptions: { key: BankMatcherSortKey; label: string }[] = [
@@ -56,7 +55,7 @@ function compareValues(valA: any, valB: any, order: SortOrder): number {
   const bIsNil = valB === null || valB === undefined || valB === '';
 
   if (aIsNil && bIsNil) return 0;
-  if (aIsNil) return order === 'asc' ? 1 : -1; // Consistently place nulls/empty at end for asc, start for desc
+  if (aIsNil) return order === 'asc' ? 1 : -1; 
   if (bIsNil) return order === 'asc' ? -1 : 1;
 
   let comparison = 0;
@@ -87,7 +86,6 @@ export function BankMatcherPageContent() {
 
   useEffect(() => {
     setCurrentYear(new Date().getFullYear().toString());
-    // Load invoice data for matching
     const storedInvoicesString = localStorage.getItem(LOCAL_STORAGE_INVOICE_DATA_KEY);
     if (storedInvoicesString) {
       try {
@@ -98,7 +96,6 @@ export function BankMatcherPageContent() {
         setErrorMessage("Error: Could not load invoice data for matching.");
       }
     }
-    // Load cached matcher data
     try {
         const cachedDataString = localStorage.getItem(LOCAL_STORAGE_MATCHER_CACHE_KEY);
         if (cachedDataString) {
@@ -108,7 +105,7 @@ export function BankMatcherPageContent() {
             if (cachedData.sortKey) setSortKey(cachedData.sortKey);
             if (cachedData.sortOrder) setSortOrder(cachedData.sortOrder);
             if (cachedData.statusMessage && (cachedData.matchedTransactions?.length > 0 || cachedData.bankTransactions?.length > 0) ) setStatusMessage(cachedData.statusMessage);
-            else setStatusMessage(null); // Clear status if no data
+            else setStatusMessage(null);
         }
     } catch (error) {
         console.error("Failed to load Bank Matcher cache:", error);
@@ -152,11 +149,10 @@ export function BankMatcherPageContent() {
       }
 
       setBankStatementFiles(validFiles);
-      // Clear previous results when new files are selected
       setBankTransactions([]);
       setMatchedTransactions([]);
       setStatusMessage("New files selected. Ready to process.");
-      localStorage.removeItem(LOCAL_STORAGE_MATCHER_CACHE_KEY); // Or clear specific parts
+      localStorage.removeItem(LOCAL_STORAGE_MATCHER_CACHE_KEY); 
     }
   };
 
@@ -164,7 +160,7 @@ export function BankMatcherPageContent() {
     const updatedFiles = bankStatementFiles.filter(file => file.name !== fileNameToRemove);
     setBankStatementFiles(updatedFiles);
     if (updatedFiles.length === 0) {
-      setBankTransactions([]); // Clear data if all files removed
+      setBankTransactions([]); 
       setMatchedTransactions([]);
       setStatusMessage("All files removed.");
       localStorage.removeItem(LOCAL_STORAGE_MATCHER_CACHE_KEY);
@@ -195,8 +191,8 @@ export function BankMatcherPageContent() {
     setErrorMessage(null);
     setStatusMessage("Starting processing...");
     setProgressValue(0);
-    setBankTransactions([]); // Clear previous raw transactions
-    setMatchedTransactions([]); // Clear previous matches
+    setBankTransactions([]); 
+    setMatchedTransactions([]); 
 
     const allParsedTransactions: BankTransaction[] = [];
 
@@ -237,7 +233,7 @@ export function BankMatcherPageContent() {
       if (availableInvoices.length === 0) {
         processStatusMsg += "No invoices available for matching. Please process invoices first in the 'Incoming Invoices' module.";
         setStatusMessage(processStatusMsg);
-        setMatchedTransactions([]);
+        setMatchedTransactions([]); // Ensure empty if no invoices
         setProgressValue(100);
       } else {
         processStatusMsg += `Now matching with ${availableInvoices.length} available invoice(s)...`;
@@ -248,11 +244,18 @@ export function BankMatcherPageContent() {
         setProgressValue(100);
         const successfulMatchesCount = matches.filter(m => m.status === 'Matched').length;
         const suspectMatchesCount = matches.filter(m => m.status === 'Suspect').length;
+        const refundCount = matches.filter(m => m.status === 'Refund').length;
+        const rentCount = matches.filter(m => m.status === 'Rent Payment').length;
+
+        let summary = `Matching complete! Found ${successfulMatchesCount} match(es), ${suspectMatchesCount} suspect(s).`;
+        if (refundCount > 0) summary += ` Identified ${refundCount} refund(s).`;
+        if (rentCount > 0) summary += ` Identified ${rentCount} rent payment(s).`;
+        
         setStatusMessage(
-          (successfulMatchesCount > 0 || suspectMatchesCount > 0)
-            ? `Matching complete! Found ${successfulMatchesCount} match(es) and ${suspectMatchesCount} suspect(s).`
+          (successfulMatchesCount > 0 || suspectMatchesCount > 0 || refundCount > 0 || rentCount > 0)
+            ? summary
             : allParsedTransactions.length > 0
-              ? "Matching complete. No strong matches or suspects found."
+              ? "Matching complete. No specific matches, suspects, refunds, or rent payments identified."
               : "Processing complete. No transactions found."
         );
       }
@@ -297,9 +300,22 @@ export function BankMatcherPageContent() {
       case 'Matched': return 'text-green-700 bg-green-100 border-green-500';
       case 'Suspect': return 'text-yellow-700 bg-yellow-100 border-yellow-500';
       case 'Unmatched': return 'text-red-700 bg-red-100 border-red-500';
+      case 'Refund': return 'text-blue-700 bg-blue-100 border-blue-500'; // New Style
+      case 'Rent Payment': return 'text-purple-700 bg-purple-100 border-purple-500'; // New Style
       default: return 'text-gray-700 bg-gray-100 border-gray-500';
     }
   };
+  
+  const getStatusIcon = (status: MatchStatus) => {
+    switch (status) {
+      case 'Refund': return <RotateCcw className="inline h-3 w-3 mr-0.5" />;
+      case 'Rent Payment': return <Home className="inline h-3 w-3 mr-0.5" />;
+      case 'Matched': return <ListChecks className="inline h-3 w-3 mr-0.5" />;
+      case 'Suspect': return <AlertCircle className="inline h-3 w-3 mr-0.5" />;
+      default: return null;
+    }
+  }
+
 
   const getSortIndicator = (key: BankMatcherSortKey) => {
     if (sortKey !== key) return <ArrowUpDown className="ml-2 h-3 w-3 opacity-30" />;
@@ -352,7 +368,7 @@ export function BankMatcherPageContent() {
             <Button onClick={handleProcessStatement} disabled={isProcessing || bankStatementFiles.length === 0} className="w-full" size="lg">
               {isProcessing ? 'Processing...' : `Match ${bankStatementFiles.length} File${bankStatementFiles.length === 1 ? '' : 's'}`}
             </Button>
-             <Button onClick={handleClearAllMatcherData} variant="outline" className="w-full" size="sm" disabled={isProcessing && bankStatementFiles.length === 0 && matchedTransactions.length === 0}>
+             <Button onClick={handleClearAllMatcherData} variant="outline" className="w-full" size="sm" disabled={isProcessing && bankStatementFiles.length === 0 && matchedTransactions.length === 0 && bankTransactions.length === 0}>
                 <Trash2 className="mr-2 h-4 w-4" /> Clear All Matcher Data & Selections
             </Button>
           </CardContent>
@@ -421,13 +437,19 @@ export function BankMatcherPageContent() {
                             </CardDescription>
                           </div>
                           <div className={`text-right ml-2 flex-shrink-0`}>
-                            <span className={`px-2.5 py-1 rounded-full text-xs font-semibold shadow-sm ${getMatchStatusColorClasses(match.status)}`}>{match.status}</span>
-                            {match.confidence !== undefined && match.confidence > 0 && (<p className="text-xs text-muted-foreground mt-1 flex items-center justify-end"><Percent className="inline h-3 w-3 mr-0.5" /> {(match.confidence * 100).toFixed(0)}%</p>)}
+                            <span className={`px-2.5 py-1 rounded-full text-xs font-semibold shadow-sm ${getMatchStatusColorClasses(match.status)} flex items-center`}>
+                                {getStatusIcon(match.status)}
+                                {match.status}
+                            </span>
+                            {match.confidence !== undefined && match.confidence > 0 && (match.status === 'Matched' || match.status === 'Suspect') && (<p className="text-xs text-muted-foreground mt-1 flex items-center justify-end"><Percent className="inline h-3 w-3 mr-0.5" /> {(match.confidence * 100).toFixed(0)}%</p>)}
                           </div>
                         </div>
-                        <p className="text-lg font-semibold text-foreground mt-1"><Banknote className="inline h-5 w-5 mr-1 text-primary/80" />{match.transaction.amount.toFixed(2)} {match.transaction.currency || 'EUR'}</p>
+                        <p className={`text-lg font-semibold mt-1 ${match.transaction.amount < 0 ? 'text-destructive' : 'text-green-600'}`}>
+                            <Banknote className="inline h-5 w-5 mr-1 text-primary/80" />
+                            {match.transaction.amount.toFixed(2)} {match.transaction.currency || 'EUR'}
+                        </p>
                       </CardHeader>
-                      {match.matchedInvoice && (
+                      {match.matchedInvoice && (match.status === 'Matched' || match.status === 'Suspect') && (
                         <CardContent className="px-4 pb-4 pt-0 border-t border-border/60">
                           <p className="text-sm font-medium mt-2 mb-1 text-primary">Matched Invoice:</p>
                           <div className="text-xs space-y-0.5 text-muted-foreground">
@@ -439,10 +461,12 @@ export function BankMatcherPageContent() {
                           </div>
                         </CardContent>
                       )}
-                      {match.status !== 'Matched' && !match.matchedInvoice && (
+                      {(match.status === 'Unmatched' || match.status === 'Refund' || match.status === 'Rent Payment') && !match.matchedInvoice && (
                         <CardContent className="px-4 pb-3 pt-2">
                           <p className="text-sm text-muted-foreground italic">
-                            {match.transaction.amount >= 0 ? "Income transaction or not a payment." : "No suitable invoice found."}
+                            {match.status === 'Refund' && 'Identified as a refund transaction.'}
+                            {match.status === 'Rent Payment' && 'Identified as a rent payment.'}
+                            {match.status === 'Unmatched' && (match.transaction.amount >= 0 ? "Income transaction or not a payment." : "No suitable invoice found.")}
                           </p>
                         </CardContent>
                       )}
@@ -460,3 +484,4 @@ export function BankMatcherPageContent() {
     </div>
   );
 }
+

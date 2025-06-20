@@ -1,3 +1,4 @@
+
 import type { ERPIncomingInvoiceItem } from '@/types/incoming-invoice';
 
 export interface BankTransaction {
@@ -11,7 +12,7 @@ export interface BankTransaction {
   // e.g., transactionType, referenceNumber, balanceAfterTransaction
 }
 
-export type MatchStatus = 'Matched' | 'Suspect' | 'Unmatched';
+export type MatchStatus = 'Matched' | 'Suspect' | 'Unmatched' | 'Refund' | 'Rent Payment';
 
 export interface MatchedTransaction {
   transaction: BankTransaction;
@@ -31,3 +32,4 @@ export interface BankStatementCSVRow {
   // Add other potential column names from bank CSVs
   [key: string]: string | undefined; // Allow for other columns
 }
+
