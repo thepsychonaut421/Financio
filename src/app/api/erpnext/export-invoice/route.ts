@@ -15,16 +15,17 @@ import type { ERPIncomingInvoiceItem } from '@/types/incoming-invoice';
 export async function POST(request: Request) {
   // Log environment variables for debugging
   console.log('[ExportERP API] Route /api/erpnext/export-invoice called.');
-  console.log('[ExportERP API] ERNEXT_API_URL:', process.env.ERNEXT_API_URL);
-  console.log('[ExportERP API] ERNEXT_API_KEY:', process.env.ERNEXT_API_KEY);
-  console.log('[ExportERP API] ERNEXT_API_SECRET:', process.env.ERNEXT_API_SECRET);
+  // console.log('[ExportERP API] ERNEXT_API_URL:', process.env.ERNEXT_API_URL);
+  // console.log('[ExportERP API] ERNEXT_API_KEY:', process.env.ERNEXT_API_KEY);
+  // console.log('[ExportERP API] ERNEXT_API_SECRET:', process.env.ERNEXT_API_SECRET);
 
-  /*
+
   // THIS BLOCK IS INTENTIONALLY COMMENTED OUT FOR TESTING WITHOUT REAL CREDENTIALS
-  // Ensure this remains commented if you don't have .env variables set up yet.
+  // OR WHEN CREDENTIALS ARE NOT YET SET UP.
+  /*
   if (!process.env.ERNEXT_API_URL || !process.env.ERNEXT_API_KEY || !process.env.ERNEXT_API_SECRET) {
     console.error('[ExportERP API] ERPNext API credentials missing or not configured. Ensure .env variables are set and server is restarted.');
-    console.log('[ExportERP API] Attempting to return JSON error for missing credentials (this check is active).');
+    console.log('[ExportERP API] Attempting to return JSON error for missing credentials (this check is currently COMMENTED OUT).');
     return NextResponse.json(
       { error: 'ERPNext API credentials are not configured on the server. Please check server logs and .env file.' },
       { status: 500 }
@@ -43,6 +44,8 @@ export async function POST(request: Request) {
     let successCount = 0;
     let errorCount = 0;
     const errors: { invoiceNumber?: string, error: string }[] = [];
+
+    console.log(`[ExportERP API] Simulating export for ${invoices.length} invoice(s).`);
 
     for (const invoice of invoices) {
       const erpNextPayload = {
@@ -122,12 +125,12 @@ export async function POST(request: Request) {
           message: `Export partially completed. ${successCount} invoices succeeded, ${errorCount} failed.`,
           errors
         },
-        { status: successCount > 0 ? 207 : 500 }
+        { status: successCount > 0 ? 207 : 500 } // Use 207 for partial success
       );
     }
 
     console.log(`[ExportERP API] ${successCount} invoice(s) successfully SIMULATED for ERPNext.`);
-    return NextResponse.json({ message: `${successCount} invoice(s) successfully submitted to ERPNext.` });
+    return NextResponse.json({ message: `${successCount} invoice(s) successfully submitted to ERPNext (SIMULATED).` });
 
   } catch (error: any) {
     console.error('[ExportERP API] Critical Error in /api/erpnext/export-invoice:', error.message, error.stack);
