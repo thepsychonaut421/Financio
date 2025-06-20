@@ -92,14 +92,14 @@ export function IncomingInvoicesPageContent() {
   }, []);
 
   useEffect(() => {
-    if (status === 'success') {
+    if (status === 'success' || existingErpInvoiceKeys.size > 0) { // Save if ERP keys were loaded even if no new processing
       try {
         const cacheToSave: IncomingInvoicesPageCache = {
           extractedInvoices,
           erpProcessedInvoices,
           erpMode,
-          status,
-          existingErpInvoiceKeys: Array.from(existingErpInvoiceKeys) // Convert Set to array for storage
+          status: extractedInvoices.length > 0 || erpProcessedInvoices.length > 0 ? status : 'idle', // only set status if there are invoices
+          existingErpInvoiceKeys: Array.from(existingErpInvoiceKeys) 
         };
         localStorage.setItem(LOCAL_STORAGE_PAGE_CACHE_KEY, JSON.stringify(cacheToSave));
       } catch (error) {
@@ -471,40 +471,48 @@ export function IncomingInvoicesPageContent() {
         let supplierColFound = false;
         let billNoColFound = false;
 
-        // Attempt to find common column names (case-insensitive)
         const headers = results.meta.fields || [];
-        const supplierColVariations = ["supplier", "supplier name", "lieferant", "lieferantenname"];
-        const billNoColVariations = ["bill no", "bill_no", "invoice no", "invoice_no", "rechnungsnummer"];
+        const supplierColVariations = ["supplier", "supplier name", "lieferant", "lieferantenname", "supplier_name"];
+        const billNoColVariations = ["bill no", "bill_no", "invoice no", "invoice_no", "rechnungsnummer", "name"]; // 'name' is often the ID/BillNo for Purchase Invoice
 
         let actualSupplierCol = "";
         let actualBillNoCol = "";
 
         for (const h of headers) {
-            const hLower = h.toLowerCase();
-            if (supplierColVariations.includes(hLower)) {
+            const hLower = h.toLowerCase().trim();
+            if (supplierColVariations.includes(hLower) && !actualSupplierCol) { // Prioritize specific names
                 actualSupplierCol = h;
                 supplierColFound = true;
             }
-            if (billNoColVariations.includes(hLower)) {
+            if (billNoColVariations.includes(hLower) && !actualBillNoCol) {
                 actualBillNoCol = h;
                 billNoColFound = true;
             }
         }
         
         if (!supplierColFound || !billNoColFound) {
-            setErrorMessage(`Could not find required columns in ERPNext export. Please ensure your CSV contains headers like 'Supplier' (or 'Lieferant') AND 'Bill No' (or 'Rechnungsnummer'). Found headers: ${headers.join(', ')}`);
+            setErrorMessage(`Could not find required columns in ERPNext export. Please ensure your CSV contains headers for Supplier Name (e.g., 'Supplier', 'Lieferant') AND Invoice Number (e.g., 'Bill No', 'Rechnungsnummer', 'Name'). Found headers: ${headers.join(', ')}`);
             setIsCheckingDuplicates(false);
-            setExistingErpInvoiceKeys(new Set()); // Clear keys on error
+            setExistingErpInvoiceKeys(new Set()); 
             return;
         }
 
         results.data.forEach((row: any) => {
-          const supplierName = (row[actualSupplierCol] || '').trim().toLowerCase();
-          const invoiceNumber = (row[actualBillNoCol] || '').trim().toLowerCase();
-          if (supplierName && invoiceNumber) {
-            newKeys.add(`${supplierName}||${invoiceNumber}`);
+          const rawSupplierNameFromErp = (row[actualSupplierCol] || '').trim();
+          let normalizedSupplierNameForErpKey = rawSupplierNameFromErp.toLowerCase();
+          const upperCaseErpSupplierName = rawSupplierNameFromErp.toUpperCase();
+
+          if (supplierMap[upperCaseErpSupplierName]) {
+            normalizedSupplierNameForErpKey = supplierMap[upperCaseErpSupplierName].toLowerCase();
+          }
+          
+          const invoiceNumberFromErp = (row[actualBillNoCol] || '').trim().toLowerCase();
+
+          if (normalizedSupplierNameForErpKey && invoiceNumberFromErp) {
+            newKeys.add(`${normalizedSupplierNameForErpKey}||${invoiceNumberFromErp}`);
           }
         });
+
         setExistingErpInvoiceKeys(newKeys);
         toast({
           title: "ERPNext Data Processed",
@@ -515,14 +523,15 @@ export function IncomingInvoicesPageContent() {
       error: (error: Error) => {
         console.error("Error parsing ERPNext export CSV:", error);
         setErrorMessage(`Error parsing ERPNext export: ${error.message}`);
-        setExistingErpInvoiceKeys(new Set()); // Clear keys on error
+        setExistingErpInvoiceKeys(new Set()); 
         setIsCheckingDuplicates(false);
       }
     });
   };
   
   const createInvoiceKey = (invoice: IncomingInvoiceItem | ERPIncomingInvoiceItem): string => {
-    const supplier = (invoice.lieferantName || '').trim().toLowerCase();
+    // Uses the already AI-normalized (via supplierMap) lieferantName from the invoice object
+    const supplier = (invoice.lieferantName || '').trim().toLowerCase(); 
     const number = (invoice.rechnungsnummer || '').trim().toLowerCase();
     return `${supplier}||${number}`;
   };
@@ -547,7 +556,6 @@ export function IncomingInvoicesPageContent() {
           selectedFileCount={selectedFiles.length}
         />
 
-        {/* Card for ERPNext Export Upload */}
         <Card className="w-full max-w-2xl mx-auto shadow-lg">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 font-headline">
@@ -679,3 +687,4 @@ export function IncomingInvoicesPageContent() {
     </div>
   );
 }
+
