@@ -8,7 +8,7 @@ import { NextResponse } from 'next/server';
 import type { ERPIncomingInvoiceItem } from '@/types/incoming-invoice';
 
 // These should be loaded from environment variables
-// const ERPNEXT_API_URL = process.env.ERNEXT_API_URL; 
+// const ERPNEXT_API_URL = process.env.ERNEXT_API_URL;
 // const ERPNEXT_API_KEY = process.env.ERNEXT_API_KEY;
 // const ERPNEXT_API_SECRET = process.env.ERNEXT_API_SECRET;
 
@@ -20,17 +20,18 @@ export async function POST(request: Request) {
   console.log('[ExportERP API] ERNEXT_API_SECRET:', process.env.ERNEXT_API_SECRET);
 
   /*
-  // Temporarily commented out to allow testing without actual credentials
+  // THIS BLOCK IS INTENTIONALLY COMMENTED OUT FOR TESTING WITHOUT REAL CREDENTIALS
+  // Ensure this remains commented if you don't have .env variables set up yet.
   if (!process.env.ERNEXT_API_URL || !process.env.ERNEXT_API_KEY || !process.env.ERNEXT_API_SECRET) {
     console.error('[ExportERP API] ERPNext API credentials missing or not configured. Ensure .env variables are set and server is restarted.');
-    console.log('[ExportERP API] Attempting to return JSON error for missing credentials.'); 
+    console.log('[ExportERP API] Attempting to return JSON error for missing credentials (this check is active).');
     return NextResponse.json(
       { error: 'ERPNext API credentials are not configured on the server. Please check server logs and .env file.' },
       { status: 500 }
     );
   }
   */
-  
+
 
   try {
     const { invoices } = (await request.json()) as { invoices: ERPIncomingInvoiceItem[] };
@@ -48,9 +49,9 @@ export async function POST(request: Request) {
         doctype: "Purchase Invoice",
         supplier: invoice.lieferantName,
         bill_no: invoice.rechnungsnummer,
-        bill_date: invoice.billDate, 
-        posting_date: invoice.datum, 
-        due_date: invoice.dueDate, 
+        bill_date: invoice.billDate,
+        posting_date: invoice.datum,
+        due_date: invoice.dueDate,
         currency: invoice.wahrung || "EUR",
         grand_total: invoice.gesamtbetrag,
         is_paid: invoice.istBezahlt,
@@ -61,15 +62,19 @@ export async function POST(request: Request) {
           qty: item.quantity,
           rate: item.unitPrice,
         })),
-        set_posting_time: 1, 
+        set_posting_time: 1,
       };
 
       try {
         // *******************************************************************
         // ACTUAL API call to ERPNext - REMAINS COMMENTED OUT FOR SIMULATION
+        // To enable real export:
+        // 1. Ensure the credential check block above is UNCOMMENTED.
+        // 2. Ensure .env file has ERNEXT_API_URL, ERNEXT_API_KEY, ERNEXT_API_SECRET.
+        // 3. UNCOMMENT the following fetch call.
         /*
         console.log('[ExportERP API] Attempting to fetch ERPNext API with payload:', JSON.stringify(erpNextPayload, null, 2));
-        const response = await fetch(process.env.ERNEXT_API_URL!, { 
+        const response = await fetch(process.env.ERNEXT_API_URL!, {
           method: 'POST',
           headers: {
             'Authorization': `token ${process.env.ERNEXT_API_KEY}:${process.env.ERNEXT_API_SECRET}`,
@@ -99,7 +104,7 @@ export async function POST(request: Request) {
         // SIMULATED SUCCESS FOR NOW:
         console.log(`[ExportERP API] SIMULATING successful export for invoice ${invoice.rechnungsnummer || invoice.pdfFileName}`);
         // *******************************************************************
-        
+
         successCount++;
 
       } catch (e: any) {
@@ -113,11 +118,11 @@ export async function POST(request: Request) {
     if (errorCount > 0) {
       console.log(`[ExportERP API] Export partially completed. ${successCount} succeeded, ${errorCount} failed. Errors:`, errors);
       return NextResponse.json(
-        { 
+        {
           message: `Export partially completed. ${successCount} invoices succeeded, ${errorCount} failed.`,
           errors
-        }, 
-        { status: successCount > 0 ? 207 : 500 } 
+        },
+        { status: successCount > 0 ? 207 : 500 }
       );
     }
 
@@ -129,4 +134,3 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: error.message || 'An unexpected critical error occurred on the server.' }, { status: 500 });
   }
 }
-
