@@ -12,7 +12,7 @@ import {
   downloadFile 
 } from '@/lib/export-helpers';
 import type { IncomingInvoiceItem, ERPIncomingInvoiceItem } from '@/types/incoming-invoice';
-import { Copy, FileJson, FileSpreadsheet, ExternalLink, Users, FileArchive } from 'lucide-react'; // Added FileArchive
+import { Copy, FileJson, FileSpreadsheet, ExternalLink, Users, FileArchive, Trash2 } from 'lucide-react'; // Added FileArchive, Trash2
 
 interface IncomingInvoiceActionButtonsProps {
   invoices: IncomingInvoiceItem[] | ERPIncomingInvoiceItem[];
@@ -20,8 +20,9 @@ interface IncomingInvoiceActionButtonsProps {
   onExportToERPNext: () => void;
   isExportingToERPNext: boolean;
   onExportSuppliersERPNext: () => void;
-  onExportInvoicesAsZip: () => void; // New prop for ZIP export
-  isExportingZip: boolean; // New prop for ZIP export status
+  onExportInvoicesAsZip: () => void; 
+  isExportingZip: boolean; 
+  onClearAllInvoices: () => void; // New prop for clearing invoices
 }
 
 export function IncomingInvoiceActionButtons({ 
@@ -30,8 +31,9 @@ export function IncomingInvoiceActionButtons({
   onExportToERPNext,
   isExportingToERPNext,
   onExportSuppliersERPNext,
-  onExportInvoicesAsZip, // Consuming new prop
-  isExportingZip // Consuming new prop
+  onExportInvoicesAsZip, 
+  isExportingZip,
+  onClearAllInvoices // Consuming new prop
 }: IncomingInvoiceActionButtonsProps) {
   const { toast } = useToast();
 
@@ -71,7 +73,7 @@ export function IncomingInvoiceActionButtons({
     let fileName;
     if (erpMode) {
       csvData = incomingInvoicesToERPNextCSVComplete(invoices as ERPIncomingInvoiceItem[]);
-      fileName = 'erpnext_purchase_invoices_for_import_ALL.csv'; // Renamed to specify it's all
+      fileName = 'erpnext_purchase_invoices_for_import_ALL.csv'; 
     } else {
       csvData = incomingInvoicesToCSV(invoices as IncomingInvoiceItem[]);
       fileName = 'extracted_incoming_invoices_standard.csv';
@@ -129,6 +131,15 @@ export function IncomingInvoiceActionButtons({
           </Button>
         </>
       )}
+      <Button 
+        onClick={onClearAllInvoices}
+        variant="destructive" 
+        className="w-full sm:w-auto"
+        disabled={invoices.length === 0}
+      >
+        <Trash2 className="mr-2 h-4 w-4" />
+        Clear All Invoices
+      </Button>
     </div>
   );
 }
