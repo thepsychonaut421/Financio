@@ -82,16 +82,16 @@ export function incomingInvoicesToERPNextCSV(invoices: ERPIncomingInvoiceItem[])
   if (!invoices || invoices.length === 0) return '';
 
   const headers = [
-    "supplier", // Lieferant Name (mapped)
-    "posting_date", // Rechnungsdatum (YYYY-MM-DD)
-    "bill_no", // Rechnungsnummer (Supplier Invoice No)
-    "currency", // Währung (e.g., EUR)
-    "grand_total", // Gesamtbetrag
-    // Item details - these are typically required as a group
-    "items/item_code",
-    "items/description",
-    "items/qty",
-    "items/rate",
+    "supplier", 
+    "posting_date", 
+    "bill_no", 
+    "currency", 
+    "grand_total", 
+    // Item details
+    "item_code",
+    "item_name", // Changed from items/description
+    "qty",
+    "rate",
   ];
   
   let csvString = headers.join(',') + '\n';
@@ -108,16 +108,14 @@ export function incomingInvoicesToERPNextCSV(invoices: ERPIncomingInvoiceItem[])
     if (invoice.rechnungspositionen && invoice.rechnungspositionen.length > 0) {
       invoice.rechnungspositionen.forEach(item => {
         const itemData = [
-          escapeCSVField(item.productCode), // item_code
-          escapeCSVField(item.productName), // description
-          item.quantity.toString(), // qty
-          item.unitPrice.toString(), // rate
+          escapeCSVField(item.productCode), 
+          escapeCSVField(item.productName), 
+          item.quantity.toString(), 
+          item.unitPrice.toString(), 
         ];
         csvString += mainInvoiceData.join(',') + ',' + itemData.join(',') + '\n';
       });
     } else {
-       // If no items, ERPNext might still require the item columns, potentially empty or with a default placeholder item.
-       // For now, providing empty item data. This might need adjustment based on specific ERPNext import behavior.
        const emptyItemData = ['', '', '', '']; 
        csvString += mainInvoiceData.join(',') + ',' + emptyItemData.join(',') + '\n';
     }
@@ -133,23 +131,22 @@ export function incomingInvoicesToERPNextCSVComplete(invoices: ERPIncomingInvoic
   const headers = [
     "supplier",
     "posting_date",
-    "bill_no", // Supplier Invoice No
-    "bill_date", // Invoice Date (Rechnungsdatum)
-    "due_date", // Fälligkeitsdatum
+    "bill_no", 
+    "bill_date", 
+    "due_date", 
     "currency",
     "grand_total",
-    "is_paid", // 0 or 1
-    "debit_to", // Accounts Payable (Kontenrahmen)
-    "remarks", // Bemerkungen (Kunden-Nr. / Bestell-Nr.)
+    "is_paid", 
+    "debit_to", 
+    "remarks", 
     // Item details
-    "items/item_code",
-    "items/description",
-    "items/qty",
-    "items/rate",
-    // ERPNext allows more item fields, these are common placeholders but may not be filled by AI
-    "items/item_group", 
-    "items/warehouse", 
-    "items/cost_center" 
+    "item_code",
+    "item_name", // Changed from items/description
+    "qty",
+    "rate",
+    "item_group", 
+    "warehouse", 
+    "cost_center" 
   ];
   
   let csvString = headers.join(',') + '\n';
@@ -157,10 +154,10 @@ export function incomingInvoicesToERPNextCSVComplete(invoices: ERPIncomingInvoic
   invoices.forEach((invoice) => {
     const mainInvoiceData = [
       escapeCSVField(invoice.lieferantName), 
-      escapeCSVField(invoice.datum), // posting_date (YYYY-MM-DD)
+      escapeCSVField(invoice.datum), 
       escapeCSVField(invoice.rechnungsnummer),
-      escapeCSVField(invoice.billDate || invoice.datum), // bill_date (YYYY-MM-DD)
-      escapeCSVField(invoice.dueDate), // due_date (YYYY-MM-DD)
+      escapeCSVField(invoice.billDate || invoice.datum), 
+      escapeCSVField(invoice.dueDate), 
       escapeCSVField(invoice.wahrung || 'EUR'),
       invoice.gesamtbetrag?.toString() ?? '',
       invoice.istBezahlt?.toString() ?? '0',
@@ -175,14 +172,13 @@ export function incomingInvoicesToERPNextCSVComplete(invoices: ERPIncomingInvoic
           escapeCSVField(item.productName), 
           item.quantity.toString(),
           item.unitPrice.toString(),
-          escapeCSVField(''), // item_group (placeholder)
-          escapeCSVField(''), // warehouse (placeholder)
-          escapeCSVField(''), // cost_center (placeholder)
+          escapeCSVField(''), 
+          escapeCSVField(''), 
+          escapeCSVField(''), 
         ];
         csvString += mainInvoiceData.join(',') + ',' + itemData.join(',') + '\n';
       });
     } else {
-       // Still output main invoice data even if no items
        const emptyItemData = ['', '', '', '', '', '', '']; 
        csvString += mainInvoiceData.join(',') + ',' + emptyItemData.join(',') + '\n';
     }
@@ -210,11 +206,11 @@ export function incomingInvoicesToTSV(invoices: IncomingInvoiceItem[] | ERPIncom
     let headers: string[];
     
     if (useMinimalErpExport) {
-      headers = ["supplier", "posting_date", "bill_no", "currency", "grand_total", "items/item_code", "items/description", "items/qty", "items/rate"];
+      headers = ["supplier", "posting_date", "bill_no", "currency", "grand_total", "item_code", "item_name", "qty", "rate"];
     } else {
       headers = [
         "supplier", "posting_date", "bill_no", "bill_date", "due_date", "currency", "grand_total", "is_paid", "debit_to", "remarks",
-        "items/item_code", "items/description", "items/qty", "items/rate", "items/item_group", "items/warehouse", "items/cost_center"
+        "item_code", "item_name", "qty", "rate", "item_group", "warehouse", "cost_center"
       ];
     }
     tsvString = headers.join('\t') + '\n';
@@ -261,9 +257,9 @@ export function incomingInvoicesToTSV(invoices: IncomingInvoiceItem[] | ERPIncom
                 item.productName,
                 item.quantity.toString(),
                 item.unitPrice.toString(),
-                '', // item_group
-                '', // warehouse
-                '', // cost_center
+                '', 
+                '', 
+                '', 
             ];
           }
           const itemDataEscaped = itemData.map(f => escapeTSVField(f));
@@ -318,5 +314,3 @@ export function incomingInvoicesToTSV(invoices: IncomingInvoiceItem[] | ERPIncom
   }
   return tsvString;
 }
-
-    

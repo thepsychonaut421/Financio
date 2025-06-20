@@ -93,20 +93,22 @@ export function IncomingInvoicesPageContent() {
     }
   }, [extractedInvoices, erpProcessedInvoices, erpMode, useMinimalErpExport, status]);
 
-
   const supplierMap: Record<string, string> = {
     "LIDL": "Lidl",
-    "LIDL DIGITAL DEUTSCHLAND GMBH & CO. KG": "Lidl", 
+    "LIDL DIGITAL DEUTSCHLAND GMBH & CO. KG": "Lidl",
     "GD ARTLANDS ETRADING GMBH": "GD Artlands eTrading GmbH",
     "RETOURA": "RETOURA",
     "DOITBAU GMBH & CO.KG": "doitBau",
     "KAUFLAND": "Kaufland",
     "ALDI": "ALDI E-Commerce",
     "FIRMA HANDLOWA KABIS BOZENA KEDZIORA": "FIRMA HANDLOWA KABIS BOZENA KEDZIORA",
-    "ZWECO UG": "Zweco UG"
+    "ZWECO UG": "Zweco UG",
+    "FAVORIO C/O HATRACO GMBH": "Hatraco GmbH",
+    "HATRACO GMBH": "Hatraco GmbH",
+    "CUMO GMBH": "CUMO GmbH",
+    "SELLIXX GMBH": "SELLIXX GmbH"
   };
   
-
   const DEFAULT_KONTENRAHMEN = "1740 - Verbindlichkeiten";
 
   const formatDateForERP = (dateString?: string): string | undefined => {
@@ -217,19 +219,23 @@ export function IncomingInvoicesPageContent() {
         
         let finalLieferantName = aiResult.lieferantName;
 
+        // Post-process supplier name based on the map if AI didn't perfectly match
         if (aiResult.lieferantName) {
-            const upperCaseLieferantName = aiResult.lieferantName.toUpperCase();
-            if (supplierMap[upperCaseLieferantName]) { 
-                finalLieferantName = supplierMap[upperCaseLieferantName];
+            const upperCaseExtractedName = aiResult.lieferantName.toUpperCase();
+            if (supplierMap[upperCaseExtractedName]) { 
+                finalLieferantName = supplierMap[upperCaseExtractedName];
             } else {
-                const matchedValue = Object.values(supplierMap).find(val => val.toLowerCase() === aiResult.lieferantName?.toLowerCase());
-                if (matchedValue) {
-                    finalLieferantName = matchedValue;
+                // Attempt partial match or if AI returns an exact value from the map's values
+                const matchedValueFromMapValues = Object.values(supplierMap).find(val => val.toLowerCase() === aiResult.lieferantName?.toLowerCase());
+                if (matchedValueFromMapValues) {
+                    finalLieferantName = matchedValueFromMapValues;
                 } else {
-                    const foundKey = Object.keys(supplierMap).find(key => upperCaseLieferantName.includes(key.toUpperCase()));
+                     // Check if any key from supplierMap is contained in the extracted name
+                    const foundKey = Object.keys(supplierMap).find(key => upperCaseExtractedName.includes(key));
                     if (foundKey) {
                         finalLieferantName = supplierMap[foundKey];
                     } else {
+                        // If still no match, use the AI's output, or default to UNBEKANNT
                         finalLieferantName = (aiResult.lieferantName === "UNBEKANNT" || !aiResult.lieferantName) ? "UNBEKANNT" : aiResult.lieferantName;
                     }
                 }
@@ -294,7 +300,7 @@ export function IncomingInvoicesPageContent() {
               pdfFileName: file.name,
               rechnungsnummer: aiResult.rechnungsnummer,
               datum: aiResult.datum, 
-              lieferantName: aiResult.lieferantName, 
+              lieferantName: aiResult.lieferantName, // Show original AI extraction in non-ERP mode for clarity
               lieferantAdresse: aiResult.lieferantAdresse,
               zahlungsziel: aiResult.zahlungsziel,
               zahlungsart: aiResult.zahlungsart,
@@ -342,7 +348,7 @@ export function IncomingInvoicesPageContent() {
 
     setIsExportingToERPNext(true);
     try {
-      console.log('[ExportERP] Fetching API /api/erpnext/export-invoice...');
+      console.log('[ExportERP] Fetching API /api/erpnext/export-invoice with payload:', JSON.stringify({ invoices: erpProcessedInvoices }, null, 2));
       const response = await fetch('/api/erpnext/export-invoice', {
         method: 'POST',
         headers: {
@@ -350,7 +356,7 @@ export function IncomingInvoicesPageContent() {
         },
         body: JSON.stringify({ invoices: erpProcessedInvoices }),
       });
-      console.log('[ExportERP] Fetch response status:', response.status);
+      console.log('[ExportERP] Fetch response status:', response.status, 'Status text:', response.statusText);
 
       if (!response.ok) {
         let detailedErrorMessage = `Server Error: ${response.status} ${response.statusText || ''}`.trim();
@@ -369,7 +375,7 @@ export function IncomingInvoicesPageContent() {
             const textError = await response.text();
             console.log('[ExportERP] Error result (text):', textError);
             if (textError && textError.trim() !== '') {
-              detailedErrorMessage = textError.substring(0, 250);
+              detailedErrorMessage = `Server Error: ${response.status}. Response: ${textError.substring(0, 250)}`;
             }
           } catch (textParseError) {
             console.log('[ExportERP] Failed to parse error as text:', textParseError);
@@ -383,23 +389,35 @@ export function IncomingInvoicesPageContent() {
         return; 
       }
 
-      if (response.status === 204) {
-        console.log('[ExportERP] Response 204 No Content.');
+      if (response.status === 204) { 
+        console.log('[ExportERP] Response 204 No Content. Assuming success.');
         toast({
-          title: "Export Successful",
-          description: "Invoices submitted to ERPNext (server returned no content).",
+          title: "Export Submitted",
+          description: "Invoices submitted to ERPNext (server returned no content, assuming success).",
         });
       } else {
         const result = await response.json();
         console.log('[ExportERP] Response OK, result:', result);
-        toast({
-          title: "Export Successful",
-          description: result.message || "Invoices submitted to ERPNext.",
-        });
+        if (result.message) {
+          toast({
+            title: "Export Status",
+            description: result.message,
+            variant: response.status === 207 ? "default" : "default", // Use default for 207 (Multi-Status)
+          });
+        } else {
+           toast({
+            title: "Export Submitted",
+            description: "Invoices submitted to ERPNext.",
+          });
+        }
+        if (result.errors && result.errors.length > 0) {
+          console.error("[ExportERP] Individual invoice errors:", result.errors);
+          // Potentially display these errors more prominently if needed
+        }
       }
     } catch (error: any) {
       console.error('[ExportERP] CATCH block error in handleExportToERPNext:', error);
-      const message = error instanceof Error ? error.message : "Unknown error during ERPNext export.";
+      const message = error instanceof Error ? error.message : "Unknown client-side error during ERPNext export.";
       toast({
         title: "ERPNext Export Failed",
         description: message,
@@ -524,9 +542,3 @@ export function IncomingInvoicesPageContent() {
     </div>
   );
 }
-    
-
-    
-
-
-

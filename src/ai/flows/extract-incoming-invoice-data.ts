@@ -120,19 +120,23 @@ Extraction Rules for Invoices:
 3.  Lieferant (Supplier):
     *   Extract the supplier's name from the invoice.
     *   Then, try to match the extracted name to an exact name from this valid ERPNext supplier list. Return the ERPNext name if a match is found.
-        Valid ERPNext Supplier Names (supplierMap):
+        Valid ERPNext Supplier Names (supplierMap, keys should be uppercase for matching):
         {
           "LIDL": "Lidl",
-          "Lidl Digital Deutschland GmbH & Co. KG": "Lidl",
-          "GD Artlands eTrading GmbH": "GD Artlands eTrading GmbH",
+          "LIDL DIGITAL DEUTSCHLAND GMBH & CO. KG": "Lidl",
+          "GD ARTLANDS ETRADING GMBH": "GD Artlands eTrading GmbH",
           "RETOURA": "RETOURA",
-          "doitBau GmbH & Co.KG": "doitBau",
-          "Kaufland": "Kaufland",
+          "DOITBAU GMBH & CO.KG": "doitBau",
+          "KAUFLAND": "Kaufland",
           "ALDI": "ALDI E-Commerce",
           "FIRMA HANDLOWA KABIS BOZENA KEDZIORA": "FIRMA HANDLOWA KABIS BOZENA KEDZIORA",
-          "Zweco UG": "Zweco UG"
+          "ZWECO UG": "Zweco UG",
+          "FAVORIO C/O HATRACO GMBH": "Hatraco GmbH",
+          "HATRACO GMBH": "Hatraco GmbH",
+          "CUMO GMBH": "CUMO GmbH",
+          "SELLIXX GMBH": "SELLIXX GmbH"
         }
-    *   If the extracted supplier name does not exactly match any key in the list above, return the originally extracted name, or if unsure, return "UNBEKANNT".
+    *   If the extracted supplier name (after converting it to uppercase for robust comparison) does not exactly match any key in the list above, return the originally extracted name. If you are very unsure or cannot extract a name, return "UNBEKANNT".
 
 4.  Lieferant Adresse (Supplier Address): The full postal address of the supplier. Clean any newline characters.
 
