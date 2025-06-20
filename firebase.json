@@ -31,11 +31,12 @@
     "firestore": {
       "port": 8080
     },
-    "database": {
-      "port": 9000
+    "storage": {
+      "port": 9199
     },
     "ui": {
-      "enabled": true
+      "enabled": true,
+      "port": 4000
     },
     "singleProjectMode": true
   }
