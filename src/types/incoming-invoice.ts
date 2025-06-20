@@ -18,18 +18,27 @@ export interface IncomingInvoiceData {
 
 export interface IncomingInvoiceItem extends IncomingInvoiceData {
   pdfFileName: string;
-  // isPotentiallyInERP?: boolean; // This flag can be added if needed for non-ERP mode display logic
 }
 
 export interface ERPIncomingInvoiceItem extends IncomingInvoiceItem {
-  erpNextInvoiceName?: string; // For UI reference only
-  istBezahlt?: 0 | 1; // This is the final 0/1 for ERPNext
+  erpNextInvoiceName?: string; 
+  istBezahlt?: 0 | 1; 
   kontenrahmen?: string;
-  wahrung?: string; // e.g., EUR
-  billDate?: string; // YYYY-MM-DD
-  dueDate?: string; // YYYY-MM-DD
+  wahrung?: string; 
+  billDate?: string; 
+  dueDate?: string; 
   remarks?: string;
-  // isPotentiallyInERP?: boolean; // This flag can be added if needed for ERP mode display logic
 }
 
 export type IncomingProcessingStatus = 'idle' | 'processing' | 'success' | 'error';
+
+// Define sortable keys for ERPIncomingInvoiceItem
+export type ERPSortKey = 
+  | 'rechnungsnummer' 
+  | 'datum' 
+  | 'lieferantName' 
+  | 'gesamtbetrag' 
+  | 'pdfFileName'
+  | 'erpNextInvoiceName';
+
+export type SortOrder = 'asc' | 'desc';
