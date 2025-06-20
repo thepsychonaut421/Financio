@@ -23,18 +23,16 @@ function escapeCSVField(field: string | number | undefined | null): string {
   return stringField;
 }
 
-// Helper to format date to MM/DD/YY for specific ERPNext requirement if needed,
-// but YYYY-MM-DD is generally preferred and used by formatDateForERP.
-// This specific function is for the user's prompt request for MM/DD/YY in CSV.
+// This function is not directly used by ERPNext export but kept for standard CSV.
 function formatDateToMMDDYY(dateString?: string): string {
   if (!dateString) return '';
   try {
-    const date = parseISO(dateString); // Expects YYYY-MM-DD input
+    const date = parseISO(dateString); 
     if (isValid(date)) {
       return formatDateFns(date, 'MM/dd/yy');
     }
   } catch (e) { /* ignore */ }
-  return dateString; // Fallback
+  return dateString; 
 }
 
 
@@ -44,7 +42,7 @@ export function incomingInvoicesToCSV(invoices: IncomingInvoiceItem[]): string {
   const mainHeaders = [
     'PDF Datei',
     'Rechnungsnummer',
-    'Datum', // Original AI extracted date format
+    'Datum', 
     'Lieferant Name',
     'Lieferant Adresse',
     'Zahlungsziel',
@@ -93,6 +91,7 @@ export function incomingInvoicesToCSV(invoices: IncomingInvoiceItem[]): string {
 }
 
 export function incomingInvoicesToERPNextCSV(invoices: ERPIncomingInvoiceItem[]): string {
+  // This is the "Minimal" ERPNext CSV export
   if (!invoices || invoices.length === 0) return '';
 
   const headers = [
@@ -114,8 +113,8 @@ export function incomingInvoicesToERPNextCSV(invoices: ERPIncomingInvoiceItem[])
     const mainInvoiceData = [
       escapeCSVField(invoice.lieferantName), 
       escapeCSVField(invoice.rechnungsnummer),
-      escapeCSVField(invoice.datum), // YYYY-MM-DD
-      escapeCSVField(invoice.dueDate), // YYYY-MM-DD
+      escapeCSVField(invoice.datum), // Expected YYYY-MM-DD
+      escapeCSVField(invoice.dueDate), // Expected YYYY-MM-DD
       escapeCSVField(invoice.wahrung || 'EUR'),
     ];
 
@@ -153,53 +152,61 @@ export function incomingInvoicesToERPNextCSVComplete(invoices: ERPIncomingInvoic
   if (!invoices || invoices.length === 0) return '';
 
   const headers = [
-    "name", // ID (usually leave blank for new, ERPNext assigns)
-    "series", // e.g., ACC-PINV-.YYYY.-
+    // Invoice Level Headers (ERPNext Purchase Invoice Doctype)
+    "name",                // Can be blank for new, ERPNext assigns ID. Using our generated one.
+    "docstatus",           // 0 for Draft, 1 for Submitted
     "supplier",
-    "bill_no",        
-    "bill_date",       // YYYY-MM-DD
-    "posting_date",    // YYYY-MM-DD
-    "due_date",        // YYYY-MM-DD
-    "currency",        
-    "credit_to",       // Payable account
-    "is_paid",         // 0 or 1
-    "remarks",         
-    "update_stock",    // 1 or 0
-    "set_posting_time",// 1 or 0
-    // Item Level
+    "bill_no",             // Supplier's invoice number
+    "bill_date",           // Supplier's invoice date (YYYY-MM-DD)
+    "posting_date",        // Date to post in GL (YYYY-MM-DD)
+    "due_date",            // Payment due date (YYYY-MM-DD)
+    "currency",            // e.g., EUR
+    "credit_to",           // Accounts Payable account - MADE EMPTY as per user request "sari peste!"
+    "is_paid",             // 0 or 1
+    "remarks",
+    "update_stock",        // Typically 1 for purchase invoices with items
+    "set_posting_time",    // Typically 1
+    "naming_series",       // Leave blank to use default, or provide "ACC-PINV-.YYYY.-" 
+                           // Let's use 'series' as the column name, consistent with user's prompt
+    // Item Level Headers (ERPNext Purchase Invoice Item Doctype)
+    // These will be repeated for each item line, joined with invoice level data.
     "item_code",
     "item_name",
-    "description",     
+    "description",         // Often same as item_name
     "qty",
-    "uom",             
-    "rate",            
-    "amount",          // qty * rate
-    "conversion_factor", // For UOM conversion
-    "warehouse",       // Optional
-    "cost_center",     // Optional
-    "expense_account"  // Optional
+    "uom",                 // Unit of Measure, e.g., "Stk", "Kg"
+    "rate",                // Price per unit
+    "amount",              // qty * rate
+    "base_rate",           // Rate in company base currency
+    "base_amount",         // Amount in company base currency
+    "conversion_factor",   // For UOM conversion (usually 1 if item UOM is base UOM)
+    "warehouse",           // Optional: Target warehouse for stock items
+    "cost_center",         // Optional
+    "expense_account"      // Optional: Expense account for non-stock items
   ];
   
   let csvString = headers.map(escapeCSVField).join(',') + '\n';
 
   invoices.forEach((invoice) => {
     const postingDateYear = invoice.datum ? invoice.datum.substring(0, 4) : "YYYY";
-    const seriesValue = `ACC-PINV-.${postingDateYear}.-`;
+    // Correct series format based on user feedback
+    const seriesValue = `ACC-PINV-.${postingDateYear}.-`; 
 
     const invoiceLevelData = [
-      escapeCSVField(invoice.erpNextInvoiceName), // name/ID (could be blank for new)
-      escapeCSVField(seriesValue),
+      escapeCSVField(invoice.erpNextInvoiceName), // name (our generated ID for reference)
+      '0', // docstatus (Draft)
       escapeCSVField(invoice.lieferantName),
       escapeCSVField(invoice.rechnungsnummer),
-      escapeCSVField(invoice.billDate),    // YYYY-MM-DD
-      escapeCSVField(invoice.datum),       // YYYY-MM-DD
-      escapeCSVField(invoice.dueDate),     // YYYY-MM-DD
+      escapeCSVField(invoice.billDate),    
+      escapeCSVField(invoice.datum),       
+      escapeCSVField(invoice.dueDate),     
       escapeCSVField(invoice.wahrung || 'EUR'),
-      escapeCSVField(invoice.kontenrahmen), 
+      "", // credit_to - SKIPPED as per user request ("sari peste!")
       invoice.istBezahlt?.toString() ?? '0',
       escapeCSVField(invoice.remarks),
       '1', // update_stock
       '1', // set_posting_time
+      escapeCSVField(seriesValue), // naming_series (using 'series' as column name based on user prompt)
     ];
 
     if (invoice.rechnungspositionen && invoice.rechnungspositionen.length > 0) {
@@ -210,33 +217,37 @@ export function incomingInvoicesToERPNextCSVComplete(invoices: ERPIncomingInvoic
           escapeCSVField(item.productName),
           escapeCSVField(item.productName), 
           item.quantity?.toString() ?? '0',
-          "Stk", // uom 
+          "Stk", // uom (default)
           item.unitPrice?.toString() ?? '0.00',
           itemAmount.toFixed(2), // amount
-          '1', // conversion_factor
+          item.unitPrice?.toString() ?? '0.00', // base_rate (assuming invoice currency is base currency)
+          itemAmount.toFixed(2), // base_amount (assuming invoice currency is base currency)
+          '1', // conversion_factor (default)
           "", // warehouse 
           "", // cost_center
           "", // expense_account
         ];
-        csvString += [...invoiceLevelData, ...itemData].join(',') + '\n';
+        csvString += [...invoiceLevelData, ...itemData].map(escapeCSVField).join(',') + '\n';
       });
     } else {
-      // Create a row even for invoices without items, ERPNext might require at least one item line.
-      // This "dummy" item line might need specific handling or a default item_code in ERPNext.
+      // Add a line even for invoices without items, but item fields will be blank or default.
+      // ERPNext might require at least one item line, so this prevents skipping the invoice.
       const dummyItemData = [
-        "DUMMY_ITEM", // item_code
-        "N/A",        // item_name
-        "N/A",        // description
+        "", // item_code
+        "N/A (No items extracted)", // item_name
+        "N/A (No items extracted)", // description
         '0',          // qty
         "Stk",        // uom
         '0.00',       // rate
         '0.00',       // amount
+        '0.00',       // base_rate
+        '0.00',       // base_amount
         '1',          // conversion_factor
         "",           // warehouse
         "",           // cost_center
         "",           // expense_account
       ];
-      csvString += [...invoiceLevelData, ...dummyItemData].join(',') + '\n';
+      csvString += [...invoiceLevelData, ...dummyItemData].map(escapeCSVField).join(',') + '\n';
     }
   });
   return csvString;
@@ -263,11 +274,12 @@ export function incomingInvoicesToTSV(invoices: IncomingInvoiceItem[] | ERPIncom
     
     if (useMinimalErpExport) {
       headers = ["supplier", "bill_no", "posting_date", "due_date", "currency", "item_code", "item_name", "qty", "rate", "is_paid"];
-    } else { // "Complete" mode for TSV will now follow the more detailed CSV structure
+    } else { // "Complete" mode for TSV will follow the new detailed CSV structure
       headers = [
-        "name", "series", "supplier", "bill_no", "bill_date", "posting_date", "due_date", "currency", 
-        "credit_to", "is_paid", "remarks", "update_stock", "set_posting_time",
-        "item_code", "item_name", "description", "qty", "uom", "rate", "amount", "conversion_factor",
+        "name", "docstatus", "supplier", "bill_no", "bill_date", "posting_date", "due_date", "currency", 
+        "credit_to", "is_paid", "remarks", "update_stock", "set_posting_time", "naming_series",
+        "item_code", "item_name", "description", "qty", "uom", "rate", "amount", 
+        "base_rate", "base_amount", "conversion_factor",
         "warehouse", "cost_center", "expense_account"
       ];
     }
@@ -286,21 +298,22 @@ export function incomingInvoicesToTSV(invoices: IncomingInvoiceItem[] | ERPIncom
             invoice.dueDate,
             invoice.wahrung || 'EUR',
         ];
-      } else {
+      } else { // Complete ERP Mode
          mainInvoiceData = [
-            invoice.erpNextInvoiceName, // name
-            seriesValue, // series
+            invoice.erpNextInvoiceName,
+            '0', // docstatus
             invoice.lieferantName,
             invoice.rechnungsnummer, 
             invoice.billDate, 
             invoice.datum, 
             invoice.dueDate,
             invoice.wahrung || 'EUR',
-            invoice.kontenrahmen, 
+            "", // credit_to - empty
             invoice.istBezahlt?.toString() ?? '0',
             invoice.remarks,
             '1', // update_stock
             '1', // set_posting_time
+            seriesValue, // naming_series
          ];
       }
       const mainInvoiceDataEscaped = mainInvoiceData.map(f => escapeTSVField(f));
@@ -310,14 +323,14 @@ export function incomingInvoicesToTSV(invoices: IncomingInvoiceItem[] | ERPIncom
           let itemData: (string|number|undefined|null)[];
           const itemAmount = (item.quantity || 0) * (item.unitPrice || 0);
           if (useMinimalErpExport) {
+            // is_paid is part of main invoice data for minimal, not per item
             itemData = [
                 item.productCode,
                 item.productName,
                 item.quantity.toString(),
                 item.unitPrice.toString(),
-                invoice.istBezahlt?.toString() ?? '0' 
             ];
-          } else {
+          } else { // Complete ERP Mode Item Data
             itemData = [
                 item.productCode,
                 item.productName,
@@ -326,6 +339,8 @@ export function incomingInvoicesToTSV(invoices: IncomingInvoiceItem[] | ERPIncom
                 "Stk", // uom
                 item.unitPrice.toString(),
                 itemAmount.toFixed(2), // amount
+                item.unitPrice.toString(), // base_rate
+                itemAmount.toFixed(2), // base_amount
                 '1', // conversion_factor
                 "", // warehouse
                 "", // cost_center
@@ -333,8 +348,10 @@ export function incomingInvoicesToTSV(invoices: IncomingInvoiceItem[] | ERPIncom
             ];
           }
           const itemDataEscaped = itemData.map(f => escapeTSVField(f));
+          
+          // For minimal export, is_paid is added after item data
           const rowParts = useMinimalErpExport 
-            ? [...mainInvoiceDataEscaped, ...itemDataEscaped] 
+            ? [...mainInvoiceDataEscaped, ...itemDataEscaped, escapeTSVField(invoice.istBezahlt?.toString() ?? '0')] 
             : [...mainInvoiceDataEscaped, ...itemDataEscaped];
           tsvString += rowParts.join('\t') + '\n';
         });
@@ -342,18 +359,20 @@ export function incomingInvoicesToTSV(invoices: IncomingInvoiceItem[] | ERPIncom
         // For "complete" mode, add a dummy item line if no items exist
         let emptyItemData: string[];
         if (useMinimalErpExport) {
-            emptyItemData = Array(5).fill('');
-            emptyItemData[4] = invoice.istBezahlt?.toString() ?? '0'; // is_paid for minimal
-        } else {
+            emptyItemData = Array(4).fill(''); // 4 item fields for minimal
+            tsvString += mainInvoiceDataEscaped.join('\t') + '\t' + emptyItemData.join('\t') + '\t' + escapeTSVField(invoice.istBezahlt?.toString() ?? '0') + '\n';
+        } else { // Complete ERP Mode dummy item
              emptyItemData = [
-                "DUMMY_ITEM", "N/A", "N/A", '0', "Stk", '0.00', '0.00', '1', "", "", ""
+                "", "N/A (No items extracted)", "N/A (No items extracted)", '0', "Stk", 
+                '0.00', '0.00', '0.00', '0.00', '1', "", "", ""
             ].map(f => escapeTSVField(f));
+            tsvString += mainInvoiceDataEscaped.join('\t') + '\t' + emptyItemData.join('\t') + '\n';
         }
-        tsvString += mainInvoiceDataEscaped.join('\t') + '\t' + emptyItemData.join('\t') + '\n';
       }
     });
 
   } else { 
+    // Standard (non-ERP) TSV export
     const regularInvoices = invoices as IncomingInvoiceItem[];
     const mainHeaders = [
       'PDF Datei', 'Rechnungsnummer', 'Datum', 'Lieferant Name', 'Lieferant Adresse',

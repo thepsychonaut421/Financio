@@ -14,7 +14,7 @@ import { Label } from '@/components/ui/label';
 import { readFileAsDataURL } from '@/lib/file-helpers';
 import { extractIncomingInvoiceData, type ExtractIncomingInvoiceDataOutput } from '@/ai/flows/extract-incoming-invoice-data';
 import type { IncomingInvoiceItem, ERPIncomingInvoiceItem, IncomingProcessingStatus } from '@/types/incoming-invoice';
-import { addDays, parseISO, isValid, format as formatDateFns } from 'date-fns'; // Added isValid and formatDateFns
+import { addDays, parseISO, isValid, format as formatDateFns } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
 
 const LOCAL_STORAGE_PAGE_CACHE_KEY = 'incomingInvoicesPageCache';
@@ -29,6 +29,7 @@ interface IncomingInvoicesPageCache {
 }
 
 export function IncomingInvoicesPageContent() {
+  'use client';
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [extractedInvoices, setExtractedInvoices] = useState<IncomingInvoiceItem[]>([]);
   const [erpProcessedInvoices, setErpProcessedInvoices] = useState<ERPIncomingInvoiceItem[]>([]);
@@ -93,39 +94,38 @@ export function IncomingInvoicesPageContent() {
   }, [extractedInvoices, erpProcessedInvoices, erpMode, useMinimalErpExport, status]);
   
   const supplierMap: Record<string, string> = {
+    // Keys are potential AI extractions (uppercase for robustness), values are EXACT ERPNext names
     "LIDL": "Lidl",
     "LIDL DIGITAL DEUTSCHLAND GMBH & CO. KG": "Lidl",
-    "GD ARTLANDS ETRADING GMBH": "GD Artlands eTrading GmbH",
+    "GD ARTLANDS ETRADING GMBH": "GD Artlands eTrading GmbH", // From error
     "RETOURA": "RETOURA",
     "DOITBAU GMBH & CO.KG": "doitBau",
     "KAUFLAND": "Kaufland",
     "ALDI": "ALDI E-Commerce",
     "FIRMA HANDLOWA KABIS BOZENA KEDZIORA": "FIRMA HANDLOWA KABIS BOZENA KEDZIORA",
     "ZWECO UG": "Zweco UG",
-    "FAVORIO C/O HATRACO GMBH": "Favorio c/o Hatraco GmbH",
-    "HATRACO GMBH": "Hatraco GmbH",
-    "CUMO GMBH": "CUMO GmbH",
-    "SELLIXX GMBH": "SELLIXX GmbH",
-    // "UNBEKANNT" should map to a valid supplier in ERPNext if it's to be imported directly.
-    // Otherwise, invoices with "UNBEKANNT" will cause an error or need manual handling.
-    // For now, if AI extracts "UNBEKANNT", and it's not in the map, it will pass through.
-    // If you have an "Unknown Supplier" record in ERPNext, map "UNBEKANNT" to that exact name.
+    "FAVORIO C/O HATRACO GMBH": "Favorio c/o Hatraco GmbH", // From error
+    "HATRACO GMBH": "Hatraco GmbH", // From error
+    "CUMO GMBH": "CUMO GmbH", // From error
+    "SELLIXX GMBH": "SELLIXX GmbH", // From error
+    "UNBEKANNT": "UNBEKANNT_SUPPLIER_PLACEHOLDER", // Specific placeholder if "UNBEKANNT" from AI
   };
   
-  const DEFAULT_KONTENRAHMEN = "1740 - Verbindlichkeiten"; 
+  // User should ensure this account exists in their ERPNext instance or update this default.
+  const DEFAULT_KREDITOR_ACCOUNT = "1740 - Verbindlichkeiten"; // Placeholder from prompt, user mentioned skipping for export
 
   const formatDateForERP = (dateString?: string): string | undefined => {
     if (!dateString || dateString.trim() === '') return undefined;
 
-    if (/^\d{4}-\d{2}-\d{2}$/.test(dateString)) { // Already YYYY-MM-DD
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dateString)) {
         const d = parseISO(dateString);
         return isValid(d) ? dateString : undefined;
     }
     const datePatterns = [
-      { regex: /^(\d{1,2})\.(\d{1,2})\.(\d{4})$/, dayIdx: 1, monthIdx: 2, yearIdx: 3 }, // DD.MM.YYYY
-      { regex: /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/, dayIdx: 1, monthIdx: 2, yearIdx: 3 }, // DD/MM/YYYY
-      { regex: /^(\d{4})\.(\d{1,2})\.(\d{1,2})$/, yearIdx: 1, monthIdx: 2, dayIdx: 3 }, // YYYY.MM.DD
-      { regex: /^(\d{4})\/(\d{1,2})\/(\d{1,2})$/, yearIdx: 1, monthIdx: 2, dayIdx: 3 }, // YYYY/MM/DD
+      { regex: /^(\d{1,2})\.(\d{1,2})\.(\d{4})$/, dayIdx: 1, monthIdx: 2, yearIdx: 3 },
+      { regex: /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/, dayIdx: 1, monthIdx: 2, yearIdx: 3 },
+      { regex: /^(\d{4})\.(\d{1,2})\.(\d{1,2})$/, yearIdx: 1, monthIdx: 2, dayIdx: 3 },
+      { regex: /^(\d{4})\/(\d{1,2})\/(\d{1,2})$/, yearIdx: 1, monthIdx: 2, dayIdx: 3 },
     ];
 
     for (const pattern of datePatterns) {
@@ -140,7 +140,7 @@ export function IncomingInvoicesPageContent() {
       }
     }
     
-    try { // Fallback to generic parsing
+    try {
         const d = new Date(dateString);
         if (isValid(d)) {
              return formatDateFns(d, 'yyyy-MM-dd');
@@ -234,19 +234,16 @@ export function IncomingInvoicesPageContent() {
         setCurrentFileProgress(`Processing file ${i + 1} of ${selectedFiles.length}: ${file.name}`);
         
         const dataUri = await readFileAsDataURL(file);
-        const aiResult: ExtractIncomingInvoiceDataOutput = await extractIncomingInvoiceData({ invoiceDataUri: dataUri }, {model: 'googleai/gemini-1.5-flash-latest'});
+        // Ensure the model preference is passed if needed, or rely on global default
+        const aiResult: ExtractIncomingInvoiceDataOutput = await extractIncomingInvoiceData({ invoiceDataUri: dataUri });
         
-        let finalLieferantName = aiResult.lieferantName?.trim() || "UNBEKANNT";
+        let finalLieferantName = aiResult.lieferantName?.trim() || "";
         const upperCaseExtractedName = finalLieferantName.toUpperCase();
         if (supplierMap[upperCaseExtractedName]) {
             finalLieferantName = supplierMap[upperCaseExtractedName];
-        } else {
-            // Fallback: if not in map, use the AI extracted name directly.
-            // User must ensure this name exists in ERPNext or add it.
-             if (finalLieferantName === "" || finalLieferantName.toUpperCase() === "UNBEKANNT") {
-                 finalLieferantName = "UNBEKANNT_SUPPLIER"; // Placeholder if AI returns empty or 'UNBEKANNT' and it's not mapped
-             }
-        }
+        } else if (finalLieferantName === "" || upperCaseExtractedName === "UNBEKANNT") {
+            finalLieferantName = "UNBEKANNT_SUPPLIER_PLACEHOLDER"; 
+        } // If not in map and not empty/UNBEKANNT, use AI extracted name
 
 
         const postingDateERP = formatDateForERP(aiResult.datum);
@@ -269,8 +266,10 @@ export function IncomingInvoicesPageContent() {
         }
         
         let yearToUse = new Date().getFullYear().toString();
-        if (postingDateERP) { yearToUse = postingDateERP.substring(0,4); }
-        else if (aiResult.datum) { // Fallback if postingDateERP is undefined but aiResult.datum exists
+        if (postingDateERP) { 
+            const parsedYear = postingDateERP.substring(0,4);
+            if (!isNaN(parseInt(parsedYear))) yearToUse = parsedYear;
+        } else if (aiResult.datum) {
             const parsedFallbackDate = new Date(aiResult.datum);
             if(isValid(parsedFallbackDate)) yearToUse = parsedFallbackDate.getFullYear().toString();
         }
@@ -295,12 +294,13 @@ export function IncomingInvoicesPageContent() {
           kundenNummer: aiResult.kundenNummer,
           bestellNummer: aiResult.bestellNummer,
           isPaidByAI: aiResult.isPaid, 
-          erpNextInvoiceName: erpNextInvoiceNameGenerated, // This is more like an internal reference or proposed ID
+          erpNextInvoiceName: erpNextInvoiceNameGenerated,
           billDate: billDateERP,
           dueDate: dueDateERP,
-          wahrung: 'EUR',
+          wahrung: 'EUR', // Default currency
           istBezahlt: istBezahltStatus, 
-          kontenrahmen: DEFAULT_KONTENRAHMEN,
+          // For "Credit To", we'll let the export helper handle it as per user's "skip this"
+          kontenrahmen: DEFAULT_KREDITOR_ACCOUNT, // Keep for internal data, export will make it empty
           remarks: remarks.trim(),
         };
         allProcessedForMatcher.push(erpCompatibleInvoice);
@@ -311,7 +311,7 @@ export function IncomingInvoicesPageContent() {
           regularResultsDisplay.push({
               pdfFileName: file.name,
               rechnungsnummer: rechnungsnummerToUse, 
-              datum: aiResult.datum, // Display original AI date in non-ERP mode
+              datum: aiResult.datum,
               lieferantName: finalLieferantName,
               lieferantAdresse: aiResult.lieferantAdresse,
               zahlungsziel: aiResult.zahlungsziel,
