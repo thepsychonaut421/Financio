@@ -131,7 +131,7 @@ Extraction Rules for Invoices:
           "ALDI": "ALDI E-Commerce",
           "FIRMA HANDLOWA KABIS BOZENA KEDZIORA": "FIRMA HANDLOWA KABIS BOZENA KEDZIORA",
           "ZWECO UG": "Zweco UG",
-          "FAVORIO C/O HATRACO GMBH": "Hatraco GmbH",
+          "FAVORIO C/O HATRACO GMBH": "Favorio c/o Hatraco GmbH",
           "HATRACO GMBH": "Hatraco GmbH",
           "CUMO GMBH": "CUMO GmbH",
           "SELLIXX GMBH": "SELLIXX GmbH"
@@ -174,3 +174,4 @@ const extractIncomingInvoiceDataFlow = ai.defineFlow(
     return output!;
   }
 );
+

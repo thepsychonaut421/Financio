@@ -103,7 +103,7 @@ export function IncomingInvoicesPageContent() {
     "ALDI": "ALDI E-Commerce",
     "FIRMA HANDLOWA KABIS BOZENA KEDZIORA": "FIRMA HANDLOWA KABIS BOZENA KEDZIORA",
     "ZWECO UG": "Zweco UG",
-    "FAVORIO C/O HATRACO GMBH": "Hatraco GmbH",
+    "FAVORIO C/O HATRACO GMBH": "Favorio c/o Hatraco GmbH",
     "HATRACO GMBH": "Hatraco GmbH",
     "CUMO GMBH": "CUMO GmbH",
     "SELLIXX GMBH": "SELLIXX GmbH"
@@ -220,29 +220,31 @@ export function IncomingInvoicesPageContent() {
         let finalLieferantName = aiResult.lieferantName;
 
         // Post-process supplier name based on the map if AI didn't perfectly match
-        if (aiResult.lieferantName) {
+        // The AI is already instructed to use the map, so this is a fallback or refinement.
+        if (aiResult.lieferantName && aiResult.lieferantName !== "UNBEKANNT") {
             const upperCaseExtractedName = aiResult.lieferantName.toUpperCase();
             if (supplierMap[upperCaseExtractedName]) { 
                 finalLieferantName = supplierMap[upperCaseExtractedName];
             } else {
-                // Attempt partial match or if AI returns an exact value from the map's values
-                const matchedValueFromMapValues = Object.values(supplierMap).find(val => val.toLowerCase() === aiResult.lieferantName?.toLowerCase());
-                if (matchedValueFromMapValues) {
-                    finalLieferantName = matchedValueFromMapValues;
+                // Attempt partial match of known keys within a longer extracted name
+                const foundKey = Object.keys(supplierMap).find(key => upperCaseExtractedName.includes(key));
+                if (foundKey) {
+                    finalLieferantName = supplierMap[foundKey];
                 } else {
-                     // Check if any key from supplierMap is contained in the extracted name
-                    const foundKey = Object.keys(supplierMap).find(key => upperCaseExtractedName.includes(key));
-                    if (foundKey) {
-                        finalLieferantName = supplierMap[foundKey];
-                    } else {
-                        // If still no match, use the AI's output, or default to UNBEKANNT
-                        finalLieferantName = (aiResult.lieferantName === "UNBEKANNT" || !aiResult.lieferantName) ? "UNBEKANNT" : aiResult.lieferantName;
-                    }
+                  // Check if AI returned one of the canonical names directly (value from the map)
+                  const matchedValueFromMapValues = Object.values(supplierMap).find(val => val.toLowerCase() === aiResult.lieferantName?.toLowerCase());
+                  if (matchedValueFromMapValues) {
+                      finalLieferantName = matchedValueFromMapValues;
+                  } else {
+                    // If still no match, use the AI's output, or default to UNBEKANNT if it wasn't already that
+                    finalLieferantName = aiResult.lieferantName; // Keep AI's original if not "UNBEKANNT" and no map hit
+                  }
                 }
             }
-        } else {
+        } else if (!aiResult.lieferantName) { // If AI returned empty or undefined
             finalLieferantName = "UNBEKANNT";
         }
+        // If aiResult.lieferantName was "UNBEKANNT", finalLieferantName remains "UNBEKANNT"
 
 
         const postingDateERP = formatDateForERP(aiResult.datum);
@@ -300,7 +302,7 @@ export function IncomingInvoicesPageContent() {
               pdfFileName: file.name,
               rechnungsnummer: aiResult.rechnungsnummer,
               datum: aiResult.datum, 
-              lieferantName: aiResult.lieferantName, // Show original AI extraction in non-ERP mode for clarity
+              lieferantName: finalLieferantName, // Show normalized name even in non-ERP for consistency
               lieferantAdresse: aiResult.lieferantAdresse,
               zahlungsziel: aiResult.zahlungsziel,
               zahlungsart: aiResult.zahlungsart,
@@ -542,3 +544,4 @@ export function IncomingInvoicesPageContent() {
     </div>
   );
 }
+
