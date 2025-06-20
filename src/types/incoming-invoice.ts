@@ -18,6 +18,7 @@ export interface IncomingInvoiceData {
 
 export interface IncomingInvoiceItem extends IncomingInvoiceData {
   pdfFileName: string;
+  // isPotentiallyInERP?: boolean; // This flag can be added if needed for non-ERP mode display logic
 }
 
 export interface ERPIncomingInvoiceItem extends IncomingInvoiceItem {
@@ -28,6 +29,7 @@ export interface ERPIncomingInvoiceItem extends IncomingInvoiceItem {
   billDate?: string; // YYYY-MM-DD
   dueDate?: string; // YYYY-MM-DD
   remarks?: string;
+  // isPotentiallyInERP?: boolean; // This flag can be added if needed for ERP mode display logic
 }
 
 export type IncomingProcessingStatus = 'idle' | 'processing' | 'success' | 'error';

@@ -1,13 +1,15 @@
+
 'use client';
 
 import type { IncomingInvoiceItem } from '@/types/incoming-invoice';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableCaption } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { FileText, CalendarDays, Briefcase, MapPin, Clock, Euro, Percent } from 'lucide-react';
+import { FileText, CalendarDays, Briefcase, MapPin, Clock, Euro, Percent, CheckSquare } from 'lucide-react';
 
 interface IncomingInvoiceCardProps {
   invoice: IncomingInvoiceItem;
+  isPotentiallyInERP?: boolean; // New prop
 }
 
 const DetailItem: React.FC<{ icon: React.ReactNode; label: string; value?: string | number | null }> = ({ icon, label, value }) => {
@@ -24,7 +26,7 @@ const DetailItem: React.FC<{ icon: React.ReactNode; label: string; value?: strin
 };
 
 
-export function IncomingInvoiceCard({ invoice }: IncomingInvoiceCardProps) {
+export function IncomingInvoiceCard({ invoice, isPotentiallyInERP }: IncomingInvoiceCardProps) {
   const formatCurrency = (value: number | undefined) => {
     if (value === undefined) return 'N/A';
     return new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(value);
@@ -33,11 +35,21 @@ export function IncomingInvoiceCard({ invoice }: IncomingInvoiceCardProps) {
   return (
     <Card className="shadow-lg w-full">
       <CardHeader>
-        <CardTitle className="font-headline text-xl text-primary flex items-center gap-2">
-          <FileText className="w-5 h-5" />
-          Invoice Details: {invoice.pdfFileName}
-        </CardTitle>
-        {invoice.rechnungsnummer && <CardDescription>Rechnungsnummer: <Badge variant="secondary">{invoice.rechnungsnummer}</Badge></CardDescription>}
+        <div className="flex justify-between items-start">
+            <div>
+                <CardTitle className="font-headline text-xl text-primary flex items-center gap-2">
+                    <FileText className="w-5 h-5" />
+                    Invoice Details: {invoice.pdfFileName}
+                </CardTitle>
+                {invoice.rechnungsnummer && <CardDescription>Rechnungsnummer: <Badge variant="secondary">{invoice.rechnungsnummer}</Badge></CardDescription>}
+            </div>
+            {isPotentiallyInERP && (
+                <Badge variant="outline" className="ml-auto mt-1 bg-green-100 text-green-700 border-green-500">
+                    <CheckSquare className="w-3.5 h-3.5 mr-1.5" />
+                    Possibly in ERP
+                </Badge>
+            )}
+        </div>
       </CardHeader>
       <CardContent className="space-y-6">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-4">

@@ -6,10 +6,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableCaption } from '@/components/ui/table';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Badge } from '@/components/ui/badge';
-import { FileSpreadsheet, AlertTriangle, Landmark } from 'lucide-react';
+import { FileSpreadsheet, AlertTriangle, Landmark, CheckSquare } from 'lucide-react';
 
 interface ERPInvoiceTableProps {
   invoices: ERPIncomingInvoiceItem[];
+  existingErpInvoiceKeys?: Set<string>; // New prop
 }
 
 const DetailItem: React.FC<{ label: string; value?: string | number | null; isBadge?: boolean }> = ({ label, value, isBadge }) => {
@@ -22,7 +23,13 @@ const DetailItem: React.FC<{ label: string; value?: string | number | null; isBa
   );
 };
 
-export function ERPInvoiceTable({ invoices }: ERPInvoiceTableProps) {
+const createInvoiceKeyForTable = (invoice: ERPIncomingInvoiceItem): string => {
+    const supplier = (invoice.lieferantName || '').trim().toLowerCase();
+    const number = (invoice.rechnungsnummer || '').trim().toLowerCase();
+    return `${supplier}||${number}`;
+};
+
+export function ERPInvoiceTable({ invoices, existingErpInvoiceKeys }: ERPInvoiceTableProps) {
   
   const formatCurrency = (value: number | undefined, currency?: string) => {
     if (value === undefined) return 'N/A';
@@ -70,79 +77,89 @@ export function ERPInvoiceTable({ invoices }: ERPInvoiceTableProps) {
       </CardHeader>
       <CardContent>
         <Accordion type="multiple" className="w-full space-y-4">
-          {invoices.map((invoice, index) => (
-            <AccordionItem value={`invoice-${index}`} key={invoice.pdfFileName + '-' + index} className="border bg-card rounded-lg shadow-md">
-              <AccordionTrigger className="px-4 py-3 hover:no-underline">
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between w-full">
-                  <div className='text-left'>
-                    <span className="font-semibold text-primary text-base block">
-                      {invoice.rechnungsnummer || 'N/A'}
-                    </span>
-                    <span className="text-xs text-muted-foreground block">
-                       (Source: {invoice.pdfFileName} - ERP Ref: {invoice.erpNextInvoiceName || 'N/A'})
-                    </span>
-                  </div>
-                  <Badge variant={invoice.istBezahlt === 1 ? 'default' : 'outline'} className="mt-2 sm:mt-0">
-                    {invoice.istBezahlt === 1 ? 'Bezahlt' : 'Offen'}
-                  </Badge>
-                </div>
-              </AccordionTrigger>
-              <AccordionContent className="px-4 pb-4 space-y-3">
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-2 p-3 border rounded-md bg-background/70">
-                  <DetailItem label="ERP Ref. (UI)" value={invoice.erpNextInvoiceName} isBadge />
-                  <DetailItem label="Supplier Invoice No" value={invoice.rechnungsnummer} />
-                  <DetailItem label="Posting Date (ERP)" value={formatDateForERP(invoice.datum)} />
-                  <DetailItem label="Supplier" value={invoice.lieferantName} />
-                  <DetailItem label="Supplier Address" value={invoice.lieferantAdresse} />
-                  <DetailItem label="Payment Terms" value={invoice.zahlungsziel} />
-                  <DetailItem label="Payment Method" value={invoice.zahlungsart} />
-                  <DetailItem label="Grand Total" value={formatCurrency(invoice.gesamtbetrag, invoice.wahrung)} />
-                  <DetailItem label="VAT Rate" value={invoice.mwstSatz} />
-                  <DetailItem label="Is Paid" value={invoice.istBezahlt === 1 ? 'Yes (1)' : 'No (0)'} />
-                  <DetailItem label="Accounts Payable" value={invoice.kontenrahmen} isBadge />
-                  <DetailItem label="Currency" value={invoice.wahrung} />
-                  <DetailItem label="Original PDF" value={invoice.pdfFileName} />
-                </div>
+          {invoices.map((invoice, index) => {
+            const invoiceKey = createInvoiceKeyForTable(invoice);
+            const isPotentiallyInERP = existingErpInvoiceKeys?.has(invoiceKey) ?? false;
 
-                {invoice.rechnungspositionen && invoice.rechnungspositionen.length > 0 ? (
-                  <div className="mt-3">
-                    <h4 className="text-md font-semibold mb-1 text-primary-dark">Line Items:</h4>
-                    <div className="overflow-x-auto rounded-md border">
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Item Code</TableHead>
-                            <TableHead>Item Name</TableHead>
-                            <TableHead className="text-right">Qty</TableHead>
-                            <TableHead className="text-right">Rate</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {invoice.rechnungspositionen.map((item, itemIndex) => (
-                            <TableRow key={`${item.productCode}-${itemIndex}`} className="hover:bg-accent/10">
-                              <TableCell className="font-medium">{item.productCode || 'N/A'}</TableCell>
-                              <TableCell>{item.productName || 'N/A'}</TableCell>
-                              <TableCell className="text-right">{item.quantity ?? 'N/A'}</TableCell>
-                              <TableCell className="text-right">{formatCurrency(item.unitPrice, invoice.wahrung)}</TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
+            return (
+                <AccordionItem value={`invoice-${index}`} key={invoice.pdfFileName + '-' + index} className="border bg-card rounded-lg shadow-md">
+                <AccordionTrigger className="px-4 py-3 hover:no-underline">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between w-full">
+                    <div className='text-left'>
+                        <span className="font-semibold text-primary text-base block">
+                        {invoice.rechnungsnummer || 'N/A'}
+                        </span>
+                        <span className="text-xs text-muted-foreground block">
+                        (Source: {invoice.pdfFileName} - ERP Ref: {invoice.erpNextInvoiceName || 'N/A'})
+                        </span>
                     </div>
-                  </div>
-                ) : (
-                  <p className="text-sm text-muted-foreground mt-3 flex items-center gap-1">
-                    <AlertTriangle className="w-4 h-4 text-orange-500" /> No line items extracted for this invoice.
-                  </p>
-                )}
-              </AccordionContent>
-            </AccordionItem>
-          ))}
+                    <div className="flex flex-col sm:flex-row items-end sm:items-center gap-2 mt-2 sm:mt-0">
+                        {isPotentiallyInERP && (
+                            <Badge variant="outline" className="bg-green-100 text-green-700 border-green-500 text-xs">
+                                <CheckSquare className="w-3 h-3 mr-1" />
+                                Possibly in ERP
+                            </Badge>
+                        )}
+                        <Badge variant={invoice.istBezahlt === 1 ? 'default' : 'outline'} className="text-xs">
+                        {invoice.istBezahlt === 1 ? 'Bezahlt' : 'Offen'}
+                        </Badge>
+                    </div>
+                    </div>
+                </AccordionTrigger>
+                <AccordionContent className="px-4 pb-4 space-y-3">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-2 p-3 border rounded-md bg-background/70">
+                    <DetailItem label="ERP Ref. (UI)" value={invoice.erpNextInvoiceName} isBadge />
+                    <DetailItem label="Supplier Invoice No" value={invoice.rechnungsnummer} />
+                    <DetailItem label="Posting Date (ERP)" value={formatDateForERP(invoice.datum)} />
+                    <DetailItem label="Supplier" value={invoice.lieferantName} />
+                    <DetailItem label="Supplier Address" value={invoice.lieferantAdresse} />
+                    <DetailItem label="Payment Terms" value={invoice.zahlungsziel} />
+                    <DetailItem label="Payment Method" value={invoice.zahlungsart} />
+                    <DetailItem label="Grand Total" value={formatCurrency(invoice.gesamtbetrag, invoice.wahrung)} />
+                    <DetailItem label="VAT Rate" value={invoice.mwstSatz} />
+                    <DetailItem label="Is Paid" value={invoice.istBezahlt === 1 ? 'Yes (1)' : 'No (0)'} />
+                    <DetailItem label="Accounts Payable" value={invoice.kontenrahmen} isBadge />
+                    <DetailItem label="Currency" value={invoice.wahrung} />
+                    <DetailItem label="Original PDF" value={invoice.pdfFileName} />
+                    </div>
+
+                    {invoice.rechnungspositionen && invoice.rechnungspositionen.length > 0 ? (
+                    <div className="mt-3">
+                        <h4 className="text-md font-semibold mb-1 text-primary-dark">Line Items:</h4>
+                        <div className="overflow-x-auto rounded-md border">
+                        <Table>
+                            <TableHeader>
+                            <TableRow>
+                                <TableHead>Item Code</TableHead>
+                                <TableHead>Item Name</TableHead>
+                                <TableHead className="text-right">Qty</TableHead>
+                                <TableHead className="text-right">Rate</TableHead>
+                            </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                            {invoice.rechnungspositionen.map((item, itemIndex) => (
+                                <TableRow key={`${item.productCode}-${itemIndex}`} className="hover:bg-accent/10">
+                                <TableCell className="font-medium">{item.productCode || 'N/A'}</TableCell>
+                                <TableCell>{item.productName || 'N/A'}</TableCell>
+                                <TableCell className="text-right">{item.quantity ?? 'N/A'}</TableCell>
+                                <TableCell className="text-right">{formatCurrency(item.unitPrice, invoice.wahrung)}</TableCell>
+                                </TableRow>
+                            ))}
+                            </TableBody>
+                        </Table>
+                        </div>
+                    </div>
+                    ) : (
+                    <p className="text-sm text-muted-foreground mt-3 flex items-center gap-1">
+                        <AlertTriangle className="w-4 h-4 text-orange-500" /> No line items extracted for this invoice.
+                    </p>
+                    )}
+                </AccordionContent>
+                </AccordionItem>
+            );
+        })}
         </Accordion>
       </CardContent>
     </Card>
   );
 }
-
-
-    
