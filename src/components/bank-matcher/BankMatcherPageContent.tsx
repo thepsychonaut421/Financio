@@ -1,7 +1,6 @@
-
 'use client';
 
-import React, { useState, useCallback, ChangeEvent, useEffect } from 'react';
+import React, { useState, useCallback, ChangeEvent, useEffect, useId } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -185,7 +184,7 @@ export function BankMatcherPageContent() {
     }
   };
   
-  const inputId = React.useId();
+  const inputId = useId();
 
   return (
     <div className="container mx-auto px-4 py-8 md:px-8 md:py-12">

@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { useState, useCallback, useEffect } from 'react';
@@ -540,4 +539,3 @@ export function IncomingInvoicesPageContent() {
     </div>
   );
 }
-

@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { useState, useCallback, ChangeEvent, useEffect } from 'react';
@@ -312,4 +311,3 @@ export function PdfOrganizerPageContent() {
     </div>
   );
 }
-
