@@ -28,13 +28,13 @@ function formatDateToMMDDYY(dateString?: string): string {
   if (!dateString) return '';
   try {
     // Assuming dateString is already YYYY-MM-DD from formatDateForERP
-    const date = parseISO(dateString); 
+    const date = parseISO(dateString);
     if (isValid(date)) {
       return formatDateFns(date, 'MM/dd/yy');
     }
   } catch (e) { /* ignore */ }
   // Fallback if already in a different format or parsing fails
-  return dateString; 
+  return dateString;
 }
 
 
@@ -44,7 +44,7 @@ export function incomingInvoicesToCSV(invoices: IncomingInvoiceItem[]): string {
   const mainHeaders = [
     'PDF Datei',
     'Rechnungsnummer',
-    'Datum', 
+    'Datum',
     'Lieferant Name',
     'Lieferant Adresse',
     'Zahlungsziel',
@@ -55,14 +55,14 @@ export function incomingInvoicesToCSV(invoices: IncomingInvoiceItem[]): string {
     'Bestell-Nr.'
   ];
   const itemHeaders = ['Pos. Produkt Code', 'Pos. Produkt Name', 'Pos. Menge', 'Pos. Einzelpreis'];
-  
+
   let csvString = mainHeaders.join(',') + ',' + itemHeaders.join(',') + '\n';
 
   invoices.forEach((invoice) => {
     const mainInvoiceData = [
       escapeCSVField(invoice.pdfFileName),
       escapeCSVField(invoice.rechnungsnummer),
-      escapeCSVField(invoice.datum), 
+      escapeCSVField(invoice.datum),
       escapeCSVField(invoice.lieferantName),
       escapeCSVField(invoice.lieferantAdresse),
       escapeCSVField(invoice.zahlungsziel),
@@ -86,7 +86,7 @@ export function incomingInvoicesToCSV(invoices: IncomingInvoiceItem[]): string {
     } else {
       // If no items, just write the main invoice data with empty item fields
       const emptyItemData = Array(itemHeaders.length).fill('');
-      csvString += mainInvoiceData.join(',') + ',' + emptyItemData.join(',') + '\n'; 
+      csvString += mainInvoiceData.join(',') + ',' + emptyItemData.join(',') + '\n';
     }
   });
 
@@ -97,84 +97,89 @@ export function incomingInvoicesToCSV(invoices: IncomingInvoiceItem[]): string {
 export function incomingInvoicesToERPNextCSVComplete(invoices: ERPIncomingInvoiceItem[]): string {
   if (!invoices || invoices.length === 0) return '';
 
-  // Parent document headers (Purchase Invoice)
-  const invoiceHeaders = [
-    "supplier", "bill_no", "bill_date", "posting_date", "due_date", 
-    "currency", 
-    "credit_to", // Kept blank as requested by user
-    "is_paid", "remarks", 
+  const invoiceLevelHeaders = [
+    // "ID" column removed - ERPNext will assign
+    // "naming_series" column removed - ERPNext will use default
+    "supplier", "bill_no", "bill_date", "posting_date", "due_date",
+    "currency",
+    "credit_to", // Kept blank as requested
+    "is_paid", "remarks",
     "update_stock", "set_posting_time",
-    // "naming_series" and "ID" removed as per user feedback for ERPNext to auto-assign
   ];
 
-  // Child table headers (Purchase Invoice Item)
-  // Aligned with common ERPNext import templates for Purchase Invoice Items
   const itemHeaders = [
-    "item_code", // Changed from "ID (Items)"
-    "item_name", 
-    "description", 
-    "qty", // Was "Accepted Qty (Items)"
-    "uom", // Was "UOM (Items)"
-    "rate", // Was "Rate (Items)"
-    "amount", // Was "Amount (Items)"
-    "conversion_factor", // Was "UOM Conversion Factor (Items)"
-    // The following are often derived or set based on company/item defaults in ERPNext
-    // For simplicity and to match common templates, only essential item fields are primary.
-    // "stock_qty", // Was "Accepted Qty in Stock UOM (Items)" - often same as qty
-    // "amount_in_company_currency", // Was "Amount (Company Currency) (Items)"
-    // "rate_in_company_currency", // Was "Rate (Company Currency) (Items)"
-    "cost_center", // Was "Cost Center (Items)" - kept as placeholder
+    "item_code",
+    "item_name",
+    "description",
+    "qty",
+    "uom",
+    "rate",
+    "amount",
+    "conversion_factor",
+    "cost_center", // Placeholder for cost center
   ];
-  
-  const allHeaders = [...invoiceHeaders, ...itemHeaders];
+
+  const allHeaders = [...invoiceLevelHeaders, ...itemHeaders];
   let csvString = allHeaders.map(escapeCSVField).join(',') + '\n';
 
   invoices.forEach((invoice) => {
-    const invoiceLevelData = [
+    const invoiceLevelDataEscaped = [
       escapeCSVField(invoice.lieferantName),
-      escapeCSVField(invoice.rechnungsnummer), 
-      escapeCSVField(invoice.billDate),     
-      escapeCSVField(invoice.datum), 
-      escapeCSVField(invoice.dueDate),      
+      escapeCSVField(invoice.rechnungsnummer),
+      escapeCSVField(invoice.billDate),
+      escapeCSVField(invoice.datum), // This is posting_date
+      escapeCSVField(invoice.dueDate),
       escapeCSVField(invoice.wahrung || 'EUR'),
-      "", // credit_to is blank
-      invoice.istBezahlt?.toString() ?? '0',
+      escapeCSVField(""), // credit_to is blank
+      escapeCSVField(invoice.istBezahlt?.toString() ?? '0'),
       escapeCSVField(invoice.remarks),
-      '1', // update_stock (default)
-      '1', // set_posting_time (default)
+      escapeCSVField('1'), // update_stock (default)
+      escapeCSVField('1'), // set_posting_time (default)
     ];
 
     if (invoice.rechnungspositionen && invoice.rechnungspositionen.length > 0) {
       invoice.rechnungspositionen.forEach((item, itemIndex) => {
         const itemCodeValue = item.productCode || item.productName || `FALLBACK_ITEM_${invoice.pdfFileName || 'INV'}_${itemIndex + 1}`;
-        const itemNameValue = item.productName || item.productCode || `Item for ${invoice.pdfFileName || 'INV'}_${itemIndex + 1}`;
+        const itemNameValue = item.productName || item.productCode || `Item from ${invoice.pdfFileName || 'INV'}_${itemIndex + 1}`;
         const itemRate = item.unitPrice ?? 0;
         const itemQty = item.quantity ?? 0;
         const itemAmount = itemQty * itemRate;
-        
-        const itemData = [
-          escapeCSVField(itemCodeValue), 
-          escapeCSVField(itemNameValue),                 
-          escapeCSVField(itemNameValue), // Using item name as description          
-          itemQty.toString(),                 
-          "Stk", // Default UOM                                           
-          itemRate.toString(),             
-          itemAmount.toFixed(2),                            
-          '1', // Default UOM Conversion Factor                                             
-          // itemQty.toString(), // stock_qty
-          // itemAmount.toFixed(2), // amount_in_company_currency                          
-          // itemRate.toString(), // rate_in_company_currency           
-          "", // Cost Center (Items) - User to fill
+
+        const itemDataEscaped = [
+          escapeCSVField(itemCodeValue),                 // item_code
+          escapeCSVField(itemNameValue),                 // item_name
+          escapeCSVField(itemNameValue),                 // description (can be same as item_name)
+          escapeCSVField(itemQty.toString()),            // qty
+          escapeCSVField("Nos"),                         // uom (Unit of Measure - "Nos" for numbers/units)
+          escapeCSVField(itemRate.toFixed(2)),           // rate
+          escapeCSVField(itemAmount.toFixed(2)),         // amount
+          escapeCSVField('1'),                           // conversion_factor (default 1)
+          escapeCSVField(""),                            // cost_center (placeholder, to be filled by user if needed)
         ];
-        csvString += [...invoiceLevelData, ...itemData].map(escapeCSVField).join(',') + '\n';
+        csvString += [...invoiceLevelDataEscaped, ...itemDataEscaped].join(',') + '\n';
       });
     } else {
-      // If an invoice has no items, ERPNext might not allow importing it this way,
-      // or it might create an invoice with no items if the parent fields are sufficient.
-      // For now, we'll create a row with parent data and empty item data.
-      // This behavior might need adjustment based on specific ERPNext requirements for item-less PIs.
-      const emptyItemData = Array(itemHeaders.length).fill(''); 
-      csvString += [...invoiceLevelData, ...emptyItemData].map(escapeCSVField).join(',') + '\n';
+      // If an invoice has no items, create a default placeholder item row
+      const placeholderItemCode = "DEFAULT_PLACEHOLDER_ITEM"; // User should ensure this item exists in ERPNext or is generic enough
+      const placeholderItemName = `Placeholder Item (From Invoice ${invoice.rechnungsnummer || invoice.pdfFileName || 'Unknown'})`;
+      const placeholderQty = 1;
+      // If there's a total amount and no items, assume the total amount is for this single placeholder item.
+      // If no total amount, rate and amount will be 0.
+      const placeholderRate = invoice.gesamtbetrag !== undefined && invoice.gesamtbetrag !== null ? invoice.gesamtbetrag : 0;
+      const placeholderAmount = placeholderRate * placeholderQty;
+
+      const placeholderItemDataEscaped = [
+        escapeCSVField(placeholderItemCode),                 // item_code
+        escapeCSVField(placeholderItemName),                 // item_name
+        escapeCSVField(placeholderItemName),                 // description
+        escapeCSVField(placeholderQty.toString()),           // qty
+        escapeCSVField("Nos"),                               // uom (Unit of Measure)
+        escapeCSVField(placeholderRate.toFixed(2)),          // rate
+        escapeCSVField(placeholderAmount.toFixed(2)),        // amount
+        escapeCSVField('1'),                                 // conversion_factor
+        escapeCSVField(""),                                  // cost_center (placeholder)
+      ];
+      csvString += [...invoiceLevelDataEscaped, ...placeholderItemDataEscaped].join(',') + '\n';
     }
   });
   return csvString;
@@ -195,45 +200,44 @@ export function incomingInvoicesToTSV(invoices: IncomingInvoiceItem[] | ERPIncom
   let tsvString = '';
 
   const erpInvoices = invoices as ERPIncomingInvoiceItem[];
-  const invoiceHeaders = [ 
-    "supplier", "bill_no", "bill_date", "posting_date", "due_date", 
-    "currency", "credit_to", "is_paid", "remarks", 
-    "update_stock", "set_posting_time"
-    // "naming_series" and "ID" removed
+
+  const invoiceLevelHeadersERP = [
+    "supplier", "bill_no", "bill_date", "posting_date", "due_date",
+    "currency", "credit_to", "is_paid", "remarks",
+    "update_stock", "set_posting_time",
   ];
 
-  const itemHeaders = [
+  const itemHeadersERP = [
     "item_code", "item_name", "description", "qty", "uom",
-    "rate", "amount", "conversion_factor",
-    // "stock_qty", "amount_in_company_currency", "rate_in_company_currency",
-    "cost_center" 
+    "rate", "amount", "conversion_factor", "cost_center"
   ];
+
   const standardModeHeaders = [
     'PDF Datei', 'Rechnungsnummer', 'Datum', 'Lieferant Name', 'Lieferant Adresse',
     'Zahlungsziel', 'Zahlungsart', 'Gesamtbetrag', 'MwSt-Satz', 'Kunden-Nr.', 'Bestell-Nr.',
     'Pos. Produkt Code', 'Pos. Produkt Name', 'Pos. Menge', 'Pos. Einzelpreis'
   ];
 
-  const headers = erpMode ? [...invoiceHeaders, ...itemHeaders] : standardModeHeaders;
+  const headers = erpMode ? [...invoiceLevelHeadersERP, ...itemHeadersERP] : standardModeHeaders;
   tsvString = headers.map(h => escapeTSVField(h)).join('\t') + '\n';
 
-  erpInvoices.forEach((invoice, invIndex) => {
-    if (erpMode) {
-        const mainInvoiceData = [
-            invoice.lieferantName,
-            invoice.rechnungsnummer, 
-            invoice.billDate,
-            invoice.datum, 
-            invoice.dueDate,
-            invoice.wahrung || 'EUR',
-            "", // credit_to
-            invoice.istBezahlt?.toString() ?? '0',
-            invoice.remarks,
-            '1', 
-            '1', 
-        ];
-        const mainInvoiceDataEscaped = mainInvoiceData.map(f => escapeTSVField(f));
+  erpInvoices.forEach((invoice) => {
+    const invoiceLevelData = [
+      invoice.lieferantName,
+      invoice.rechnungsnummer,
+      invoice.billDate,
+      invoice.datum, // posting_date
+      invoice.dueDate,
+      invoice.wahrung || 'EUR',
+      "", // credit_to
+      invoice.istBezahlt?.toString() ?? '0',
+      invoice.remarks,
+      '1', // update_stock
+      '1', // set_posting_time
+    ];
+    const invoiceLevelDataEscaped = invoiceLevelData.map(f => escapeTSVField(f));
 
+    if (erpMode) {
         if (invoice.rechnungspositionen && invoice.rechnungspositionen.length > 0) {
             invoice.rechnungspositionen.forEach((item, itemIndex) => {
             const itemCodeValue = item.productCode || item.productName || `FALLBACK_ITEM_${invoice.pdfFileName || 'INV'}_${itemIndex + 1}`;
@@ -243,28 +247,43 @@ export function incomingInvoicesToTSV(invoices: IncomingInvoiceItem[] | ERPIncom
             const itemAmount = itemQty * itemRate;
 
             const itemData = [
-                itemCodeValue,                 
-                itemNameValue,                 
-                itemNameValue,                 
-                itemQty.toString(),         
-                "Stk",                            
-                itemRate.toString(),        
-                itemAmount.toFixed(2),           
-                '1',                             
-                // itemQty.toString(),            
-                // itemAmount.toFixed(2),            
-                // itemRate.toString(),       
-                "" // Cost Center (Items)
+                itemCodeValue,
+                itemNameValue,
+                itemNameValue, // description
+                itemQty.toString(),
+                "Nos", // uom
+                itemRate.toFixed(2),
+                itemAmount.toFixed(2),
+                '1', // conversion_factor
+                "" // cost_center
             ];
             const itemDataEscaped = itemData.map(f => escapeTSVField(f));
-            tsvString += [...mainInvoiceDataEscaped, ...itemDataEscaped].join('\t') + '\n';
+            tsvString += [...invoiceLevelDataEscaped, ...itemDataEscaped].join('\t') + '\n';
             });
         } else {
-            const emptyItemDataEscaped = Array(itemHeaders.length).fill('').map(f => escapeTSVField(f));
-            tsvString += [...mainInvoiceDataEscaped, ...emptyItemDataEscaped].join('\t') + '\n';
+            // Placeholder for item-less invoice in ERP mode
+            const placeholderItemCode = "DEFAULT_PLACEHOLDER_ITEM";
+            const placeholderItemName = `Placeholder Item (From Invoice ${invoice.rechnungsnummer || invoice.pdfFileName || 'Unknown'})`;
+            const placeholderQty = 1;
+            const placeholderRate = invoice.gesamtbetrag !== undefined && invoice.gesamtbetrag !== null ? invoice.gesamtbetrag : 0;
+            const placeholderAmount = placeholderRate * placeholderQty;
+
+            const placeholderItemDataEscaped = [
+                escapeTSVField(placeholderItemCode),
+                escapeTSVField(placeholderItemName),
+                escapeTSVField(placeholderItemName),
+                escapeTSVField(placeholderQty.toString()),
+                escapeTSVField("Nos"),
+                escapeTSVField(placeholderRate.toFixed(2)),
+                escapeTSVField(placeholderAmount.toFixed(2)),
+                escapeTSVField('1'),
+                escapeTSVField(""),
+            ];
+            tsvString += [...invoiceLevelDataEscaped, ...placeholderItemDataEscaped].join('\t') + '\n';
         }
-    } else { 
-        const regularInvoice = invoice as IncomingInvoiceItem; 
+    } else {
+        // Standard mode (non-ERP)
+        const regularInvoice = invoice as IncomingInvoiceItem;
         const mainInvoiceDataStd = [
             regularInvoice.pdfFileName,
             regularInvoice.rechnungsnummer,
@@ -290,7 +309,7 @@ export function incomingInvoicesToTSV(invoices: IncomingInvoiceItem[] | ERPIncom
             tsvString += [...mainInvoiceDataStd, ...itemData].join('\t') + '\n';
             });
         } else {
-            const emptyItemData = Array(4).fill('').map(f => escapeTSVField(f)); 
+            const emptyItemData = Array(4).fill('').map(f => escapeTSVField(f));
             tsvString += [...mainInvoiceDataStd, ...emptyItemData].join('\t') + '\n';
         }
     }
@@ -301,32 +320,36 @@ export function incomingInvoicesToTSV(invoices: IncomingInvoiceItem[] | ERPIncom
 export function erpInvoicesToSupplierCSV(invoices: ERPIncomingInvoiceItem[]): string {
   if (!invoices || invoices.length === 0) return '';
 
+  // Reduced to essential and common fields for basic supplier import
   const supplierHeaders = [
     "ID", // Leave blank for new suppliers, ERPNext will assign
     "Supplier Name",
-    "Supplier Type",
+    "Supplier Type", // Default to "Company"
+    "Supplier Group", // Default to "All Supplier Groups" or a valid one from user's ERPNext
+    "Country", // Default to "Germany" or leave blank
     "Tax ID",
-    "Primary Address",
-    "Email Id", 
-    "Mobile No", 
-    "Website", 
+    "Address Line 1", // From invoice.lieferantAdresse
+    "Email ID", // Usually not in invoice PDF, leave blank
+    "Mobile No", // Usually not in invoice PDF, leave blank
+    "Website", // Usually not in invoice PDF, leave blank
+    "Supplier Details", // For any remarks or notes
   ];
 
   let csvString = supplierHeaders.map(escapeCSVField).join(',') + '\n';
 
   const uniqueSuppliers = new Map<string, ERPIncomingInvoiceItem>();
   invoices.forEach(invoice => {
-    const supplierKey = (invoice.lieferantName || `UNKNOWN_SUPPLIER_FROM_${invoice.pdfFileName || 'PDF'}`).trim();
-    if (supplierKey && !uniqueSuppliers.has(supplierKey)) {
+    const supplierKey = (invoice.lieferantName || `UNKNOWN_SUPPLIER_${invoice.pdfFileName || 'PDF'}`).trim();
+    if (supplierKey && !uniqueSuppliers.has(supplierKey) && supplierKey !== "UNBEKANNT_SUPPLIER_PLACEHOLDER") {
       uniqueSuppliers.set(supplierKey, invoice);
     }
   });
 
-  uniqueSuppliers.forEach(invoice => { 
+  uniqueSuppliers.forEach(invoice => {
     let taxId = "";
     if (invoice.remarks) {
-        const taxIdMatch = invoice.remarks.match(/Tax ID:\s*([^\s\/,]+)/i) || 
-                           invoice.remarks.match(/VAT ID:\s*([^\s\/,]+)/i) || 
+        const taxIdMatch = invoice.remarks.match(/Tax ID:\s*([^\s\/,]+)/i) ||
+                           invoice.remarks.match(/VAT ID:\s*([^\s\/,]+)/i) ||
                            invoice.remarks.match(/USt-IdNr.:\s*([^\s\/,]+)/i);
         if (taxIdMatch && taxIdMatch[1]) {
             taxId = taxIdMatch[1];
@@ -337,16 +360,17 @@ export function erpInvoicesToSupplierCSV(invoices: ERPIncomingInvoiceItem[]): st
       "", // ID (blank for new)
       invoice.lieferantName,
       "Company", // Supplier Type (Fixed Value)
-      taxId, 
-      invoice.lieferantAdresse, 
-      "", // Email Id 
-      "", // Mobile No 
-      "", // Website
+      "All Supplier", // Supplier Group (Corrected fixed value)
+      "Germany", // Country (Fixed Value, or make configurable/extract if possible)
+      taxId,
+      invoice.lieferantAdresse,
+      "", // Email Id (blank)
+      "", // Mobile No (blank)
+      "", // Website (blank)
+      invoice.remarks || "", // Supplier Details from invoice remarks
     ];
     csvString += supplierDataRow.map(escapeCSVField).join(',') + '\n';
   });
 
   return csvString;
 }
-
-    
