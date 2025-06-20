@@ -7,27 +7,29 @@ import {
   incomingInvoicesToCSV, 
   incomingInvoicesToJSON, 
   incomingInvoicesToTSV,
-  incomingInvoicesToERPNextCSV,
+  erpInvoicesToSupplierCSV, // Changed from incomingInvoicesToERPNextCSV
   incomingInvoicesToERPNextCSVComplete,
   downloadFile 
 } from '@/lib/export-helpers';
 import type { IncomingInvoiceItem, ERPIncomingInvoiceItem } from '@/types/incoming-invoice';
-import { Copy, FileJson, FileSpreadsheet, ExternalLink } from 'lucide-react';
+import { Copy, FileJson, FileSpreadsheet, ExternalLink, Users } from 'lucide-react'; // Added Users
 
 interface IncomingInvoiceActionButtonsProps {
   invoices: IncomingInvoiceItem[] | ERPIncomingInvoiceItem[];
   erpMode: boolean;
-  useMinimalErpExport: boolean;
+  useMinimalErpExport: boolean; // This prop seems unused now with the simplified ERP export, but keeping for structure
   onExportToERPNext: () => void;
   isExportingToERPNext: boolean;
+  onExportSuppliersERPNext: () => void; // New prop for supplier export
 }
 
 export function IncomingInvoiceActionButtons({ 
   invoices, 
   erpMode, 
-  useMinimalErpExport,
+  useMinimalErpExport, // Kept for now, though "minimal" vs "complete" CSV for invoices is now just one "complete"
   onExportToERPNext,
-  isExportingToERPNext
+  isExportingToERPNext,
+  onExportSuppliersERPNext // New prop
 }: IncomingInvoiceActionButtonsProps) {
   const { toast } = useToast();
 
@@ -37,10 +39,11 @@ export function IncomingInvoiceActionButtons({
       return;
     }
     
-    const tsvData = incomingInvoicesToTSV(invoices, erpMode, useMinimalErpExport);
+    // TSV export for "complete" ERP mode will use the detailed invoice structure
+    const tsvData = incomingInvoicesToTSV(invoices, erpMode, false); // force complete for TSV if erpMode
     try {
       await navigator.clipboard.writeText(tsvData);
-      toast({ title: "Copied to clipboard!", description: `Data for ${invoices.length} invoice(s) copied successfully in ${erpMode ? `ERP (${useMinimalErpExport ? 'Minimal' : 'Complete'})` : 'Standard'} format.` });
+      toast({ title: "Copied to clipboard!", description: `Data for ${invoices.length} invoice(s) copied successfully in ${erpMode ? `ERP (Complete)` : 'Standard'} format.` });
     } catch (err) {
       toast({ title: "Copy failed", description: "Could not copy data to clipboard.", variant: "destructive" });
       console.error('Failed to copy: ', err);
@@ -53,12 +56,13 @@ export function IncomingInvoiceActionButtons({
       return;
     }
     const jsonData = incomingInvoicesToJSON(invoices); 
-    const fileName = erpMode ? `erp_extracted_incoming_invoices${useMinimalErpExport ? '_minimal' : '_complete'}.json` : 'extracted_incoming_invoices.json';
+    // JSON export will always be "complete" style if in ERP mode
+    const fileName = erpMode ? `erp_extracted_incoming_invoices_complete.json` : 'extracted_incoming_invoices.json';
     downloadFile(jsonData, fileName, 'application/json;charset=utf-8;');
     toast({ title: "JSON Exported", description: `Data for ${invoices.length} invoice(s) exported to JSON.` });
   };
 
-  const handleExportCSV = () => {
+  const handleExportInvoiceCSV = () => {
     if (invoices.length === 0) {
       toast({ title: "No data", description: "There is no invoice data to export.", variant: "destructive" });
       return;
@@ -66,51 +70,56 @@ export function IncomingInvoiceActionButtons({
     let csvData;
     let fileName;
     if (erpMode) {
-      if (useMinimalErpExport) {
-        csvData = incomingInvoicesToERPNextCSV(invoices as ERPIncomingInvoiceItem[]);
-        fileName = 'erp_extracted_incoming_invoices_minimal.csv';
-      } else {
-        csvData = incomingInvoicesToERPNextCSVComplete(invoices as ERPIncomingInvoiceItem[]);
-        fileName = 'erp_extracted_incoming_invoices_complete.csv';
-      }
+      // "Complete" ERPNext CSV for invoices is now the primary ERP export
+      csvData = incomingInvoicesToERPNextCSVComplete(invoices as ERPIncomingInvoiceItem[]);
+      fileName = 'erpnext_purchase_invoices_for_import.csv';
     } else {
       csvData = incomingInvoicesToCSV(invoices as IncomingInvoiceItem[]);
-      fileName = 'extracted_incoming_invoices.csv';
+      fileName = 'extracted_incoming_invoices_standard.csv';
     }
     
     downloadFile(csvData, fileName, 'text/csv;charset=utf-8;');
-    toast({ title: "CSV Exported", description: `Data for ${invoices.length} invoice(s) exported to CSV in ${erpMode ? `ERP (${useMinimalErpExport ? 'Minimal' : 'Complete'})` : 'Standard'} format.` });
+    toast({ title: "Invoice CSV Exported", description: `Data for ${invoices.length} invoice(s) exported to CSV in ${erpMode ? `ERPNext Purchase Invoice` : 'Standard'} format.` });
   };
 
   if (invoices.length === 0) {
     return null;
   }
 
-  const erpExportLabel = useMinimalErpExport ? "Minimal" : "Complete";
-
   return (
     <div className="my-6 flex flex-col sm:flex-row flex-wrap justify-center items-center gap-3 sm:gap-4">
       <Button onClick={handleCopyToClipboard} variant="outline" className="w-full sm:w-auto">
         <Copy className="mr-2 h-4 w-4" />
-        Copy All {erpMode ? `(ERP ${erpExportLabel})` : ""}
+        Copy All {erpMode ? `(ERP Complete)` : ""}
       </Button>
       <Button onClick={handleExportJSON} variant="outline" className="w-full sm:w-auto">
         <FileJson className="mr-2 h-4 w-4" />
-        Export All as JSON {erpMode ? `(${erpExportLabel})` : ""}
+        Export All as JSON {erpMode ? `(Complete)` : ""}
       </Button>
-      <Button onClick={handleExportCSV} className="w-full sm:w-auto">
+      <Button onClick={handleExportInvoiceCSV} className="w-full sm:w-auto">
         <FileSpreadsheet className="mr-2 h-4 w-4" />
-        Export All as CSV {erpMode ? `(ERP ${erpExportLabel})` : ""}
+        Export Invoices CSV {erpMode ? `(ERPNext)` : ""}
       </Button>
       {erpMode && (
-        <Button 
-          onClick={onExportToERPNext} 
-          className="w-full sm:w-auto"
-          disabled={isExportingToERPNext || invoices.length === 0}
-        >
-          <ExternalLink className="mr-2 h-4 w-4" />
-          {isExportingToERPNext ? 'Exporting...' : 'Export to ERPNext'}
-        </Button>
+        <>
+          <Button 
+            onClick={onExportSuppliersERPNext} // Call new handler
+            variant="secondary"
+            className="w-full sm:w-auto"
+            disabled={invoices.length === 0 || isExportingToERPNext} // Disable if exporting invoices
+          >
+            <Users className="mr-2 h-4 w-4" />
+            Export Suppliers (ERP)
+          </Button>
+          <Button 
+            onClick={onExportToERPNext} 
+            className="w-full sm:w-auto"
+            disabled={isExportingToERPNext || invoices.length === 0}
+          >
+            <ExternalLink className="mr-2 h-4 w-4" />
+            {isExportingToERPNext ? 'Exporting Invoices...' : 'Export Invoices to ERPNext'}
+          </Button>
+        </>
       )}
     </div>
   );
