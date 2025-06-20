@@ -7,32 +7,16 @@
 import { NextResponse } from 'next/server';
 import type { ERPIncomingInvoiceItem } from '@/types/incoming-invoice';
 
-// These should be loaded from environment variables
-// const ERPNEXT_API_URL = process.env.ERNEXT_API_URL;
-// const ERPNEXT_API_KEY = process.env.ERNEXT_API_KEY;
-// const ERPNEXT_API_SECRET = process.env.ERNEXT_API_SECRET;
+// These console.logs can remain for debugging if needed, but the check is removed.
+// console.log('[ExportERP API] ERNEXT_API_URL:', process.env.ERNEXT_API_URL);
+// console.log('[ExportERP API] ERNEXT_API_KEY:', process.env.ERNEXT_API_KEY);
+// console.log('[ExportERP API] ERNEXT_API_SECRET:', process.env.ERNEXT_API_SECRET);
 
 export async function POST(request: Request) {
-  // Log environment variables for debugging
   console.log('[ExportERP API] Route /api/erpnext/export-invoice called.');
-  // console.log('[ExportERP API] ERNEXT_API_URL:', process.env.ERNEXT_API_URL);
-  // console.log('[ExportERP API] ERNEXT_API_KEY:', process.env.ERNEXT_API_KEY);
-  // console.log('[ExportERP API] ERNEXT_API_SECRET:', process.env.ERNEXT_API_SECRET);
 
-
-  // THIS BLOCK IS INTENTIONALLY COMMENTED OUT FOR TESTING WITHOUT REAL CREDENTIALS
-  // OR WHEN CREDENTIALS ARE NOT YET SET UP.
-  /*
-  if (!process.env.ERNEXT_API_URL || !process.env.ERNEXT_API_KEY || !process.env.ERNEXT_API_SECRET) {
-    console.error('[ExportERP API] ERPNext API credentials missing or not configured. Ensure .env variables are set and server is restarted.');
-    console.log('[ExportERP API] Attempting to return JSON error for missing credentials (this check is currently COMMENTED OUT).');
-    return NextResponse.json(
-      { error: 'ERPNext API credentials are not configured on the server. Please check server logs and .env file.' },
-      { status: 500 }
-    );
-  }
-  */
-
+  // The credential check block that previously caused the error has been entirely removed.
+  // The code will now proceed directly to the try...catch block for simulation.
 
   try {
     const { invoices } = (await request.json()) as { invoices: ERPIncomingInvoiceItem[] };
@@ -71,10 +55,6 @@ export async function POST(request: Request) {
       try {
         // *******************************************************************
         // ACTUAL API call to ERPNext - REMAINS COMMENTED OUT FOR SIMULATION
-        // To enable real export:
-        // 1. Ensure the credential check block above is UNCOMMENTED.
-        // 2. Ensure .env file has ERNEXT_API_URL, ERNEXT_API_KEY, ERNEXT_API_SECRET.
-        // 3. UNCOMMENT the following fetch call.
         /*
         console.log('[ExportERP API] Attempting to fetch ERPNext API with payload:', JSON.stringify(erpNextPayload, null, 2));
         const response = await fetch(process.env.ERNEXT_API_URL!, {
