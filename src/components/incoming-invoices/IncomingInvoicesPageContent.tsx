@@ -50,7 +50,6 @@ export function IncomingInvoicesPageContent() {
   const { toast } = useToast();
   const [currentYear, setCurrentYear] = useState<string>('');
 
-  // New state for ERPNext export checking
   const [erpExportFile, setErpExportFile] = useState<File | null>(null);
   const [existingErpInvoiceKeys, setExistingErpInvoiceKeys] = useState<Set<string>>(new Set());
   const [isCheckingDuplicates, setIsCheckingDuplicates] = useState(false);
@@ -69,8 +68,8 @@ export function IncomingInvoicesPageContent() {
         if (
           parsedJson &&
           typeof parsedJson === 'object' &&
-          'status' in parsedJson && 
-          parsedJson.status === 'success'
+          'status' in parsedJson 
+          // Removed status === 'success' check here to allow loading keys even if no new processing
         ) {
           const cachedData = parsedJson as IncomingInvoicesPageCache;
 
@@ -80,7 +79,10 @@ export function IncomingInvoicesPageContent() {
           if (Array.isArray(cachedData.existingErpInvoiceKeys)) {
             setExistingErpInvoiceKeys(new Set(cachedData.existingErpInvoiceKeys));
           }
-          setStatus('success'); 
+          // Set status only if there was actual data, otherwise it remains idle
+          if (cachedData.extractedInvoices.length > 0 || cachedData.erpProcessedInvoices.length > 0) {
+            setStatus(cachedData.status as IncomingProcessingStatus); 
+          }
         } else {
           localStorage.removeItem(LOCAL_STORAGE_PAGE_CACHE_KEY);
         }
@@ -92,13 +94,15 @@ export function IncomingInvoicesPageContent() {
   }, []);
 
   useEffect(() => {
-    if (status === 'success' || existingErpInvoiceKeys.size > 0) { // Save if ERP keys were loaded even if no new processing
+    // Save to localStorage whenever critical state related to processing or ERP checking changes.
+    // This will save even if only existingErpInvoiceKeys is updated without new PDF processing.
+    if (status !== 'processing' && status !== 'idle' || existingErpInvoiceKeys.size > 0) {
       try {
         const cacheToSave: IncomingInvoicesPageCache = {
           extractedInvoices,
           erpProcessedInvoices,
           erpMode,
-          status: extractedInvoices.length > 0 || erpProcessedInvoices.length > 0 ? status : 'idle', // only set status if there are invoices
+          status: extractedInvoices.length > 0 || erpProcessedInvoices.length > 0 ? status : 'idle',
           existingErpInvoiceKeys: Array.from(existingErpInvoiceKeys) 
         };
         localStorage.setItem(LOCAL_STORAGE_PAGE_CACHE_KEY, JSON.stringify(cacheToSave));
@@ -130,16 +134,19 @@ export function IncomingInvoicesPageContent() {
 
   const formatDateForERP = (dateString?: string): string | undefined => {
     if (!dateString || dateString.trim() === '') return undefined;
-    if (/^\d{4}-\d{2}-\d{2}$/.test(dateString)) {
-        const d = parseISO(dateString);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dateString)) { // Already YYYY-MM-DD
+        const d = parseISO(dateString); // Validate it
         return isValid(d) ? dateString : undefined;
     }
+    // Try common German/Euro formats DD.MM.YYYY or DD/MM/YYYY
     const datePatterns = [
-      { regex: /^(\d{1,2})\.(\d{1,2})\.(\d{4})$/, dayIdx: 1, monthIdx: 2, yearIdx: 3 },
-      { regex: /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/, dayIdx: 1, monthIdx: 2, yearIdx: 3 },
-      { regex: /^(\d{4})\.(\d{1,2})\.(\d{1,2})$/, yearIdx: 1, monthIdx: 2, dayIdx: 3 },
-      { regex: /^(\d{4})\/(\d{1,2})\/(\d{1,2})$/, yearIdx: 1, monthIdx: 2, dayIdx: 3 },
+      { regex: /^(\d{1,2})\.(\d{1,2})\.(\d{4})$/, dayIdx: 1, monthIdx: 2, yearIdx: 3 }, // DD.MM.YYYY
+      { regex: /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/, dayIdx: 1, monthIdx: 2, yearIdx: 3 }, // DD/MM/YYYY
+      // Less common but possible YYYY.MM.DD or YYYY/MM/DD
+      { regex: /^(\d{4})\.(\d{1,2})\.(\d{1,2})$/, yearIdx: 1, monthIdx: 2, dayIdx: 3 }, // YYYY.MM.DD
+      { regex: /^(\d{4})\/(\d{1,2})\/(\d{1,2})$/, yearIdx: 1, monthIdx: 2, dayIdx: 3 }, // YYYY/MM/DD
     ];
+
     for (const pattern of datePatterns) {
       const match = dateString.match(pattern.regex);
       if (match) {
@@ -147,29 +154,40 @@ export function IncomingInvoicesPageContent() {
         const month = match[pattern.monthIdx].padStart(2, '0');
         const year = match[pattern.yearIdx];
         const isoDate = `${year}-${month}-${day}`;
-        const d = parseISO(isoDate);
+        const d = parseISO(isoDate); // Validate the constructed date
         if (isValid(d)) return isoDate;
       }
     }
+    
+    // Fallback for other potential date-like strings via Date constructor
     try {
         const d = new Date(dateString);
-        if (isValid(d)) return formatDateFns(d, 'yyyy-MM-dd');
-    } catch (e) { /* ignore */ }
+        if (isValid(d)) {
+          // Basic sanity check for year to avoid very old/future dates from ambiguous parsing
+          const year = d.getFullYear();
+          if (year > 1900 && year < 2100) {
+            return formatDateFns(d, 'yyyy-MM-dd');
+          }
+        }
+    } catch (e) { /* ignore error from new Date() */ }
+
     console.warn(`Could not parse date "${dateString}" to YYYY-MM-DD for ERP. Returning undefined.`);
-    return undefined;
+    return undefined; // Return undefined if no valid parse
   };
 
   const calculateDueDate = (invoiceDateStr?: string, paymentTerm?: string): string | undefined => {
     const erpInvoiceDate = formatDateForERP(invoiceDateStr);
-    if (!erpInvoiceDate || !paymentTerm) return erpInvoiceDate;
+    if (!erpInvoiceDate || !paymentTerm) return erpInvoiceDate; // Return posting date if no term or invalid date
     let invoiceDate: Date;
     try {
         invoiceDate = parseISO(erpInvoiceDate);
-         if (!isValid(invoiceDate)) return erpInvoiceDate;
-    } catch (e) { return erpInvoiceDate; }
+         if (!isValid(invoiceDate)) return erpInvoiceDate; // if parsed date is invalid, fallback
+    } catch (e) { return erpInvoiceDate; } // if parseISO fails, fallback
+
     const termLower = paymentTerm.toLowerCase();
     if (termLower.includes("sofort") || termLower.includes("immediately")) return erpInvoiceDate;
-    const daysMatch = termLower.match(/(\d+)\s*tage/);
+
+    const daysMatch = termLower.match(/(\d+)\s*tage/); // "14 Tage"
     if (daysMatch && daysMatch[1]) {
       const days = parseInt(daysMatch[1], 10);
       if (!isNaN(days)) {
@@ -177,7 +195,7 @@ export function IncomingInvoicesPageContent() {
         return formatDateFns(dueDate, 'yyyy-MM-dd');
       }
     }
-    return erpInvoiceDate; 
+    return erpInvoiceDate; // Default to posting date if term not understood
   };
 
   const handleFilesSelected = useCallback((files: File[]) => {
@@ -188,16 +206,14 @@ export function IncomingInvoicesPageContent() {
     setErrorMessage(null);
     setProgressValue(0);
     setCurrentFileProgress('');
-    // Don't clear existingErpInvoiceKeys here, user might want to check new PDFs against existing ERP data
   }, []);
 
   const resetStateOnModeChange = () => {
     const hasProcessedResults = extractedInvoices.length > 0 || erpProcessedInvoices.length > 0;
     if (hasProcessedResults) {
-      setSelectedFiles([]); // Clear selected PDFs if mode changes after processing
+      setSelectedFiles([]); 
       setExtractedInvoices([]);
       setErpProcessedInvoices([]);
-      // Don't clear existingErpInvoiceKeys, it's independent of PDF processing
     }
     setStatus('idle');
     setCurrentFileProgress('');
@@ -237,13 +253,14 @@ export function IncomingInvoicesPageContent() {
             finalLieferantName = "UNBEKANNT_SUPPLIER_PLACEHOLDER"; 
         }
 
-
         const postingDateERP = formatDateForERP(aiResult.datum);
-        const billDateERP = postingDateERP;
+        const billDateERP = postingDateERP; // Bill date is usually same as posting date for purchase invoices
         const dueDateERP = calculateDueDate(postingDateERP, aiResult.zahlungsziel);
+        
         let remarks = '';
         if (aiResult.kundenNummer) remarks += `Kunden-Nr.: ${aiResult.kundenNummer}`;
         if (aiResult.bestellNummer) remarks += `${remarks ? ' / ' : ''}Bestell-Nr.: ${aiResult.bestellNummer}`;
+        
         let istBezahltStatus: 0 | 1 = 0;
         if (aiResult.isPaid === true) {
           istBezahltStatus = 1;
@@ -271,11 +288,10 @@ export function IncomingInvoicesPageContent() {
         const internalRefId = `INTERNAL-${yearToUse}-${String(yearCounters[yearToUse]).padStart(5, '0')}`;
         const rechnungsnummerToUse = aiResult.rechnungsnummer || internalRefId;
 
-
         const erpCompatibleInvoice: ERPIncomingInvoiceItem = {
           pdfFileName: file.name,
           rechnungsnummer: rechnungsnummerToUse,
-          datum: postingDateERP, 
+          datum: postingDateERP, // This is the posting_date for ERP mode, already YYYY-MM-DD
           lieferantName: finalLieferantName,
           lieferantAdresse: aiResult.lieferantAdresse,
           zahlungsziel: aiResult.zahlungsziel,
@@ -287,11 +303,11 @@ export function IncomingInvoicesPageContent() {
           bestellNummer: aiResult.bestellNummer,
           isPaidByAI: aiResult.isPaid,
           erpNextInvoiceName: internalRefId, 
-          billDate: billDateERP,
-          dueDate: dueDateERP,
-          wahrung: 'EUR',
-          istBezahlt: istBezahltStatus,
-          kontenrahmen: DEFAULT_KREDITOR_ACCOUNT,
+          billDate: billDateERP, // Should be YYYY-MM-DD
+          dueDate: dueDateERP,   // Should be YYYY-MM-DD
+          wahrung: 'EUR', // Default currency
+          istBezahlt: istBezahltStatus, // 0 or 1
+          kontenrahmen: DEFAULT_KREDITOR_ACCOUNT, // Default Kreditor
           remarks: remarks.trim(),
         };
         allProcessedForMatcher.push(erpCompatibleInvoice);
@@ -302,7 +318,7 @@ export function IncomingInvoicesPageContent() {
           regularResultsDisplay.push({
               pdfFileName: file.name,
               rechnungsnummer: rechnungsnummerToUse,
-              datum: aiResult.datum, 
+              datum: aiResult.datum, // Original extracted date for standard mode
               lieferantName: finalLieferantName,
               lieferantAdresse: aiResult.lieferantAdresse,
               zahlungsziel: aiResult.zahlungsziel,
@@ -358,12 +374,12 @@ export function IncomingInvoicesPageContent() {
         toast({ title: `Export Error (${response.status})`, description: detailedErrorMessage, variant: "destructive" });
         return;
       }
-      if (response.status === 204) {
+      if (response.status === 204) { // No Content
         toast({ title: "Export Submitted", description: "Invoices submitted to ERPNext (server returned no content, assuming success)." });
       } else {
         const result = await response.json();
         if (result.message) {
-          toast({ title: "Export Status", description: result.message, variant: response.status === 207 ? "default" : "default" });
+          toast({ title: "Export Status", description: result.message, variant: response.status === 207 ? "default" : "default" }); // 207 Multi-Status
         } else {
            toast({ title: "Export Submitted", description: "Invoices submitted to ERPNext." });
         }
@@ -411,8 +427,10 @@ export function IncomingInvoicesPageContent() {
     try {
       for (let i = 0; i < erpProcessedInvoices.length; i++) {
         const invoice = erpProcessedInvoices[i];
+        // Generate CSV for a single invoice
         const csvString = incomingInvoicesToERPNextCSVComplete([invoice]); 
         
+        // Create a safe filename
         const safeInvoiceNumber = (invoice.rechnungsnummer || `invoice_${i + 1}`).replace(/[^a-zA-Z0-9_.-]/g, '_').substring(0, 50);
         const filename = `ERPNext_Invoice_${safeInvoiceNumber}.csv`;
         
@@ -422,7 +440,7 @@ export function IncomingInvoicesPageContent() {
 
       if (fileCount > 0) {
         const zipBlob = await zip.generateAsync({ type: "blob" });
-        downloadFile(zipBlob as any, "erpnext_individual_invoices.zip", "application/zip"); 
+        downloadFile(zipBlob as any, "erpnext_individual_invoices.zip", "application/zip"); // Cast to any for downloadFile
         toast({
           title: "ZIP Export Successful",
           description: `${fileCount} invoice(s) exported as individual CSVs in a ZIP file.`,
@@ -470,17 +488,21 @@ export function IncomingInvoicesPageContent() {
         const newKeys = new Set<string>();
         let supplierColFound = false;
         let billNoColFound = false;
+        let dateColFound = false;
 
         const headers = results.meta.fields || [];
+        
         const supplierColVariations = ["supplier", "supplier name", "lieferant", "lieferantenname", "supplier_name"];
-        const billNoColVariations = ["bill no", "bill_no", "invoice no", "invoice_no", "rechnungsnummer", "name"]; // 'name' is often the ID/BillNo for Purchase Invoice
+        const billNoColVariations = ["bill no", "bill_no", "invoice no", "invoice_no", "rechnungsnummer", "name"]; // 'name' can be invoice ID
+        const dateColVariations = ["posting date", "posting_date", "invoice date", "invoice_date", "rechnungsdatum", "datum", "bill date", "bill_date"];
 
         let actualSupplierCol = "";
         let actualBillNoCol = "";
+        let actualDateCol = "";
 
         for (const h of headers) {
             const hLower = h.toLowerCase().trim();
-            if (supplierColVariations.includes(hLower) && !actualSupplierCol) { // Prioritize specific names
+            if (supplierColVariations.includes(hLower) && !actualSupplierCol) {
                 actualSupplierCol = h;
                 supplierColFound = true;
             }
@@ -488,10 +510,14 @@ export function IncomingInvoicesPageContent() {
                 actualBillNoCol = h;
                 billNoColFound = true;
             }
+            if (dateColVariations.includes(hLower) && !actualDateCol) {
+                actualDateCol = h;
+                dateColFound = true;
+            }
         }
         
-        if (!supplierColFound || !billNoColFound) {
-            setErrorMessage(`Could not find required columns in ERPNext export. Please ensure your CSV contains headers for Supplier Name (e.g., 'Supplier', 'Lieferant') AND Invoice Number (e.g., 'Bill No', 'Rechnungsnummer', 'Name'). Found headers: ${headers.join(', ')}`);
+        if (!supplierColFound || !billNoColFound || !dateColFound) {
+            setErrorMessage(`Could not find required columns in ERPNext export. Please ensure your CSV contains headers for Supplier Name, Invoice Number, AND Invoice Date. Found headers: ${headers.join(', ')}`);
             setIsCheckingDuplicates(false);
             setExistingErpInvoiceKeys(new Set()); 
             return;
@@ -502,21 +528,27 @@ export function IncomingInvoicesPageContent() {
           let normalizedSupplierNameForErpKey = rawSupplierNameFromErp.toLowerCase();
           const upperCaseErpSupplierName = rawSupplierNameFromErp.toUpperCase();
 
+          // Apply supplierMap normalization to supplier from ERPNext CSV
           if (supplierMap[upperCaseErpSupplierName]) {
             normalizedSupplierNameForErpKey = supplierMap[upperCaseErpSupplierName].toLowerCase();
           }
           
           const invoiceNumberFromErp = (row[actualBillNoCol] || '').trim().toLowerCase();
+          const rawDateFromErp = (row[actualDateCol] || '').trim();
+          const parsedAndFormattedDate = formatDateForERP(rawDateFromErp); // Use the robust date parser
 
-          if (normalizedSupplierNameForErpKey && invoiceNumberFromErp) {
-            newKeys.add(`${normalizedSupplierNameForErpKey}||${invoiceNumberFromErp}`);
+          if (normalizedSupplierNameForErpKey && invoiceNumberFromErp && parsedAndFormattedDate) {
+            const key = `${normalizedSupplierNameForErpKey}||${invoiceNumberFromErp}||${parsedAndFormattedDate}`;
+            newKeys.add(key);
+          } else {
+            console.warn("Skipping row for ERP key generation due to missing supplier, invoice number, or unparsable date:", row);
           }
         });
 
         setExistingErpInvoiceKeys(newKeys);
         toast({
           title: "ERPNext Data Processed",
-          description: `Found ${newKeys.size} unique invoice keys from your ERPNext export. Newly processed PDFs will now be checked against this list.`,
+          description: `Found ${newKeys.size} unique invoice keys (Supplier + Number + Date) from your ERPNext export.`,
         });
         setIsCheckingDuplicates(false);
       },
@@ -529,11 +561,21 @@ export function IncomingInvoicesPageContent() {
     });
   };
   
-  const createInvoiceKey = (invoice: IncomingInvoiceItem | ERPIncomingInvoiceItem): string => {
-    // Uses the already AI-normalized (via supplierMap) lieferantName from the invoice object
+  const createInvoiceKey = (invoice: ERPIncomingInvoiceItem | IncomingInvoiceItem): string => {
+    // For ERPIncomingInvoiceItem, invoice.datum is already YYYY-MM-DD
+    // For IncomingInvoiceItem, we need to format its datum
+    const dateToUse = (invoice as ERPIncomingInvoiceItem).datum 
+                       ? (invoice as ERPIncomingInvoiceItem).datum // Already YYYY-MM-DD
+                       : formatDateForERP((invoice as IncomingInvoiceItem).datum); // Parse and format if standard mode
+
     const supplier = (invoice.lieferantName || '').trim().toLowerCase(); 
     const number = (invoice.rechnungsnummer || '').trim().toLowerCase();
-    return `${supplier}||${number}`;
+    
+    if (dateToUse) {
+      return `${supplier}||${number}||${dateToUse}`;
+    }
+    // Fallback key if date can't be determined (less precise match)
+    return `${supplier}||${number}||NO_DATE`; 
   };
 
 
@@ -562,7 +604,7 @@ export function IncomingInvoicesPageContent() {
               <CheckSquare className="w-6 h-6 text-green-600" />
               Check Duplicates with ERPNext Export (Optional)
             </CardTitle>
-            <CardDescription>Upload a CSV export from ERPNext (containing at least 'Supplier' and 'Bill No' columns) to flag invoices already in your system.</CardDescription>
+            <CardDescription>Upload a CSV export from ERPNext (containing at least Supplier, Invoice No, and Invoice Date columns) to flag invoices already in your system.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div>
