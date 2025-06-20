@@ -1,6 +1,7 @@
 
 'use client';
 
+import React from 'react'; // Added React import
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { ListOrdered, ReceiptText, Landmark, FileEdit, FileScan, ArrowRight, Zap } from 'lucide-react';
@@ -47,7 +48,7 @@ export function LandingPageContent() {
         {/* Hero Section */}
         <section className="py-16 md:py-24 bg-gradient-to-br from-primary/10 via-transparent to-transparent">
           <div className="container mx-auto px-4 md:px-8 text-center">
-            <div 
+            <div
               className="inline-flex items-center justify-center px-4 py-1 mb-6 text-sm font-medium text-primary bg-primary/10 rounded-full"
               role="alert"
             >
