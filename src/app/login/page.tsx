@@ -3,6 +3,7 @@
 
 import dynamic from 'next/dynamic';
 import { Skeleton } from '@/components/ui/skeleton';
+// No ProtectedRoute here, LoginPageContent handles its own auth check for redirection
 
 const LoginPageContent = dynamic(
   () => import('@/components/auth/LoginPageContent').then(mod => mod.LoginPageContent),
@@ -26,7 +27,7 @@ const LoginPageContent = dynamic(
         </div>
       </div>
     ),
-    ssr: false, // Login page usually involves client-side form handling
+    ssr: false, 
   }
 );
 

@@ -1,6 +1,7 @@
 
 'use client';
 
+import React, { useEffect } from 'react'; // Added React import
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -8,13 +9,34 @@ import { Label } from '@/components/ui/label';
 import Link from 'next/link';
 import { LogIn, ShieldCheck } from 'lucide-react';
 import Image from 'next/image';
+import { useAuth } from '@/contexts/AuthContext';
+import { useRouter } from 'next/navigation';
 
 export function LoginPageContent() {
+  const { login, isAuthenticated, isLoading } = useAuth();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (!isLoading && isAuthenticated) {
+      router.push('/extractor'); // Or your default authenticated page
+    }
+  }, [isLoading, isAuthenticated, router]);
+
   const handleLogin = (event: React.FormEvent) => {
     event.preventDefault();
-    // Placeholder for login logic - In a real app, this would call an auth service
-    alert('Login form submitted! (Functionality not implemented yet)');
+    // In a real app, you'd validate credentials here
+    login(); 
   };
+
+  if (isLoading || (!isLoading && isAuthenticated)) {
+    // Show a loader or nothing while checking auth/redirecting
+    return (
+        <div className="flex items-center justify-center min-h-[calc(100vh-4rem)] p-4">
+            <p>Loading...</p>
+        </div>
+    );
+  }
+
 
   return (
     <div className="flex flex-col items-center justify-center min-h-[calc(100vh-4rem)] bg-gradient-to-br from-primary/5 via-background to-background p-4">
@@ -46,6 +68,7 @@ export function LoginPageContent() {
                 placeholder="you@example.com" 
                 required 
                 className="h-12 text-base"
+                defaultValue="test@example.com"
               />
             </div>
             <div className="space-y-2">
@@ -61,6 +84,7 @@ export function LoginPageContent() {
                 required 
                 placeholder="Enter your password" 
                 className="h-12 text-base"
+                defaultValue="password"
               />
             </div>
             <Button type="submit" className="w-full font-semibold text-base py-6" size="lg">

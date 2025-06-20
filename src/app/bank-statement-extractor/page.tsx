@@ -3,6 +3,7 @@
 
 import dynamic from 'next/dynamic';
 import { Skeleton } from '@/components/ui/skeleton';
+import ProtectedRoute from '@/components/auth/ProtectedRoute';
 
 const BankStatementExtractorPageContent = dynamic(
   () => import('@/components/bank-statement-extractor/BankStatementExtractorPageContent').then(mod => mod.BankStatementExtractorPageContent),
@@ -28,5 +29,9 @@ const BankStatementExtractorPageContent = dynamic(
 );
 
 export default function BankStatementExtractorPage() {
-  return <BankStatementExtractorPageContent />;
+  return (
+    <ProtectedRoute>
+      <BankStatementExtractorPageContent />
+    </ProtectedRoute>
+  );
 }

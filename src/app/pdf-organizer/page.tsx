@@ -3,6 +3,7 @@
 
 import dynamic from 'next/dynamic';
 import { Skeleton } from '@/components/ui/skeleton';
+import ProtectedRoute from '@/components/auth/ProtectedRoute';
 
 const PdfOrganizerPageContent = dynamic(
   () => import('@/components/pdf-organizer/PdfOrganizerPageContent').then(mod => mod.PdfOrganizerPageContent),
@@ -28,5 +29,9 @@ const PdfOrganizerPageContent = dynamic(
 );
 
 export default function PdfOrganizerPage() {
-  return <PdfOrganizerPageContent />;
+  return (
+    <ProtectedRoute>
+      <PdfOrganizerPageContent />
+    </ProtectedRoute>
+  );
 }

@@ -3,8 +3,8 @@
 
 import dynamic from 'next/dynamic';
 import { Skeleton } from '@/components/ui/skeleton';
+import ProtectedRoute from '@/components/auth/ProtectedRoute';
 
-// This was the original content of src/app/page.tsx
 const PdfExtractorPageContent = dynamic(
   () => import('@/components/pdf-data-extractor/PdfExtractorPageContent').then(mod => mod.PdfExtractorPageContent),
   {
@@ -28,5 +28,9 @@ const PdfExtractorPageContent = dynamic(
 );
 
 export default function PdfExtractorPage() {
-  return <PdfExtractorPageContent />;
+  return (
+    <ProtectedRoute>
+      <PdfExtractorPageContent />
+    </ProtectedRoute>
+  );
 }

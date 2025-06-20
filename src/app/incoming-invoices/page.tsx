@@ -3,6 +3,7 @@
 
 import dynamic from 'next/dynamic';
 import { Skeleton } from '@/components/ui/skeleton';
+import ProtectedRoute from '@/components/auth/ProtectedRoute';
 
 const IncomingInvoicesPageContent = dynamic(
   () => import('@/components/incoming-invoices/IncomingInvoicesPageContent').then(mod => mod.IncomingInvoicesPageContent),
@@ -27,5 +28,9 @@ const IncomingInvoicesPageContent = dynamic(
 );
 
 export default function IncomingInvoicesPage() {
-  return <IncomingInvoicesPageContent />;
+  return (
+    <ProtectedRoute>
+      <IncomingInvoicesPageContent />
+    </ProtectedRoute>
+  );
 }

@@ -2,10 +2,11 @@
 'use client';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { ListOrdered, ReceiptText, Landmark, FileEdit, FileScan, LogIn, Home as HomeIcon, Menu } from 'lucide-react'; // Renamed Home to HomeIcon
+import { ListOrdered, ReceiptText, Landmark, FileEdit, FileScan, LogIn, LogOut, Home as HomeIcon, Menu, UserCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet'; // For mobile menu
+import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import React from 'react';
+import { useAuth } from '@/contexts/AuthContext'; // Import useAuth
 
 const mainNavLinks = [
   { href: '/', label: 'Home', icon: <HomeIcon className="w-5 h-5" /> },
@@ -19,6 +20,49 @@ const mainNavLinks = [
 export function AppHeader() {
   const pathname = usePathname();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = React.useState(false);
+  const { isAuthenticated, isLoading, logout } = useAuth(); // Get auth state and functions
+
+  const handleLogout = () => {
+    logout();
+    setIsMobileMenuOpen(false);
+  };
+
+  const renderAuthButton = (isMobile: boolean) => {
+    if (isLoading) {
+      return (
+        <Button variant="ghost" size={isMobile ? "default" : "sm"} className={`font-semibold ${isMobile ? 'w-full justify-start py-3 text-base' : 'hidden sm:inline-flex'}`} disabled>
+          <UserCircle className="w-5 h-5 mr-2" /> Loading...
+        </Button>
+      );
+    }
+    if (isAuthenticated) {
+      return (
+        <Button 
+          variant={isMobile ? "ghost" : "outline"} 
+          size={isMobile ? "default" : "sm"}
+          onClick={handleLogout}
+          className={`font-semibold ${isMobile ? 'w-full justify-start py-3 text-base' : 'hidden sm:inline-flex'}`}
+        >
+          <LogOut className="w-4 h-4 mr-2" />
+          Logout
+        </Button>
+      );
+    }
+    return (
+      <Link href="/login" passHref>
+        <Button 
+          variant={pathname === '/login' && !isMobile ? 'default' : (isMobile ? "ghost" : "outline")} 
+          size={isMobile ? "default" : "sm"}
+          className={`font-semibold ${isMobile ? 'w-full justify-start py-3 text-base' : 'hidden sm:inline-flex'}`}
+          onClick={() => setIsMobileMenuOpen(false)}
+        >
+          <LogIn className="w-4 h-4 mr-2" />
+          Login
+        </Button>
+      </Link>
+    );
+  };
+
 
   return (
     <header className="bg-card border-b border-border shadow-sm sticky top-0 z-50">
@@ -27,7 +71,6 @@ export function AppHeader() {
           PDF Suite
         </Link>
         
-        {/* Desktop Navigation */}
         <nav className="hidden md:flex items-center space-x-1">
           {mainNavLinks.map((link) => (
             <Link
@@ -47,18 +90,8 @@ export function AppHeader() {
         </nav>
 
         <div className="flex items-center space-x-2">
-          <Link href="/login" passHref>
-            <Button 
-              variant={pathname === '/login' ? 'default' : 'outline'} 
-              size="sm" 
-              className="font-semibold hidden sm:inline-flex"
-            >
-              <LogIn className="w-4 h-4 mr-2" />
-              Login
-            </Button>
-          </Link>
+          {renderAuthButton(false)}
           
-          {/* Mobile Menu Trigger */}
           <div className="md:hidden">
             <Sheet open={isMobileMenuOpen} onOpenChange={setIsMobileMenuOpen}>
               <SheetTrigger asChild>
@@ -90,18 +123,7 @@ export function AppHeader() {
                     </Link>
                   ))}
                   <hr className="my-2"/>
-                  <Link
-                    href="/login"
-                    onClick={() => setIsMobileMenuOpen(false)}
-                    className={`flex items-center space-x-3 px-3 py-3 rounded-md text-base font-medium transition-colors
-                                ${pathname === '/login'
-                                  ? 'bg-primary text-primary-foreground'
-                                  : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
-                                }`}
-                  >
-                    <LogIn className="w-5 h-5" />
-                    <span>Login</span>
-                  </Link>
+                  {renderAuthButton(true)}
                 </nav>
               </SheetContent>
             </Sheet>

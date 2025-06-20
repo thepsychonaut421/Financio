@@ -3,6 +3,7 @@ import './globals.css';
 import { Toaster } from "@/components/ui/toaster";
 import { AppHeader } from '@/components/shared/AppHeader';
 import { Inter } from 'next/font/google';
+import { AuthProvider } from '@/contexts/AuthContext'; // Added AuthProvider
 
 const inter = Inter({
   subsets: ['latin'],
@@ -26,11 +27,13 @@ export default function RootLayout({
         
       </head>
       <body className="antialiased min-h-screen flex flex-col">
-        <AppHeader />
-        <main className="flex-grow">
-          {children}
-        </main>
-        <Toaster />
+        <AuthProvider> {/* Wrapped with AuthProvider */}
+          <AppHeader />
+          <main className="flex-grow">
+            {children}
+          </main>
+          <Toaster />
+        </AuthProvider>
       </body>
     </html>
   );

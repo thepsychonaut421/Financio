@@ -3,6 +3,7 @@
 
 import dynamic from 'next/dynamic';
 import { Skeleton } from '@/components/ui/skeleton';
+import ProtectedRoute from '@/components/auth/ProtectedRoute';
 
 const BankMatcherPageContent = dynamic(
   () => import('@/components/bank-matcher/BankMatcherPageContent').then(mod => mod.BankMatcherPageContent),
@@ -28,5 +29,9 @@ const BankMatcherPageContent = dynamic(
 );
 
 export default function BankMatcherPage() {
-  return <BankMatcherPageContent />;
+  return (
+    <ProtectedRoute>
+      <BankMatcherPageContent />
+    </ProtectedRoute>
+  );
 }
