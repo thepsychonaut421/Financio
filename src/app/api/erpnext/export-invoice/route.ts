@@ -19,17 +19,16 @@ export async function POST(request: Request) {
   console.log('ERNEXT_API_KEY:', process.env.ERNEXT_API_KEY);
   console.log('ERNEXT_API_SECRET:', process.env.ERNEXT_API_SECRET);
 
-  /*
-  // Temporarily commented out for development if ERPNext credentials are not yet available
+  
   if (!process.env.ERNEXT_API_URL || !process.env.ERNEXT_API_KEY || !process.env.ERNEXT_API_SECRET) {
     console.error('ERPNext API credentials missing or not configured. Ensure .env variables are set and server is restarted.');
-    console.log('Attempting to return JSON error for missing credentials.'); // Added log
+    console.log('Attempting to return JSON error for missing credentials.'); 
     return NextResponse.json(
       { error: 'ERPNext API credentials are not configured on the server. Please check server logs and .env file.' },
       { status: 500 }
     );
   }
-  */
+  
 
   try {
     const { invoices } = (await request.json()) as { invoices: ERPIncomingInvoiceItem[] };
@@ -70,15 +69,12 @@ export async function POST(request: Request) {
           // Add other required item fields by ERPNext
         })),
         // ... other fields required by your ERPNext setup
-        // set_posting_time: 1, // Usually needed
+        set_posting_time: 1, // Usually needed
       };
 
       try {
         // *******************************************************************
-        // PLACEHOLDER: Actual API call to ERPNext
-        // You'll need to replace this with a proper fetch call to your ERPNext instance.
-        // Example using fetch:
-        /*
+        // ACTUAL API call to ERPNext
         const response = await fetch(process.env.ERNEXT_API_URL, { // Ensure ERPNEXT_API_URL points to the Purchase Invoice endpoint
           method: 'POST',
           headers: {
@@ -90,16 +86,16 @@ export async function POST(request: Request) {
         });
 
         if (!response.ok) {
-          const errorData = await response.json();
+          let errorData;
+          try {
+            errorData = await response.json();
+          } catch (e) {
+            errorData = { message: await response.text() };
+          }
           throw new Error(errorData.message || `ERPNext API Error: ${response.status} ${response.statusText}`);
         }
         const responseData = await response.json();
         console.log('Successfully created Purchase Invoice in ERPNext:', responseData.data.name);
-        */
-        // SIMULATING API CALL FOR NOW
-        await new Promise(resolve => setTimeout(resolve, 500)); // Simulate network delay
-        console.log("Simulating ERPNext API call for invoice:", invoice.rechnungsnummer, "Payload:", JSON.stringify(erpNextPayload, null, 2));
-        // if (Math.random() < 0.1) throw new Error("Simulated API error for " + invoice.rechnungsnummer); // Simulate occasional error
         // *******************************************************************
         
         successCount++;
