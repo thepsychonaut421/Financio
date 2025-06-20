@@ -19,29 +19,54 @@ function escapeTSVField(field: string | number | undefined | null): string {
     return String(field).replace(/\t/g, ' ').replace(/\n/g, ' ').replace(/\r/g, ' ');
 }
 
-const COMMON_HEADERS = [
-  'Tx Date', 'Tx Description', 'Tx Amount', 'Tx Currency', 'Tx Payer/Recipient',
-  'Match Status', 'Match Confidence',
-  'Matched Invoice PDF', 'Matched Invoice No', 'Matched Invoice Supplier',
-  'Matched Invoice Date', 'Matched Invoice Total', 'Matched Invoice Currency'
+const DETAILED_HEADERS = [
+  // Transaction Fields
+  'Tx ID', 'Tx Date', 'Tx Description', 'Tx Amount', 'Tx Currency', 'Tx Recipient/Payer',
+  // Match Fields
+  'Match Status', 'Match Confidence (%)',
+  // Matched Invoice Fields (ERPIncomingInvoiceItem)
+  'Inv PDF File Name', 'Inv Rechnungsnummer', 'Inv Datum (Invoice Date)', 
+  'Inv Lieferant Name', 'Inv Lieferant Adresse', 'Inv Zahlungsziel', 'Inv Zahlungsart',
+  'Inv Gesamtbetrag (Total)', 'Inv Währung (Currency)', 'Inv MwSt-Satz (VAT Rate)',
+  'Inv Kunden-Nummer', 'Inv Bestell-Nummer', 'Inv isPaid (AI Extraction)',
+  'Inv istBezahlt (0/1 ERP Status)', 'Inv Kontenrahmen (Account)',
+  'Inv Bill Date (ERP)', 'Inv Due Date (ERP)', 'Inv Remarks (ERP)',
+  'Inv ERPNext Internal Name'
 ];
 
-function getRowData(match: MatchedTransaction): (string | number | undefined | null)[] {
+function getDetailedRowData(match: MatchedTransaction): (string | number | undefined | null)[] {
   const { transaction, matchedInvoice, status, confidence } = match;
   return [
+    // Transaction
+    transaction.id,
     transaction.date,
     transaction.description,
     transaction.amount,
     transaction.currency,
     transaction.recipientOrPayer,
+    // Match
     status,
     confidence !== undefined ? (confidence * 100).toFixed(0) + '%' : 'N/A',
+    // Invoice (handle null matchedInvoice)
     matchedInvoice?.pdfFileName,
     matchedInvoice?.rechnungsnummer,
+    matchedInvoice?.datum,
     matchedInvoice?.lieferantName,
-    matchedInvoice?.datum, // This is invoice date (posting_date)
+    matchedInvoice?.lieferantAdresse,
+    matchedInvoice?.zahlungsziel,
+    matchedInvoice?.zahlungsart,
     matchedInvoice?.gesamtbetrag,
-    matchedInvoice?.wahrung
+    matchedInvoice?.wahrung,
+    matchedInvoice?.mwstSatz,
+    matchedInvoice?.kundenNummer,
+    matchedInvoice?.bestellNummer,
+    matchedInvoice?.isPaidByAI,
+    matchedInvoice?.istBezahlt,
+    matchedInvoice?.kontenrahmen,
+    matchedInvoice?.billDate,
+    matchedInvoice?.dueDate,
+    matchedInvoice?.remarks,
+    matchedInvoice?.erpNextInvoiceName,
   ];
 }
 
@@ -49,8 +74,8 @@ export function matchedTransactionsToCSV(matches: MatchedTransaction[]): string 
   if (!matches || matches.length === 0) return '';
 
   const csvRows = [
-    COMMON_HEADERS.join(','),
-    ...matches.map(match => getRowData(match).map(escapeCSVField).join(','))
+    DETAILED_HEADERS.map(escapeCSVField).join(','),
+    ...matches.map(match => getDetailedRowData(match).map(escapeCSVField).join(','))
   ];
   return csvRows.join('\n');
 }
@@ -59,18 +84,26 @@ export function matchedTransactionsToTSV(matches: MatchedTransaction[]): string 
   if (!matches || matches.length === 0) return '';
 
   const tsvRows = [
-    COMMON_HEADERS.join('\t'),
-    ...matches.map(match => getRowData(match).map(escapeTSVField).join('\t'))
+    DETAILED_HEADERS.map(escapeTSVField).join('\t'),
+    ...matches.map(match => getDetailedRowData(match).map(escapeTSVField).join('\t'))
   ];
   return tsvRows.join('\n');
 }
 
 export function matchedTransactionsToJSON(matches: MatchedTransaction[]): string {
   const structuredData = matches.map(match => {
-    const rowArray = getRowData(match);
+    const rowArray = getDetailedRowData(match);
     const rowObject: Record<string, any> = {};
-    COMMON_HEADERS.forEach((header, index) => {
-      rowObject[header.replace(/\s+/g, '_').toLowerCase()] = rowArray[index];
+    DETAILED_HEADERS.forEach((header, index) => {
+      // Create a more JSON-friendly key
+      const jsonKey = header
+        .replace(/\(%\)/g, 'Percentage') // Replace (%) with Percentage
+        .replace(/\(.*\)/g, '')       // Remove other parentheses content
+        .replace(/\s+/g, '_')          // Replace spaces with underscores
+        .replace(/[^a-zA-Z0-9_]/g, '') // Remove special characters except underscore
+        .trim()
+        .toLowerCase();
+      rowObject[jsonKey || `field_${index}`] = rowArray[index];
     });
     return rowObject;
   });
