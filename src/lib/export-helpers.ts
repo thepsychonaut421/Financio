@@ -97,15 +97,15 @@ export function incomingInvoicesToCSV(invoices: IncomingInvoiceItem[]): string {
 export function incomingInvoicesToERPNextCSVComplete(invoices: ERPIncomingInvoiceItem[]): string {
   if (!invoices || invoices.length === 0) return '';
 
-  // Invoice level headers
+  // Invoice level headers for ERPNext Purchase Invoice import
   const invoiceHeaders = [
     "supplier", "bill_no", "bill_date", "posting_date", "due_date", 
     "currency", 
-    "credit_to", // Will be blank
+    "credit_to", // Left blank as requested
     "is_paid", "remarks", 
-    "update_stock", "set_posting_time"
-    // "naming_series" is removed as per request
-    // "ID" at invoice level is removed as per request
+    "update_stock", "set_posting_time",
+    // "naming_series" removed as requested
+    // "ID" at invoice level removed as requested
   ];
 
   // Item level headers, aligned with ERPNext Purchase Invoice Item template
@@ -187,132 +187,125 @@ export function incomingInvoicesToTSV(invoices: IncomingInvoiceItem[] | ERPIncom
   if (!invoices || invoices.length === 0) return '';
   let tsvString = '';
 
-  if (erpMode) {
-    const erpInvoices = invoices as ERPIncomingInvoiceItem[];
-    const invoiceHeaders = [
-        "supplier", "bill_no", "bill_date", "posting_date", "due_date", 
-        "currency", "credit_to", "is_paid", "remarks", 
-        "update_stock", "set_posting_time"
-    ];
-    const itemHeaders = [
-        "ID (Items)", "Item Name (Items)", "Description (Items)", "Accepted Qty (Items)", "UOM (Items)",
-        "Rate (Items)", "Amount (Items)", "Accepted Qty in Stock UOM (Items)", "UOM Conversion Factor (Items)",
-        "Amount (Company Currency) (Items)", "Rate (Company Currency) (Items)",
-        "Warehouse (Items)", "Cost Center (Items)", "Expense Account (Items)"
-    ];
-    const headers = [...invoiceHeaders, ...itemHeaders];
-    tsvString = headers.map(h => escapeTSVField(h)).join('\t') + '\n';
+  // For TSV, if erpMode, we'll use the same "complete" structure as the CSV
+  const erpInvoices = invoices as ERPIncomingInvoiceItem[];
+   const invoiceHeaders = [
+    "supplier", "bill_no", "bill_date", "posting_date", "due_date", 
+    "currency", "credit_to", "is_paid", "remarks", 
+    "update_stock", "set_posting_time"
+  ];
+  const itemHeaders = [
+    "ID (Items)", "Item Name (Items)", "Description (Items)", "Accepted Qty (Items)", "UOM (Items)",
+    "Rate (Items)", "Amount (Items)", "Accepted Qty in Stock UOM (Items)", "UOM Conversion Factor (Items)",
+    "Amount (Company Currency) (Items)", "Rate (Company Currency) (Items)",
+    "Warehouse (Items)", "Cost Center (Items)", "Expense Account (Items)"
+  ];
+  const headers = erpMode ? [...invoiceHeaders, ...itemHeaders] : [
+    'PDF Datei', 'Rechnungsnummer', 'Datum', 'Lieferant Name', 'Lieferant Adresse',
+    'Zahlungsziel', 'Zahlungsart', 'Gesamtbetrag', 'MwSt-Satz', 'Kunden-Nr.', 'Bestell-Nr.',
+    'Pos. Produkt Code', 'Pos. Produkt Name', 'Pos. Menge', 'Pos. Einzelpreis'
+  ];
+  tsvString = headers.map(h => escapeTSVField(h)).join('\t') + '\n';
 
-    erpInvoices.forEach((invoice) => {
-      const mainInvoiceData = [
-        invoice.lieferantName,
-        invoice.rechnungsnummer, 
-        invoice.billDate,
-        invoice.datum, 
-        invoice.dueDate,
-        invoice.wahrung || 'EUR',
-        "", // credit_to
-        invoice.istBezahlt?.toString() ?? '0',
-        invoice.remarks,
-        '1', 
-        '1', 
-      ];
-      const mainInvoiceDataEscaped = mainInvoiceData.map(f => escapeTSVField(f));
+  erpInvoices.forEach((invoice) => {
+    if (erpMode) {
+        const mainInvoiceData = [
+            invoice.lieferantName,
+            invoice.rechnungsnummer, 
+            invoice.billDate,
+            invoice.datum, 
+            invoice.dueDate,
+            invoice.wahrung || 'EUR',
+            "", // credit_to
+            invoice.istBezahlt?.toString() ?? '0',
+            invoice.remarks,
+            '1', 
+            '1', 
+        ];
+        const mainInvoiceDataEscaped = mainInvoiceData.map(f => escapeTSVField(f));
 
-      if (invoice.rechnungspositionen && invoice.rechnungspositionen.length > 0) {
-        invoice.rechnungspositionen.forEach(item => {
-          const itemAmount = (item.quantity || 0) * (item.unitPrice || 0);
-          const itemData = [
-            item.productCode,                 
-            item.productName,                 
-            item.productName,                 
-            item.quantity.toString(),         
-            "Stk",                            
-            item.unitPrice.toString(),        
-            itemAmount.toFixed(2),           
-            item.quantity.toString(),         
-            '1',                             
-            itemAmount.toFixed(2),            
-            item.unitPrice.toString(),       
-            "", // Warehouse (Items)
-            "", // Cost Center (Items)
-            "", // Expense Account (Items)
-          ];
-          const itemDataEscaped = itemData.map(f => escapeTSVField(f));
-          tsvString += [...mainInvoiceDataEscaped, ...itemDataEscaped].join('\t') + '\n';
-        });
-      } else {
-        const emptyItemDataEscaped = Array(itemHeaders.length).fill('').map(f => escapeTSVField(f));
-        tsvString += mainInvoiceDataEscaped.join('\t') + '\t' + emptyItemDataEscaped.join('\t') + '\n';
-      }
-    });
-  } else { 
-    const regularInvoices = invoices as IncomingInvoiceItem[];
-    const mainHeaders = [
-      'PDF Datei', 'Rechnungsnummer', 'Datum', 'Lieferant Name', 'Lieferant Adresse',
-      'Zahlungsziel', 'Zahlungsart', 'Gesamtbetrag', 'MwSt-Satz', 'Kunden-Nr.', 'Bestell-Nr.'
-    ];
-    const itemHeaders = ['Pos. Produkt Code', 'Pos. Produkt Name', 'Pos. Menge', 'Pos. Einzelpreis'];
-    tsvString = mainHeaders.map(h => escapeTSVField(h)).join('\t') + '\t' + itemHeaders.map(h => escapeTSVField(h)).join('\t') + '\n';
+        if (invoice.rechnungspositionen && invoice.rechnungspositionen.length > 0) {
+            invoice.rechnungspositionen.forEach(item => {
+            const itemAmount = (item.quantity || 0) * (item.unitPrice || 0);
+            const itemData = [
+                item.productCode,                 
+                item.productName,                 
+                item.productName,                 
+                item.quantity.toString(),         
+                "Stk",                            
+                item.unitPrice.toString(),        
+                itemAmount.toFixed(2),           
+                item.quantity.toString(),         
+                '1',                             
+                itemAmount.toFixed(2),            
+                item.unitPrice.toString(),       
+                "", // Warehouse (Items)
+                "", // Cost Center (Items)
+                "", // Expense Account (Items)
+            ];
+            const itemDataEscaped = itemData.map(f => escapeTSVField(f));
+            tsvString += [...mainInvoiceDataEscaped, ...itemDataEscaped].join('\t') + '\n';
+            });
+        } else {
+            const emptyItemDataEscaped = Array(itemHeaders.length).fill('').map(f => escapeTSVField(f));
+            tsvString += mainInvoiceDataEscaped.join('\t') + '\t' + emptyItemDataEscaped.join('\t') + '\n';
+        }
+    } else { // Standard mode (non-ERP, original TSV logic)
+        const regularInvoice = invoice as IncomingInvoiceItem; // Cast for standard fields
+        const mainInvoiceDataStd = [
+            escapeTSVField(regularInvoice.pdfFileName),
+            escapeTSVField(regularInvoice.rechnungsnummer),
+            escapeTSVField(regularInvoice.datum),
+            escapeTSVField(regularInvoice.lieferantName),
+            escapeTSVField(regularInvoice.lieferantAdresse),
+            escapeTSVField(regularInvoice.zahlungsziel),
+            escapeTSVField(regularInvoice.zahlungsart),
+            regularInvoice.gesamtbetrag?.toString() ?? '',
+            escapeTSVField(regularInvoice.mwstSatz),
+            escapeTSVField(regularInvoice.kundenNummer),
+            escapeTSVField(regularInvoice.bestellNummer),
+        ];
 
-    regularInvoices.forEach((invoice) => {
-      const mainInvoiceData = [
-        escapeTSVField(invoice.pdfFileName),
-        escapeTSVField(invoice.rechnungsnummer),
-        escapeTSVField(invoice.datum),
-        escapeTSVField(invoice.lieferantName),
-        escapeTSVField(invoice.lieferantAdresse),
-        escapeTSVField(invoice.zahlungsziel),
-        escapeTSVField(invoice.zahlungsart),
-        invoice.gesamtbetrag?.toString() ?? '',
-        escapeTSVField(invoice.mwstSatz),
-        escapeCSVField(invoice.kundenNummer),
-        escapeCSVField(invoice.bestellNummer),
-      ];
-
-      if (invoice.rechnungspositionen && invoice.rechnungspositionen.length > 0) {
-        invoice.rechnungspositionen.forEach(item => {
-          const itemData = [
-            escapeTSVField(item.productCode),
-            escapeTSVField(item.productName),
-            item.quantity.toString(),
-            item.unitPrice.toString(),
-          ];
-          tsvString += mainInvoiceData.join('\t') + '\t' + itemData.join('\t') + '\n';
-        });
-      } else {
-        const emptyItemData = Array(itemHeaders.length).fill('');
-        tsvString += mainInvoiceData.join('\t') + '\t' + emptyItemData.join('\t') + '\n';
-      }
-    });
-  }
+        if (regularInvoice.rechnungspositionen && regularInvoice.rechnungspositionen.length > 0) {
+            regularInvoice.rechnungspositionen.forEach(item => {
+            const itemData = [
+                escapeTSVField(item.productCode),
+                escapeTSVField(item.productName),
+                item.quantity.toString(),
+                item.unitPrice.toString(),
+            ];
+            // For standard TSV, headers are different, ensure we combine correctly
+            // Assuming the 'headers' array at the top correctly represents a flat structure for standard mode.
+            tsvString += [...mainInvoiceDataStd, ...itemData].join('\t') + '\n';
+            });
+        } else {
+            const emptyItemData = Array(4).fill(''); // 4 item-specific fields for standard
+            tsvString += mainInvoiceDataStd.join('\t') + '\t' + emptyItemData.join('\t') + '\n';
+        }
+    }
+  });
   return tsvString;
 }
 
 export function erpInvoicesToSupplierCSV(invoices: ERPIncomingInvoiceItem[]): string {
   if (!invoices || invoices.length === 0) return '';
 
+  // Headers strictly matching the user's "perfect formula" image
   const supplierHeaders = [
-    "ID", // Leave blank for new suppliers, ERPNext assigns it
+    "ID", 
     "Supplier Name",
-    "Supplier Group", // Corrected Value: "All Supplier"
-    "Supplier Type", // Corrected Value: "Company"
-    "Default Currency",
-    "Country",
+    "Supplier Type", 
     "Tax ID",
-    "Primary Address", // From invoice.lieferantAdresse
-    "Email Id", // Typically not available from invoice PDF, leave blank
-    "Mobile No", // Typically not available from invoice PDF, leave blank
-    "Website", // Typically not available from invoice PDF, leave blank
-    "Notes" // Can use invoice.remarks
+    "Primary Address",
+    "Email Id",
+    "Mobile No",
+    "Website"
   ];
-
 
   let csvString = supplierHeaders.map(escapeCSVField).join(',') + '\n';
 
   const uniqueSuppliers = new Map<string, ERPIncomingInvoiceItem>();
   invoices.forEach(invoice => {
-    // Use a consistent key for the map, handling potential undefined supplier name
     const supplierKey = (invoice.lieferantName || 'UNKNOWN_SUPPLIER').trim();
     if (supplierKey && !uniqueSuppliers.has(supplierKey)) {
       uniqueSuppliers.set(supplierKey, invoice);
@@ -320,7 +313,6 @@ export function erpInvoicesToSupplierCSV(invoices: ERPIncomingInvoiceItem[]): st
   });
 
   uniqueSuppliers.forEach(invoice => { 
-    // Attempt to extract Tax ID from remarks. This is a simple heuristic.
     let taxId = "";
     if (invoice.remarks) {
         const taxIdMatch = invoice.remarks.match(/Tax ID:\s*([^\s\/]+)/i) || invoice.remarks.match(/VAT ID:\s*([^\s\/]+)/i) || invoice.remarks.match(/USt-IdNr.:\s*([^\s\/]+)/i);
@@ -332,20 +324,15 @@ export function erpInvoicesToSupplierCSV(invoices: ERPIncomingInvoiceItem[]): st
     const supplierDataRow = [
       "", // ID (blank for new)
       escapeCSVField(invoice.lieferantName),
-      "All Supplier", // Supplier Group (Corrected Fixed Value)
-      "Company", // Supplier Type (Fixed Value)
-      escapeCSVField(invoice.wahrung || "EUR"), // Default Currency
-      "Germany", // Country (Fixed Value, or could be made dynamic if data available)
-      escapeCSVField(taxId), // Tax ID
-      escapeCSVField(invoice.lieferantAdresse), // Primary Address
+      "Company", // Supplier Type (Fixed Value as per image)
+      escapeCSVField(taxId), 
+      escapeCSVField(invoice.lieferantAdresse), 
       "", // Email Id (blank)
       "", // Mobile No (blank)
       "", // Website (blank)
-      escapeCSVField(invoice.remarks) // Notes
     ];
     csvString += supplierDataRow.map(escapeCSVField).join(',') + '\n';
   });
 
   return csvString;
 }
-
