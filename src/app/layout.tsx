@@ -7,7 +7,7 @@ import { Inter } from 'next/font/google';
 const inter = Inter({
   subsets: ['latin'],
   display: 'swap',
-  variable: '--font-inter', // Optional: if you want to use it as a CSS variable
+  variable: '--font-inter', 
 });
 
 export const metadata: Metadata = {
@@ -23,9 +23,9 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${inter.variable} ${inter.className}`}>
       <head>
-        {/* Removed Google Fonts <link> tags, next/font handles it */}
+        
       </head>
-      <body className="font-body antialiased min-h-screen flex flex-col">
+      <body className="antialiased min-h-screen flex flex-col">
         <AppHeader />
         <main className="flex-grow">
           {children}
