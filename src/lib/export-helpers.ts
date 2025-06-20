@@ -46,7 +46,7 @@ export function incomingInvoicesToCSV(invoices: IncomingInvoiceItem[]): string {
     const mainInvoiceData = [
       escapeCSVField(invoice.pdfFileName),
       escapeCSVField(invoice.rechnungsnummer),
-      escapeCSVField(invoice.datum),
+      escapeCSVField(invoice.datum), // Should be YYYY-MM-DD from AI/processing
       escapeCSVField(invoice.lieferantName),
       escapeCSVField(invoice.lieferantAdresse),
       escapeCSVField(invoice.zahlungsziel),
@@ -68,7 +68,6 @@ export function incomingInvoicesToCSV(invoices: IncomingInvoiceItem[]): string {
         csvString += mainInvoiceData.join(',') + ',' + itemData.join(',') + '\n';
       });
     } else {
-      // Ensure item headers are still present with empty values if no items
       const emptyItemData = Array(itemHeaders.length).fill('');
       csvString += mainInvoiceData.join(',') + ',' + emptyItemData.join(',') + '\n'; 
     }
@@ -77,32 +76,33 @@ export function incomingInvoicesToCSV(invoices: IncomingInvoiceItem[]): string {
   return csvString;
 }
 
-// Minimal ERPNext CSV Export (Pflichtfelder)
+// Minimal ERPNext CSV Export (pentru import Purchase Invoice)
 export function incomingInvoicesToERPNextCSV(invoices: ERPIncomingInvoiceItem[]): string {
   if (!invoices || invoices.length === 0) return '';
 
+  // Antete standard pentru importul simplu de Purchase Invoice în ERPNext
   const headers = [
     "supplier", 
-    "posting_date", 
-    "bill_no", 
+    "bill_no",
+    "posting_date", // Data facturii
+    "due_date", // Data scadenței (opțional, dar bun de avut)
     "currency", 
-    "grand_total", 
-    // Item details
     "item_code",
-    "item_name", // Changed from items/description
+    "item_name",
     "qty",
     "rate",
+    "is_paid" // 0 or 1
   ];
   
-  let csvString = headers.join(',') + '\n';
+  let csvString = headers.map(escapeCSVField).join(',') + '\n';
 
   invoices.forEach((invoice) => {
     const mainInvoiceData = [
       escapeCSVField(invoice.lieferantName), 
-      escapeCSVField(invoice.datum), 
-      escapeCSVField(invoice.rechnungsnummer), 
+      escapeCSVField(invoice.rechnungsnummer),
+      escapeCSVField(invoice.datum), // Acesta este posting_date, ar trebui să fie YYYY-MM-DD
+      escapeCSVField(invoice.dueDate), // dueDate, ar trebui să fie YYYY-MM-DD
       escapeCSVField(invoice.wahrung || 'EUR'),
-      invoice.gesamtbetrag?.toString() ?? '',
     ];
 
     if (invoice.rechnungspositionen && invoice.rechnungspositionen.length > 0) {
@@ -113,88 +113,111 @@ export function incomingInvoicesToERPNextCSV(invoices: ERPIncomingInvoiceItem[])
           item.quantity.toString(), 
           item.unitPrice.toString(), 
         ];
-        csvString += mainInvoiceData.join(',') + ',' + itemData.join(',') + '\n';
+        // Adaugă și is_paid la fiecare rând, deoarece ERPNext îl poate dori per linie de import
+        // dacă nu este la nivel de antet general al facturii în șablonul de import.
+        // Pentru un import simplu, is_paid la nivel de factură este mai comun.
+        // Totuși, pentru a mapa la antetele definite, îl punem aici.
+        const row = [
+            ...mainInvoiceData,
+            ...itemData,
+            invoice.istBezahlt?.toString() ?? '0'
+        ];
+        csvString += row.map(escapeCSVField).join(',') + '\n';
       });
     } else {
+       // Dacă nu există articole, ERPNext ar putea să nu importe factura sau să dea eroare,
+       // dar includem datele principale cu articole goale pentru consistență.
        const emptyItemData = ['', '', '', '']; 
-       csvString += mainInvoiceData.join(',') + ',' + emptyItemData.join(',') + '\n';
+       const row = [
+           ...mainInvoiceData,
+           ...emptyItemData,
+           invoice.istBezahlt?.toString() ?? '0'
+       ];
+       csvString += row.map(escapeCSVField).join(',') + '\n';
     }
   });
 
   return csvString;
 }
 
-// Helper to format date from YYYY-MM-DD to M/D/YY
-function formatDateToMDYY(isoDateString?: string): string {
-  if (!isoDateString || !/^\d{4}-\d{2}-\d{2}$/.test(isoDateString)) {
-    return isoDateString || ''; // Return original or empty if not in YYYY-MM-DD or undefined
-  }
-  try {
-    // Ensuring correct parsing, especially for Safari. Adding T00:00:00 makes it UTC but then convert to local parts.
-    const dateParts = isoDateString.split('-');
-    const year = parseInt(dateParts[0]);
-    const month = parseInt(dateParts[1]); // 1-12
-    const day = parseInt(dateParts[2]);   // 1-31
 
-    // Get the last two digits of the year
-    const shortYear = String(year).slice(-2);
-    return `${month}/${day}/${shortYear}`;
-  } catch (e) {
-    return isoDateString; // Fallback
-  }
-}
-
-
-// Updated "Complete" ERPNext CSV Export to match user-provided example structure
+// "Complete" ERPNext CSV Export, adaptat pentru un șablon de import Purchase Invoice
 export function incomingInvoicesToERPNextCSVComplete(invoices: ERPIncomingInvoiceItem[]): string {
   if (!invoices || invoices.length === 0) return '';
 
+  // Antete tipice pentru un import mai detaliat de Purchase Invoice
+  // Acestea pot varia ușor în funcție de versiunea ERPNext și configurații
   const headers = [
-    "ID", // ERPNext Purchase Invoice ID
-    "Series",
-    "Supplier",
-    "Date", // Invoice Date
-    "Credit To", // Accounts Payable
-    "ID (Items)", // Item identifier (using productCode)
-    "Accepted Qty", // Item Quantity
-    "Accepted Qn", // Item Quantity (repeated to match example)
-    "Amount (Item)", // Line item total
-    "Amount (Con Currency)", // Line item total (repeated)
-    "Item Name (Items)",
-    "Rate (Items)", // Unit Price
-    "Rate (Compa Currency)", // Unit Price (repeated)
-    "UOM (Items)",
-    "UOM Conversion Factor"
+    // Invoice Level
+    "name", // Lasă gol pentru nou; ERPNext generează ID-ul
+    "supplier",
+    "bill_no",          // Nr. factură furnizor
+    "bill_date",        // Data facturii furnizor (YYYY-MM-DD)
+    "posting_date",     // Data contabilă (YYYY-MM-DD)
+    "due_date",         // Data scadenței (YYYY-MM-DD)
+    "currency",         // ex: EUR
+    "buying_price_list",// Lista de prețuri de achiziție (opțional)
+    "company",          // Compania din ERPNext (opțional, dacă e una singură, ERPNext o alege)
+    "credit_to",        // Contul de datorii (ex: "Debts - ERP") - Trebuie să existe în ERPNext
+    "is_paid",          // 0 sau 1
+    "remarks",          // Observații (poate conține kundenNummer, bestellNummer)
+    "update_stock",     // 1 dacă actualizează stocul, 0 altfel
+
+    // Item Level (prefixate automat de ERPNext la import, sau separate în fișiere CSV)
+    // Pentru un singur CSV, se repetă datele facturii pentru fiecare articol.
+    "item_code",
+    "item_name",
+    "description",      // Descriere articol (poate fi la fel ca item_name)
+    "qty",
+    "uom",              // Unitate de măsură (ex: Stk, Buc)
+    "rate",             // Preț unitar
+    "warehouse",        // Depozit (opțional, dacă e specificat per articol)
+    "cost_center"       // Centru de cost (opțional)
   ];
   
   let csvString = headers.map(escapeCSVField).join(',') + '\n';
 
   invoices.forEach((invoice) => {
+    const seriesFormat = `ACC-PINV-${invoice.datum?.substring(0,4) || 'YYYY'}.-`; // ex: ACC-PINV-2024.-
+
+    const invoiceLevelData = [
+      "", // name (lasă gol)
+      escapeCSVField(invoice.lieferantName),
+      escapeCSVField(invoice.rechnungsnummer),
+      escapeCSVField(invoice.billDate), // Asigură-te că e YYYY-MM-DD
+      escapeCSVField(invoice.datum),    // Asigură-te că e YYYY-MM-DD
+      escapeCSVField(invoice.dueDate),  // Asigură-te că e YYYY-MM-DD
+      escapeCSVField(invoice.wahrung || 'EUR'),
+      "", // buying_price_list
+      "", // company
+      escapeCSVField(invoice.kontenrahmen), // Contul de datorii
+      invoice.istBezahlt?.toString() ?? '0',
+      escapeCSVField(invoice.remarks),
+      '1', // update_stock (presupunem că actualizează stocul)
+    ];
+
     if (invoice.rechnungspositionen && invoice.rechnungspositionen.length > 0) {
       invoice.rechnungspositionen.forEach(item => {
-        const itemAmount = (item.quantity || 0) * (item.unitPrice || 0);
-        const rowData = [
-          escapeCSVField(invoice.erpNextInvoiceName),
-          escapeCSVField("ACC-PINV-.Y"), // Matching example series
-          escapeCSVField(invoice.lieferantName),
-          escapeCSVField(formatDateToMDYY(invoice.datum)),
-          escapeCSVField(invoice.kontenrahmen),
+        const itemData = [
           escapeCSVField(item.productCode),
-          item.quantity?.toString() ?? '0',
-          item.quantity?.toString() ?? '0', // Repeated quantity
-          itemAmount.toFixed(2),
-          itemAmount.toFixed(2), // Repeated amount
           escapeCSVField(item.productName),
+          escapeCSVField(item.productName), // description
+          item.quantity?.toString() ?? '0',
+          "Stk", // uom (default "Stk" - bucăți)
           item.unitPrice?.toString() ?? '0.00',
-          item.unitPrice?.toString() ?? '0.00', // Repeated rate
-          escapeCSVField("Stk"), // Default UOM
-          '1' // Default UOM Conversion Factor
+          "", // warehouse (lasă gol sau pune un default)
+          ""  // cost_center (lasă gol sau pune un default)
         ];
-        csvString += rowData.join(',') + '\n';
+        csvString += [...invoiceLevelData, ...itemData].join(',') + '\n';
       });
+    } else {
+      // Pentru facturi fără articole, ERPNext ar putea necesita cel puțin o linie de articol "dummy"
+      // sau ar putea fi importată ca o factură fără articole dacă sistemul o permite.
+      // Pentru un import standard, este mai sigur să se asigure că există articole sau să se omită factura.
+      // Aici, vom crea o linie cu datele facturii și articole goale, dar ERPNext ar putea să o respingă.
+      const emptyItemData = Array(8).fill(''); // 8 coloane de articol
+      csvString += [...invoiceLevelData, ...emptyItemData].join(',') + '\n';
     }
-    // If an invoice has no items, it won't be included in this item-centric export,
-    // matching the likely behavior of an ERPNext line item export.
   });
   return csvString;
 }
@@ -218,73 +241,79 @@ export function incomingInvoicesToTSV(invoices: IncomingInvoiceItem[] | ERPIncom
     const erpInvoices = invoices as ERPIncomingInvoiceItem[];
     let headers: string[];
     
-    // For TSV, we'll keep the original import-style formats as they are more structured
-    // for data exchange rather than visual report matching.
-    // The CSV "Complete" export is now specific to the visual example.
     if (useMinimalErpExport) {
-      headers = ["supplier", "posting_date", "bill_no", "currency", "grand_total", "item_code", "item_name", "qty", "rate"];
+      headers = ["supplier", "bill_no", "posting_date", "due_date", "currency", "item_code", "item_name", "qty", "rate", "is_paid"];
     } else {
-      // This is the "complete" ERPNext import style
       headers = [
-        "supplier", "posting_date", "bill_no", "bill_date", "due_date", "currency", "grand_total", "is_paid", "debit_to", "remarks",
-        "item_code", "item_name", "qty", "rate", "item_group", "warehouse", "cost_center"
+        "supplier", "bill_no", "bill_date", "posting_date", "due_date", "currency", 
+        "credit_to", "is_paid", "remarks", "update_stock",
+        "item_code", "item_name", "description", "qty", "uom", "rate", "warehouse", "cost_center"
       ];
     }
-    tsvString = headers.join('\t') + '\n';
+    tsvString = headers.map(h => escapeTSVField(h)).join('\t') + '\n';
 
     erpInvoices.forEach((invoice) => {
-      let mainInvoiceData: (string|number|undefined|null)[] = [];
+      let mainInvoiceData: (string|number|undefined|null)[];
       if (useMinimalErpExport) {
         mainInvoiceData = [
             invoice.lieferantName,
-            invoice.datum, 
             invoice.rechnungsnummer,
+            invoice.datum, // posting_date
+            invoice.dueDate,
             invoice.wahrung || 'EUR',
-            invoice.gesamtbetrag?.toString() ?? '',
         ];
       } else {
          mainInvoiceData = [
             invoice.lieferantName,
-            invoice.datum, 
-            invoice.rechnungsnummer,
-            invoice.billDate || invoice.datum,
+            invoice.rechnungsnummer, // bill_no
+            invoice.billDate || invoice.datum, // bill_date
+            invoice.datum, // posting_date
             invoice.dueDate,
             invoice.wahrung || 'EUR',
-            invoice.gesamtbetrag?.toString() ?? '',
+            invoice.kontenrahmen, // credit_to
             invoice.istBezahlt?.toString() ?? '0',
-            invoice.kontenrahmen,
             invoice.remarks,
+            '1', // update_stock
          ];
       }
       const mainInvoiceDataEscaped = mainInvoiceData.map(f => escapeTSVField(f));
 
       if (invoice.rechnungspositionen && invoice.rechnungspositionen.length > 0) {
         invoice.rechnungspositionen.forEach(item => {
-          let itemData: (string|number|undefined|null)[] = [];
+          let itemData: (string|number|undefined|null)[];
           if (useMinimalErpExport) {
             itemData = [
                 item.productCode,
                 item.productName,
                 item.quantity.toString(),
                 item.unitPrice.toString(),
+                // For minimal, is_paid is conceptually at invoice level, but if header expects it per line:
+                invoice.istBezahlt?.toString() ?? '0' 
             ];
           } else {
             itemData = [
                 item.productCode,
                 item.productName,
+                item.productName, // description
                 item.quantity.toString(),
+                "Stk", // uom
                 item.unitPrice.toString(),
-                '', // item_group
-                '', // warehouse
-                '', // cost_center
+                "", // warehouse
+                "", // cost_center
             ];
           }
           const itemDataEscaped = itemData.map(f => escapeTSVField(f));
-          tsvString += mainInvoiceDataEscaped.join('\t') + '\t' + itemDataEscaped.join('\t') + '\n';
+          const rowParts = useMinimalErpExport 
+            ? [...mainInvoiceDataEscaped, ...itemDataEscaped.slice(0,4), itemDataEscaped[4] ] // ensure is_paid is last for minimal
+            : [...mainInvoiceDataEscaped, ...itemDataEscaped];
+          tsvString += rowParts.join('\t') + '\n';
         });
       } else {
-        const emptyItemCount = useMinimalErpExport ? 4 : (headers.length - mainInvoiceData.length);
+        const emptyItemCount = useMinimalErpExport ? 5 : 8; // 4 item fields + is_paid for minimal; 8 for complete
         const emptyItemData = Array(emptyItemCount).fill('');
+        if (useMinimalErpExport) {
+            emptyItemData[emptyItemCount -1] = invoice.istBezahlt?.toString() ?? '0'; // ensure is_paid is set
+        }
         tsvString += mainInvoiceDataEscaped.join('\t') + '\t' + emptyItemData.join('\t') + '\n';
       }
     });
@@ -296,13 +325,13 @@ export function incomingInvoicesToTSV(invoices: IncomingInvoiceItem[] | ERPIncom
       'Zahlungsziel', 'Zahlungsart', 'Gesamtbetrag', 'MwSt-Satz', 'Kunden-Nr.', 'Bestell-Nr.'
     ];
     const itemHeaders = ['Pos. Produkt Code', 'Pos. Produkt Name', 'Pos. Menge', 'Pos. Einzelpreis'];
-    tsvString = mainHeaders.join('\t') + '\t' + itemHeaders.join('\t') + '\n';
+    tsvString = mainHeaders.map(h => escapeTSVField(h)).join('\t') + '\t' + itemHeaders.map(h => escapeTSVField(h)).join('\t') + '\n';
 
     regularInvoices.forEach((invoice) => {
       const mainInvoiceData = [
         escapeTSVField(invoice.pdfFileName),
         escapeTSVField(invoice.rechnungsnummer),
-        escapeTSVField(invoice.datum),
+        escapeTSVField(invoice.datum), // Should be YYYY-MM-DD
         escapeTSVField(invoice.lieferantName),
         escapeTSVField(invoice.lieferantAdresse),
         escapeTSVField(invoice.zahlungsziel),

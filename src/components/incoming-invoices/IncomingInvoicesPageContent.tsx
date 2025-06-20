@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useState, useCallback, useEffect } from 'react';
@@ -13,7 +14,7 @@ import { Label } from '@/components/ui/label';
 import { readFileAsDataURL } from '@/lib/file-helpers';
 import { extractIncomingInvoiceData, type ExtractIncomingInvoiceDataOutput } from '@/ai/flows/extract-incoming-invoice-data';
 import type { IncomingInvoiceItem, ERPIncomingInvoiceItem, IncomingProcessingStatus } from '@/types/incoming-invoice';
-import { addDays, parseISO } from 'date-fns';
+import { addDays, parseISO, isValid } from 'date-fns'; // Added isValid
 import { useToast } from '@/hooks/use-toast';
 
 const LOCAL_STORAGE_PAGE_CACHE_KEY = 'incomingInvoicesPageCache';
@@ -65,7 +66,6 @@ export function IncomingInvoicesPageContent() {
           setUseMinimalErpExport(typeof cachedData.useMinimalErpExport === 'boolean' ? cachedData.useMinimalErpExport : true);
           setStatus('success'); 
         } else {
-          console.warn("Cached data for incoming invoices is invalid or not a 'success' state, clearing.");
           localStorage.removeItem(LOCAL_STORAGE_PAGE_CACHE_KEY);
         }
       }
@@ -91,65 +91,80 @@ export function IncomingInvoicesPageContent() {
       }
     }
   }, [extractedInvoices, erpProcessedInvoices, erpMode, useMinimalErpExport, status]);
-
+  
+  // Updated supplierMap based on ERPNext feedback and AI prompt.
+  // Keys: Variations AI might extract (uppercase for robust matching).
+  // Values: Exact names as they must appear in ERPNext.
   const supplierMap: Record<string, string> = {
-    "LIDL": "Lidl",
+    "LIDL": "Lidl", // Assuming "Lidl" is the ERPNext name
     "LIDL DIGITAL DEUTSCHLAND GMBH & CO. KG": "Lidl",
-    "GD ARTLANDS ETRADING GMBH": "GD Artlands eTrading GmbH",
+    "GD ARTLANDS ETRADING GMBH": "GD Artlands eTrading GmbH", // ERPNext error listed this as value
     "RETOURA": "RETOURA",
-    "DOITBAU GMBH & CO.KG": "doitBau",
+    "DOITBAU GMBH & CO.KG": "doitBau", // Assuming "doitBau" is the ERPNext name
     "KAUFLAND": "Kaufland",
     "ALDI": "ALDI E-Commerce",
     "FIRMA HANDLOWA KABIS BOZENA KEDZIORA": "FIRMA HANDLOWA KABIS BOZENA KEDZIORA",
-    "ZWECO UG": "Zweco UG",
-    "FAVORIO C/O HATRACO GMBH": "Favorio c/o Hatraco GmbH",
-    "HATRACO GMBH": "Hatraco GmbH",
-    "CUMO GMBH": "CUMO GmbH",
-    "SELLIXX GMBH": "SELLIXX GmbH",
-    "UNBEKANNT": "UNBEKANNT" // Ensure UNBEKANNT maps to itself if AI returns it
+    "ZWECO UG": "Zweco UG", // Assuming "Zweco UG" is the ERPNext name
+    "FAVORIO C/O HATRACO GMBH": "Favorio c/o Hatraco GmbH", // ERPNext error listed this
+    "HATRACO GMBH": "Hatraco GmbH", // ERPNext error listed this
+    "CUMO GMBH": "CUMO GmbH", // ERPNext error listed this
+    "SELLIXX GMBH": "SELLIXX GmbH", // ERPNext error listed this
+    "UNBEKANNT": "UNBEKANNT" // If "UNBEKANNT" is not a valid supplier in ERPNext, this will cause issues.
   };
   
-  const DEFAULT_KONTENRAHMEN = "1740 - Verbindlichkeiten";
+  // User must ensure this matches their ERPNext Chart of Accounts for "Payable Account"
+  const DEFAULT_KONTENRAHMEN = "1740 - Verbindlichkeiten"; 
 
   const formatDateForERP = (dateString?: string): string | undefined => {
-    if (!dateString) return undefined;
-    if (dateString.match(/^\d{4}-\d{2}-\d{2}$/)) {
-        return dateString;
+    if (!dateString || dateString.trim() === '') return undefined;
+
+    // Check if already YYYY-MM-DD
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dateString)) {
+        const d = parseISO(dateString);
+        return isValid(d) ? dateString : undefined;
     }
-    const datePartsDDMMYYYY = dateString.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
-    if (datePartsDDMMYYYY && datePartsDDMMYYYY[3] && datePartsDDMMYYYY[2] && datePartsDDMMYYYY[1]) {
-        return `${datePartsDDMMYYYY[3]}-${datePartsDDMMYYYY[2]}-${datePartsDDMMYYYY[1]}`;
+
+    // Try DD.MM.YYYY
+    const matchDMY = dateString.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+    if (matchDMY) {
+        const day = matchDMY[1].padStart(2, '0');
+        const month = matchDMY[2].padStart(2, '0');
+        const year = matchDMY[3];
+        const isoDate = `${year}-${month}-${day}`;
+        const d = parseISO(isoDate);
+        return isValid(d) ? isoDate : undefined;
     }
+    
+    // Try general parsing as a last resort, then format
     try {
-        const d = new Date(dateString);
-        if (!isNaN(d.getTime())) {
+        const d = new Date(dateString); // This can be unreliable for specific formats
+        if (isValid(d)) {
              return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
         }
     } catch (e) { /* ignore */ }
-    return dateString; 
+    
+    console.warn(`Could not parse date "${dateString}" to YYYY-MM-DD. Returning undefined.`);
+    return undefined; 
   };
 
   const calculateDueDate = (invoiceDateStr?: string, paymentTerm?: string): string | undefined => {
-    if (!invoiceDateStr || !paymentTerm) return invoiceDateStr; 
+    const erpInvoiceDate = formatDateForERP(invoiceDateStr);
+    if (!erpInvoiceDate || !paymentTerm) return erpInvoiceDate; 
     
     let invoiceDate: Date;
     try {
-        invoiceDate = parseISO(invoiceDateStr); 
-         if (isNaN(invoiceDate.getTime())) { 
-            const parts = invoiceDateStr.match(/(\d{2})\.(\d{2})\.(\d{4})/);
-            if (parts) {
-                invoiceDate = parseISO(`${parts[3]}-${parts[2]}-${parts[1]}`);
-            }
-            if (isNaN(invoiceDate.getTime())) return invoiceDateStr;
+        invoiceDate = parseISO(erpInvoiceDate); 
+         if (!isValid(invoiceDate)) { 
+            return erpInvoiceDate; // Return formatted posting date if parsing fails
          }
     } catch (e) {
-        return invoiceDateStr; 
+        return erpInvoiceDate; 
     }
 
     const termLower = paymentTerm.toLowerCase();
 
     if (termLower.includes("sofort") || termLower.includes("immediately")) {
-      return invoiceDateStr;
+      return erpInvoiceDate;
     }
 
     const daysMatch = termLower.match(/(\d+)\s*tage/); 
@@ -160,7 +175,7 @@ export function IncomingInvoicesPageContent() {
         return `${dueDate.getFullYear()}-${String(dueDate.getMonth() + 1).padStart(2, '0')}-${String(dueDate.getDate()).padStart(2, '0')}`;
       }
     }
-    return invoiceDateStr; 
+    return erpInvoiceDate; 
   };
 
 
@@ -217,31 +232,38 @@ export function IncomingInvoicesPageContent() {
         const dataUri = await readFileAsDataURL(file);
         const aiResult: ExtractIncomingInvoiceDataOutput = await extractIncomingInvoiceData({ invoiceDataUri: dataUri }, {model: 'googleai/gemini-1.5-flash-latest'});
         
-        let finalLieferantName = aiResult.lieferantName;
-
-        if (aiResult.lieferantName) {
-            const upperCaseExtractedName = aiResult.lieferantName.toUpperCase();
+        let finalLieferantName = "UNBEKANNT"; // Default to UNBEKANNT
+        if (aiResult.lieferantName && aiResult.lieferantName.trim() !== "") {
+            const upperCaseExtractedName = aiResult.lieferantName.trim().toUpperCase();
+            // First, check for exact match of the (uppercased) key in supplierMap
             if (supplierMap[upperCaseExtractedName]) { 
                 finalLieferantName = supplierMap[upperCaseExtractedName];
             } else {
-                const foundKey = Object.keys(supplierMap).find(key => key !== "UNBEKANNT" && upperCaseExtractedName.includes(key));
+                // If no exact key match, try to find if the extracted name *includes* any of the map keys (excluding UNBEKANNT)
+                const foundKey = Object.keys(supplierMap).find(
+                    key => key !== "UNBEKANNT" && upperCaseExtractedName.includes(key)
+                );
                 if (foundKey) {
                     finalLieferantName = supplierMap[foundKey];
                 } else {
-                  const matchedValueFromMapValues = Object.values(supplierMap).find(val => val.toLowerCase() === aiResult.lieferantName?.toLowerCase());
-                  if (matchedValueFromMapValues) {
-                      finalLieferantName = matchedValueFromMapValues;
-                  } else {
-                    finalLieferantName = aiResult.lieferantName; 
-                  }
+                    // If still no match, check if the *value* from the map (the ERPNext name) is part of the extracted name
+                    // This helps if AI extracts "Company ABC GmbH & Co. KG" and map value is "Company ABC"
+                    const foundValueKey = Object.keys(supplierMap).find(key => {
+                        const erpNextName = supplierMap[key];
+                        return erpNextName !== "UNBEKANNT" && upperCaseExtractedName.includes(erpNextName.toUpperCase());
+                    });
+                    if (foundValueKey) {
+                         finalLieferantName = supplierMap[foundValueKey];
+                    } else {
+                         finalLieferantName = aiResult.lieferantName.trim(); // Fallback to AI's extracted name if no mapping found
+                    }
                 }
             }
-        } else { 
-            finalLieferantName = "UNBEKANNT";
         }
 
 
         const postingDateERP = formatDateForERP(aiResult.datum);
+        const billDateERP = postingDateERP; // Bill date is usually same as posting date for purchase invoices
         const dueDateERP = calculateDueDate(postingDateERP, aiResult.zahlungsziel);
         
         let remarks = '';
@@ -263,6 +285,8 @@ export function IncomingInvoicesPageContent() {
         if (postingDateERP) { yearToUse = postingDateERP.substring(0,4); }
         if (!yearCounters[yearToUse]) { yearCounters[yearToUse] = 0; }
         yearCounters[yearToUse]++;
+        // Series for ERPNext name doesn't need .YYYY. part here, ERP handles it.
+        // The ACC-PINV-.YYYY.- is for the CSV export column 'Series' if needed by a specific template.
         const erpNextInvoiceNameGenerated = `ACC-PINV-${yearToUse}-${String(yearCounters[yearToUse]).padStart(5, '0')}`;
         
         const rechnungsnummerToUse = aiResult.rechnungsnummer || erpNextInvoiceNameGenerated;
@@ -282,11 +306,11 @@ export function IncomingInvoicesPageContent() {
           bestellNummer: aiResult.bestellNummer,
           isPaidByAI: aiResult.isPaid, 
           erpNextInvoiceName: erpNextInvoiceNameGenerated,
-          billDate: postingDateERP,
+          billDate: billDateERP,
           dueDate: dueDateERP,
           wahrung: 'EUR',
           istBezahlt: istBezahltStatus, 
-          kontenrahmen: DEFAULT_KONTENRAHMEN,
+          kontenrahmen: DEFAULT_KONTENRAHMEN, // User must ensure this value exists in their ERPNext
           remarks: remarks.trim(),
         };
         allProcessedForMatcher.push(erpCompatibleInvoice);
@@ -296,7 +320,7 @@ export function IncomingInvoicesPageContent() {
         } else {
           regularResultsDisplay.push({
               pdfFileName: file.name,
-              rechnungsnummer: rechnungsnummerToUse, // Use the potentially fallback rechnungsnummer here too for consistency
+              rechnungsnummer: rechnungsnummerToUse, 
               datum: aiResult.datum, 
               lieferantName: finalLieferantName,
               lieferantAdresse: aiResult.lieferantAdresse,
@@ -334,7 +358,6 @@ export function IncomingInvoicesPageContent() {
   };
 
   const handleExportToERPNext = async () => {
-    console.log('[ExportERP] Starting export...');
     if (!erpMode || erpProcessedInvoices.length === 0) {
       toast({
         title: "No ERP Data",
@@ -346,7 +369,6 @@ export function IncomingInvoicesPageContent() {
 
     setIsExportingToERPNext(true);
     try {
-      console.log('[ExportERP] Fetching API /api/erpnext/export-invoice with payload:', JSON.stringify({ invoices: erpProcessedInvoices }, null, 2));
       const response = await fetch('/api/erpnext/export-invoice', {
         method: 'POST',
         headers: {
@@ -354,30 +376,18 @@ export function IncomingInvoicesPageContent() {
         },
         body: JSON.stringify({ invoices: erpProcessedInvoices }),
       });
-      console.log('[ExportERP] Fetch response status:', response.status, 'Status text:', response.statusText);
 
       if (!response.ok) {
         let detailedErrorMessage = `Server Error: ${response.status} ${response.statusText || ''}`.trim();
-        console.log(`[ExportERP] Response not OK. Status: ${response.status}`);
         try {
           const errorResult = await response.json();
-          console.log('[ExportERP] Error result (JSON):', errorResult);
           if (errorResult.error) {
             detailedErrorMessage = errorResult.error;
           } else if (errorResult.message) {
             detailedErrorMessage = errorResult.message;
           }
         } catch (jsonError) {
-          console.log('[ExportERP] Failed to parse error as JSON:', jsonError);
-          try {
-            const textError = await response.text();
-            console.log('[ExportERP] Error result (text):', textError);
-            if (textError && textError.trim() !== '') {
-              detailedErrorMessage = `Server Error: ${response.status}. Response: ${textError.substring(0, 250)}`;
-            }
-          } catch (textParseError) {
-            console.log('[ExportERP] Failed to parse error as text:', textParseError);
-          }
+          // Ignore if error response is not JSON
         }
         toast({
           title: `Export Error (${response.status})`,
@@ -388,14 +398,12 @@ export function IncomingInvoicesPageContent() {
       }
 
       if (response.status === 204) { 
-        console.log('[ExportERP] Response 204 No Content. Assuming success.');
         toast({
           title: "Export Submitted",
           description: "Invoices submitted to ERPNext (server returned no content, assuming success).",
         });
       } else {
         const result = await response.json();
-        console.log('[ExportERP] Response OK, result:', result);
         if (result.message) {
           toast({
             title: "Export Status",
@@ -408,12 +416,8 @@ export function IncomingInvoicesPageContent() {
             description: "Invoices submitted to ERPNext.",
           });
         }
-        if (result.errors && result.errors.length > 0) {
-          console.error("[ExportERP] Individual invoice errors:", result.errors);
-        }
       }
     } catch (error: any) {
-      console.error('[ExportERP] CATCH block error in handleExportToERPNext:', error);
       const message = error instanceof Error ? error.message : "Unknown client-side error during ERPNext export.";
       toast({
         title: "ERPNext Export Failed",
@@ -421,7 +425,6 @@ export function IncomingInvoicesPageContent() {
         variant: "destructive",
       });
     } finally {
-      console.log('[ExportERP] FINALLY block, setting isExportingToERPNext to false.');
       setIsExportingToERPNext(false);
     }
   };
@@ -539,3 +542,4 @@ export function IncomingInvoicesPageContent() {
     </div>
   );
 }
+
