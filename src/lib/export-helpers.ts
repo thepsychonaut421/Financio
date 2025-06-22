@@ -113,7 +113,7 @@ export function incomingInvoicesToERPNextCSVComplete(invoices: ERPIncomingInvoic
   const allHeaders = [...invoiceLevelHeaders, ...itemHeaders];
   let csvString = allHeaders.map(escapeCSVField).join(',') + '\n';
 
-  const DEFAULT_EXPENSE_ACCOUNT = "6000 - Warenaufgang - BRUG";
+  const DEFAULT_EXPENSE_ACCOUNT = "6000 - Warenaufwand - BRUG";
 
   invoices.forEach((invoice, invoiceIndex) => {
     const invoiceLevelDataEscaped = [
@@ -229,7 +229,7 @@ export function incomingInvoicesToTSV(invoices: IncomingInvoiceItem[] | ERPIncom
     'Pos. Produkt Code', 'Pos. Produkt Name', 'Pos. Menge', 'Pos. Einzelpreis'
   ];
 
-  const DEFAULT_EXPENSE_ACCOUNT_TSV = "6000 - Warenaufgang - BRUG";
+  const DEFAULT_EXPENSE_ACCOUNT_TSV = "6000 - Warenaufwand - BRUG";
 
 
   const headers = erpMode ? [...invoiceLevelHeadersERP, ...itemHeadersERP] : standardModeHeaders;
