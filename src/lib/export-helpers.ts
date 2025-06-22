@@ -96,12 +96,12 @@ export function incomingInvoicesToERPNextCSVComplete(invoices: ERPIncomingInvoic
   ];
 
   const itemHeaders = [
-    "ID (Items)", 
-    "Accepted Qty (Items)", 
+    "ID (Items)",
+    "Accepted Qty (Items)",
     "Accepted Qty in Stock UOM (Items)",
-    "Amount (Items)", 
-    "Amount (Company Currency) (Items)", 
-    "Item Name (Items)", 
+    "Amount (Items)",
+    "Amount (Company Currency) (Items)",
+    "Item Name (Items)",
     "Rate (Items)",
     "Rate (Company Currency) (Items)",
     "UOM (Items)",
@@ -113,7 +113,7 @@ export function incomingInvoicesToERPNextCSVComplete(invoices: ERPIncomingInvoic
   const allHeaders = [...invoiceLevelHeaders, ...itemHeaders];
   let csvString = allHeaders.map(escapeCSVField).join(',') + '\n';
 
-  const DEFAULT_EXPENSE_ACCOUNT = "6000 - Warenaufwand";
+  const DEFAULT_EXPENSE_ACCOUNT = "6000 - Warenaufgang - BRUG";
 
   invoices.forEach((invoice, invoiceIndex) => {
     const invoiceLevelDataEscaped = [
@@ -229,7 +229,7 @@ export function incomingInvoicesToTSV(invoices: IncomingInvoiceItem[] | ERPIncom
     'Pos. Produkt Code', 'Pos. Produkt Name', 'Pos. Menge', 'Pos. Einzelpreis'
   ];
 
-  const DEFAULT_EXPENSE_ACCOUNT_TSV = "6000 - Warenaufwand";
+  const DEFAULT_EXPENSE_ACCOUNT_TSV = "6000 - Warenaufgang - BRUG";
 
 
   const headers = erpMode ? [...invoiceLevelHeadersERP, ...itemHeadersERP] : standardModeHeaders;
@@ -287,11 +287,11 @@ export function incomingInvoicesToTSV(invoices: IncomingInvoiceItem[] | ERPIncom
                 escapeTSVField(placeholderItemCode),
                 escapeTSVField(placeholderQty.toString()),
                 escapeTSVField(placeholderQty.toString()),
-                escapeTSVField(placeholderAmount.toFixed(2)),
-                escapeTSVField(placeholderAmount.toFixed(2)),
+                escapeCSVField(placeholderAmount.toFixed(2)),
+                escapeCSVField(placeholderAmount.toFixed(2)),
                 escapeTSVField(placeholderItemName),
-                escapeTSVField(placeholderRate.toFixed(2)),
-                escapeTSVField(placeholderRate.toFixed(2)),
+                escapeCSVField(placeholderRate.toFixed(2)),
+                escapeCSVField(placeholderRate.toFixed(2)),
                 escapeTSVField("Nos"),
                 escapeTSVField('1'),
                 escapeTSVField(DEFAULT_EXPENSE_ACCOUNT_TSV)
@@ -384,5 +384,7 @@ export function erpInvoicesToSupplierCSV(invoices: ERPIncomingInvoiceItem[]): st
 
   return csvString;
 }
+
+    
 
     
