@@ -96,24 +96,24 @@ export function incomingInvoicesToERPNextCSVComplete(invoices: ERPIncomingInvoic
   ];
 
   const itemHeaders = [
-    "ID (Items)", // item_code
-    "Accepted Qty (Items)", // qty
-    "Accepted Qty in Stock UOM (Items)", // stock_qty
-    "Amount (Items)", // amount
-    "Amount (Company Currency) (Items)", // base_amount
-    "Item Name (Items)", // item_name
-    "Rate (Items)", // rate
-    "Rate (Company Currency) (Items)", // base_rate
-    "UOM (Items)", // uom
-    "UOM Conversion Factor (Items)", // conversion_factor
-    "items.expense_account" // expense_account for item
+    "ID (Items)", 
+    "Accepted Qty (Items)", 
+    "Accepted Qty in Stock UOM (Items)",
+    "Amount (Items)", 
+    "Amount (Company Currency) (Items)", 
+    "Item Name (Items)", 
+    "Rate (Items)",
+    "Rate (Company Currency) (Items)",
+    "UOM (Items)",
+    "UOM Conversion Factor (Items)",
+    "items.expense_account"
   ];
 
 
   const allHeaders = [...invoiceLevelHeaders, ...itemHeaders];
   let csvString = allHeaders.map(escapeCSVField).join(',') + '\n';
 
-  const DEFAULT_EXPENSE_ACCOUNT = "6000 - Wareneingang";
+  const DEFAULT_EXPENSE_ACCOUNT = "6000 - Warenaufwand";
 
   invoices.forEach((invoice, invoiceIndex) => {
     const invoiceLevelDataEscaped = [
@@ -210,10 +210,17 @@ export function incomingInvoicesToTSV(invoices: IncomingInvoiceItem[] | ERPIncom
   ];
 
   const itemHeadersERP = [
-    "ID (Items)", "Accepted Qty (Items)", "Accepted Qty in Stock UOM (Items)",
-    "Amount (Items)", "Amount (Company Currency) (Items)", "Item Name (Items)",
-    "Rate (Items)", "Rate (Company Currency) (Items)", "UOM (Items)",
-    "UOM Conversion Factor (Items)", "items.expense_account"
+    "ID (Items)", 
+    "Accepted Qty (Items)", 
+    "Accepted Qty in Stock UOM (Items)",
+    "Amount (Items)", 
+    "Amount (Company Currency) (Items)", 
+    "Item Name (Items)", 
+    "Rate (Items)",
+    "Rate (Company Currency) (Items)",
+    "UOM (Items)",
+    "UOM Conversion Factor (Items)",
+    "items.expense_account"
   ];
   
   const standardModeHeaders = [
@@ -222,7 +229,7 @@ export function incomingInvoicesToTSV(invoices: IncomingInvoiceItem[] | ERPIncom
     'Pos. Produkt Code', 'Pos. Produkt Name', 'Pos. Menge', 'Pos. Einzelpreis'
   ];
 
-  const DEFAULT_EXPENSE_ACCOUNT_TSV = "6000 - Wareneingang";
+  const DEFAULT_EXPENSE_ACCOUNT_TSV = "6000 - Warenaufwand";
 
 
   const headers = erpMode ? [...invoiceLevelHeadersERP, ...itemHeadersERP] : standardModeHeaders;
