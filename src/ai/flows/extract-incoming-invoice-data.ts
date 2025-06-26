@@ -157,11 +157,7 @@ Extraction Rules for Invoices:
 10. Sonderfall Versandkosten (Special Case: Shipping Costs):
     *   Look for any line items or summary rows labeled 'Versandkosten', 'Versand', 'Fracht', or 'Lieferkosten'.
     *   If you find such a cost (like the 8,90 for 'Versandkosten' in the example image), you MUST create a separate, distinct line item for it in the 'rechnungspositionen' array.
-    *   For this shipping line item, use these exact values:
-        *   `productCode`: "VERSAND"
-        *   `productName`: "Versandkostenpauschale"
-        *   `quantity`: 1
-        *   `unitPrice`: The numerical value of the shipping cost found on the invoice (e.g., 8.90).
+    *   For this shipping line item, use these exact values: productCode should be "VERSAND", productName should be "Versandkostenpauschale", quantity should be 1, and unitPrice should be the numerical value of the shipping cost (e.g., 8.90).
     *   This is critical for accounting. Do not merge shipping costs into other items. If there are no shipping costs, do not add this item.
 
 11. KundenNummer (Customer Number): Extract if labeled "Kunden-Nr." or similar.
@@ -184,3 +180,5 @@ const extractIncomingInvoiceDataFlow = ai.defineFlow(
     return output!;
   }
 );
+
+    
