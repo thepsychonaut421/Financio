@@ -31,9 +31,9 @@ const AIOutputSchema = z.object({
 
 // This type defines what the exported function will return after normalization.
 // Line items conform to AppLineItem where quantity/price are required.
-export interface ExtractInvoiceDataOutput {
+export type ExtractInvoiceDataOutput = {
   invoiceDetails: AppLineItem[];
-}
+};
 
 
 // Helper function for product code normalization

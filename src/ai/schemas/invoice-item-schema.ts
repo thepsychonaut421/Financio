@@ -10,21 +10,15 @@ export const AILineItemSchema = z.object({
 });
 export type AILineItem = z.infer<typeof AILineItemSchema>;
 
-// TypeScript interface for what the application logic (UI, exports) will work with.
-// It ensures quantity and unitPrice are always present (defaulted if necessary).
-export interface AppLineItem {
-  productCode: string;
-  productName: string;
-  quantity: number;
-  unitPrice: number;
-}
 
-// For compatibility, if other parts of the app still use ExtractedItemSchema directly
-// for processed data, we can define a stricter schema here, though AppLineItem (interface)
-// is often sufficient for TypeScript usage post-normalization.
+// Stricter schema for what the application logic (UI, exports) will work with.
+// It ensures quantity and unitPrice are always present (defaulted if necessary).
 export const ProcessedLineItemSchema = z.object({
   productCode: z.string(),
   productName: z.string(),
   quantity: z.number(),
   unitPrice: z.number(),
 });
+
+// TypeScript type derived from the stricter schema. This replaces the old interface.
+export type AppLineItem = z.infer<typeof ProcessedLineItemSchema>;

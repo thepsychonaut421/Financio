@@ -38,7 +38,7 @@ const AIOutputSchema = z.object({
 });
 
 // Type for the exported function's return value (uses AppLineItem for stricter line items)
-export interface ExtractIncomingInvoiceDataOutput {
+export type ExtractIncomingInvoiceDataOutput = {
   rechnungsnummer?: string;
   datum?: string;
   lieferantName?: string;
