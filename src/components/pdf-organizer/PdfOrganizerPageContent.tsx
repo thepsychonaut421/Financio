@@ -105,6 +105,8 @@ export function PdfOrganizerPageContent() {
             suggestedFilename: `Error_${file.name}`, 
             dataUri: dataUri, // Preserve the dataUri even on failure
             extractedDate: 'Error',
+            extractedInvoiceNumber: undefined,
+            extractedSupplierName: undefined,
         });
         filenamesToEdit[fileId] = `Error_${file.name}`;
         setErrorMessage((prev) => (prev ? `${prev}\n` : '') + `Failed to process ${file.name}.`);
