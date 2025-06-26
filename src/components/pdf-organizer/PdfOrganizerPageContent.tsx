@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useState, useCallback, ChangeEvent, useEffect } from 'react';
@@ -76,8 +77,9 @@ export function PdfOrganizerPageContent() {
       const file = selectedFiles[i];
       const fileId = `${file.name}-${file.lastModified}`;
       setCurrentFileProgressText(`Processing ${i + 1}/${selectedFiles.length}: ${file.name}`);
+      let dataUri = '';
       try {
-        const dataUri = await readFileAsDataURL(file);
+        dataUri = await readFileAsDataURL(file);
         const aiResult = await suggestPdfFilename({
           pdfDataUri: dataUri,
           originalFilename: file.name,
@@ -101,18 +103,13 @@ export function PdfOrganizerPageContent() {
             id: fileId, 
             originalName: file.name, 
             suggestedFilename: `Error_${file.name}`, 
-            dataUri: '', 
+            dataUri: dataUri, // Preserve the dataUri even on failure
             extractedDate: 'Error',
         });
         filenamesToEdit[fileId] = `Error_${file.name}`;
         setErrorMessage((prev) => (prev ? `${prev}\n` : '') + `Failed to process ${file.name}.`);
       }
       setOverallProgress(Math.round(((i + 1) / selectedFiles.length) * 100));
-      
-      // Introduce a delay after processing each file (except the last one)
-      if (i < selectedFiles.length - 1) {
-        await new Promise(resolve => setTimeout(resolve, 2000)); // 2-second delay
-      }
     }
 
     setProcessingResults(results);
@@ -289,7 +286,7 @@ export function PdfOrganizerPageContent() {
                       value={editableFilenames[result.id] || ''}
                       onChange={(e) => handleFilenameChange(result.id, e.target.value)}
                       className="text-sm h-9 mt-0.5"
-                      disabled={result.extractedDate === 'Error'}
+                      disabled={result.extractedDate === 'Error' && !result.dataUri}
                     />
                   </Card>
                 ))}
@@ -311,3 +308,4 @@ export function PdfOrganizerPageContent() {
     </div>
   );
 }
+
