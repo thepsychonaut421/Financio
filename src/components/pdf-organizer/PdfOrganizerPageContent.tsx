@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { useState, useCallback, ChangeEvent, useEffect } from 'react';
@@ -140,15 +139,35 @@ export function PdfOrganizerPageContent() {
       }
     } else {
       const zip = new JSZip();
+      const usedFilenames = new Set<string>(); // Keep track of filenames to avoid overwrites
+
       for (const result of processingResults) {
         if (result.dataUri && result.dataUri.startsWith('data:')) {
           try {
             const blob = await dataUriToBlob(result.dataUri);
-            let filename = editableFilenames[result.id];
-            if (!filename.toLowerCase().endsWith('.pdf')) {
-              filename += '.pdf';
+            let originalFilename = editableFilenames[result.id] || `file_${result.id}.pdf`;
+            
+            // Ensure filename ends with .pdf
+            if (!originalFilename.toLowerCase().endsWith('.pdf')) {
+              originalFilename += '.pdf';
             }
-            zip.file(filename, blob);
+
+            let finalFilename = originalFilename;
+            let counter = 1;
+            // Separate filename from extension
+            const lastDotIndex = finalFilename.lastIndexOf('.');
+            const baseName = lastDotIndex !== -1 ? finalFilename.substring(0, lastDotIndex) : finalFilename;
+            const extension = lastDotIndex !== -1 ? finalFilename.substring(lastDotIndex) : '';
+
+            // Check for duplicates and append a counter if needed
+            while (usedFilenames.has(finalFilename)) {
+              finalFilename = `${baseName} (${counter})${extension}`;
+              counter++;
+            }
+
+            usedFilenames.add(finalFilename);
+            zip.file(finalFilename, blob);
+
           } catch (error) {
             console.error(`Failed to add ${result.originalName} to ZIP:`, error);
             setErrorMessage((prev) => (prev ? `${prev}\n` : '') + `Could not add ${result.originalName} to ZIP.`);
@@ -310,4 +329,3 @@ export function PdfOrganizerPageContent() {
     </div>
   );
 }
-
