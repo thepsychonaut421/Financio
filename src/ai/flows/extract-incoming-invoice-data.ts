@@ -154,9 +154,19 @@ Extraction Rules for Invoices:
     *   quantity (qty): The quantity. If not explicitly stated for an item, use 0 for quantity.
     *   unitPrice (rate): The price per unit. If not explicitly stated for an item, use 0.0 for unitPrice.
 
-10. KundenNummer (Customer Number): Extract if labeled "Kunden-Nr." or similar.
-11. BestellNummer (Order Number): Extract if labeled "Bestell-Nr.", "Bestellnummer", or similar, AND it is clearly distinct from the Rechnungsnummer.
-12. isPaid: Determine if the invoice explicitly states it has been paid (e.g., contains the word "Bezahlt"). Set to true if paid, false or undefined otherwise.
+10. Sonderfall Versandkosten (Special Case: Shipping Costs):
+    *   Look for any line items or summary rows labeled 'Versandkosten', 'Versand', 'Fracht', or 'Lieferkosten'.
+    *   If you find such a cost (like the 8,90 for 'Versandkosten' in the example image), you MUST create a separate, distinct line item for it in the 'rechnungspositionen' array.
+    *   For this shipping line item, use these exact values:
+        *   `productCode`: "VERSAND"
+        *   `productName`: "Versandkostenpauschale"
+        *   `quantity`: 1
+        *   `unitPrice`: The numerical value of the shipping cost found on the invoice (e.g., 8.90).
+    *   This is critical for accounting. Do not merge shipping costs into other items. If there are no shipping costs, do not add this item.
+
+11. KundenNummer (Customer Number): Extract if labeled "Kunden-Nr." or similar.
+12. BestellNummer (Order Number): Extract if labeled "Bestell-Nr.", "Bestellnummer", or similar, AND it is clearly distinct from the Rechnungsnummer.
+13. isPaid: Determine if the invoice explicitly states it has been paid (e.g., contains the word "Bezahlt"). Set to true if paid, false or undefined otherwise.
 
 Ensure all text fields are extracted as accurately as possible. For numerical fields like Gesamtbetrag, quantity, and unitPrice, provide them as numbers where available.
 
@@ -174,4 +184,3 @@ const extractIncomingInvoiceDataFlow = ai.defineFlow(
     return output!;
   }
 );
-
