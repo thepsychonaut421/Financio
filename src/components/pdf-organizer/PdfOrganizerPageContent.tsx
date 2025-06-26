@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useState, useCallback, ChangeEvent, useEffect } from 'react';
@@ -11,6 +12,7 @@ import { Progress } from '@/components/ui/progress';
 import { readFileAsDataURL } from '@/lib/file-helpers';
 import { suggestPdfFilename, type SuggestPdfFilenameOutput } from '@/ai/flows/suggest-pdf-filename';
 import JSZip from 'jszip';
+import { v4 as uuidv4 } from 'uuid';
 
 interface ProcessingResult extends SuggestPdfFilenameOutput {
   id: string;
@@ -74,7 +76,7 @@ export function PdfOrganizerPageContent() {
 
     for (let i = 0; i < selectedFiles.length; i++) {
       const file = selectedFiles[i];
-      const fileId = `${file.name}-${file.lastModified}`;
+      const fileId = uuidv4(); // Use UUID for a guaranteed unique ID
       setCurrentFileProgressText(`Processing ${i + 1}/${selectedFiles.length}: ${file.name}`);
       let dataUri = '';
       try {
