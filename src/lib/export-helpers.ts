@@ -20,6 +20,7 @@ function escapeCSVField(field: string | number | undefined | null): string {
   if (field === undefined || field === null) return '';
   let stringField = String(field);
 
+  // Force treatment as text in Excel for long numbers
   if (/^\d+$/.test(stringField) && stringField.length >= 10) {
     stringField = "'" + stringField;
   }
@@ -112,58 +113,51 @@ export function incomingInvoicesToERPNextCSVComplete(invoices: ERPIncomingInvoic
   const DEFAULT_CONVERSION_FACTOR = '1';
 
   invoices.forEach((invoice, invoiceIndex) => {
-      const invoiceLevelData = [
-          escapeCSVField(invoice.erpNextInvoiceName),
-          escapeCSVField(invoice.lieferantName),
-          escapeCSVField(invoice.datum),
-      ];
+      const itemsToProcess = (invoice.rechnungspositionen && invoice.rechnungspositionen.length > 0)
+        ? invoice.rechnungspositionen
+        : [{ 
+            productCode: "DEFAULT_PLACEHOLDER_ITEM",
+            productName: `Invoice Total: ${invoice.rechnungsnummer || `INV${invoiceIndex + 1}`}`,
+            quantity: 1,
+            unitPrice: invoice.gesamtbetrag ?? 0,
+        }];
 
-      if (invoice.rechnungspositionen && invoice.rechnungspositionen.length > 0) {
-          invoice.rechnungspositionen.forEach((item, itemIndex) => {
-              const itemCodeValue = item.productCode || item.productName || `FALLBACK_ITEM_INV${invoiceIndex + 1}_ITEM${itemIndex + 1}`;
-              const itemNameValue = item.productName || item.productCode || `Item from Invoice ${invoice.rechnungsnummer || `INV${invoiceIndex + 1}`}`;
-              const itemRate = item.unitPrice ?? 0;
-              const itemQty = item.quantity ?? 0;
-              const itemAmount = itemQty * itemRate;
-
-              const itemData = [
-                  escapeCSVField(itemCodeValue),
-                  escapeCSVField(itemQty.toString()),
-                  escapeCSVField(itemQty.toString()),
-                  escapeCSVField(itemAmount.toFixed(2)),
-                  escapeCSVField(itemAmount.toFixed(2)),
-                  escapeCSVField(itemNameValue),
-                  escapeCSVField(itemRate.toFixed(2)),
-                  escapeCSVField(itemRate.toFixed(2)),
-                  escapeCSVField(DEFAULT_UOM),
-                  escapeCSVField(DEFAULT_CONVERSION_FACTOR),
-                  escapeCSVField(DEFAULT_EXPENSE_ACCOUNT)
+      itemsToProcess.forEach((item, itemIndex) => {
+          let invoiceLevelData;
+          if (itemIndex === 0) {
+              // First row for this invoice gets the main details
+              invoiceLevelData = [
+                  escapeCSVField(invoice.erpNextInvoiceName),
+                  escapeCSVField(invoice.lieferantName),
+                  escapeCSVField(invoice.datum),
               ];
+          } else {
+              // Subsequent rows for the same invoice have blank main details
+              invoiceLevelData = ['', '', ''];
+          }
 
-              csvString += [...invoiceLevelData, ...itemData].join(',') + '\n';
-          });
-      } else {
-          const placeholderItemCode = "DEFAULT_PLACEHOLDER_ITEM";
-          const placeholderItemName = `Invoice Total: ${invoice.rechnungsnummer || `INV${invoiceIndex + 1}`}`;
-          const placeholderQty = 1;
-          const placeholderRate = invoice.gesamtbetrag ?? 0;
-          const placeholderAmount = placeholderRate * placeholderQty;
+          const itemCodeValue = item.productCode || item.productName || `FALLBACK_ITEM_INV${invoiceIndex + 1}_ITEM${itemIndex + 1}`;
+          const itemNameValue = item.productName || item.productCode || `Item from Invoice ${invoice.rechnungsnummer || `INV${invoiceIndex + 1}`}`;
+          const itemRate = item.unitPrice ?? 0;
+          const itemQty = item.quantity ?? 0;
+          const itemAmount = itemQty * itemRate;
 
-          const placeholderItemData = [
-              escapeCSVField(placeholderItemCode),
-              escapeCSVField(placeholderQty.toString()),
-              escapeCSVField(placeholderQty.toString()),
-              escapeCSVField(placeholderAmount.toFixed(2)),
-              escapeCSVField(placeholderAmount.toFixed(2)),
-              escapeCSVField(placeholderItemName),
-              escapeCSVField(placeholderRate.toFixed(2)),
-              escapeCSVField(placeholderRate.toFixed(2)),
-              escapeCSVField("Nos"),
+          const itemData = [
+              escapeCSVField(itemCodeValue),
+              escapeCSVField(itemQty.toString()),
+              escapeCSVField(itemQty.toString()),
+              escapeCSVField(itemAmount.toFixed(2)),
+              escapeCSVField(itemAmount.toFixed(2)),
+              escapeCSVField(itemNameValue),
+              escapeCSVField(itemRate.toFixed(2)),
+              escapeCSVField(itemRate.toFixed(2)),
+              escapeCSVField(DEFAULT_UOM),
               escapeCSVField(DEFAULT_CONVERSION_FACTOR),
               escapeCSVField(DEFAULT_EXPENSE_ACCOUNT)
           ];
-          csvString += [...invoiceLevelData, ...placeholderItemData].join(',') + '\n';
-      }
+
+          csvString += [...invoiceLevelData, ...itemData].join(',') + '\n';
+      });
   });
   return csvString;
 }
@@ -210,59 +204,52 @@ export function incomingInvoicesToTSV(invoices: IncomingInvoiceItem[] | ERPIncom
 
   erpInvoices.forEach((invoice, invoiceIndex) => {
     if (erpMode) {
-        const invoiceLevelData = [
-            invoice.erpNextInvoiceName,
-            invoice.lieferantName,
-            invoice.datum,
-        ].map(f => escapeTSVField(f));
-
-        if (invoice.rechnungspositionen && invoice.rechnungspositionen.length > 0) {
-            invoice.rechnungspositionen.forEach((item, itemIndex) => {
-                const itemCodeValue = item.productCode || item.productName || `FALLBACK_ITEM_INV${invoiceIndex + 1}_ITEM${itemIndex + 1}`;
-                const itemNameValue = item.productName || item.productCode || `Item for Invoice ${invoice.rechnungsnummer || `INV${invoiceIndex + 1}`}`;
-                const itemRate = item.unitPrice ?? 0;
-                const itemQty = item.quantity ?? 0;
-                const itemAmount = itemQty * itemRate;
-
-                const itemData = [
-                    itemCodeValue,
-                    itemQty.toString(),
-                    itemQty.toString(),
-                    itemAmount.toFixed(2),
-                    itemAmount.toFixed(2),
-                    itemNameValue,
-                    itemRate.toFixed(2),
-                    itemRate.toFixed(2),
-                    DEFAULT_UOM_TSV,
-                    DEFAULT_CONVERSION_FACTOR_TSV,
-                    DEFAULT_EXPENSE_ACCOUNT_TSV
+        const itemsToProcess = (invoice.rechnungspositionen && invoice.rechnungspositionen.length > 0)
+            ? invoice.rechnungspositionen
+            : [{ 
+                productCode: "DEFAULT_PLACEHOLDER_ITEM",
+                productName: `Invoice Total: ${invoice.rechnungsnummer || `INV${invoiceIndex + 1}`}`,
+                quantity: 1,
+                unitPrice: invoice.gesamtbetrag ?? 0,
+            }];
+        
+        itemsToProcess.forEach((item, itemIndex) => {
+            let invoiceLevelData;
+            if (itemIndex === 0) {
+                // First row gets details
+                invoiceLevelData = [
+                    invoice.erpNextInvoiceName,
+                    invoice.lieferantName,
+                    invoice.datum,
                 ].map(f => escapeTSVField(f));
+            } else {
+                // Subsequent rows are blank
+                invoiceLevelData = ['', '', ''];
+            }
 
-                tsvString += [...invoiceLevelData, ...itemData].join('\t') + '\n';
-            });
-        } else {
-            const placeholderItemCode = "DEFAULT_PLACEHOLDER_ITEM";
-            const placeholderItemName = `Invoice Total: ${invoice.rechnungsnummer || `INV${invoiceIndex + 1}`}`;
-            const placeholderQty = 1;
-            const placeholderRate = invoice.gesamtbetrag ?? 0;
-            const placeholderAmount = placeholderRate * placeholderQty;
+            const itemCodeValue = item.productCode || item.productName || `FALLBACK_ITEM_INV${invoiceIndex + 1}_ITEM${itemIndex + 1}`;
+            const itemNameValue = item.productName || item.productCode || `Item for Invoice ${invoice.rechnungsnummer || `INV${invoiceIndex + 1}`}`;
+            const itemRate = item.unitPrice ?? 0;
+            const itemQty = item.quantity ?? 0;
+            const itemAmount = itemQty * itemRate;
 
-            const placeholderItemData = [
-                placeholderItemCode,
-                placeholderQty.toString(),
-                placeholderQty.toString(),
-                placeholderAmount.toFixed(2),
-                placeholderAmount.toFixed(2),
-                placeholderItemName,
-                placeholderRate.toFixed(2),
-                placeholderRate.toFixed(2),
-                "Nos",
+            const itemData = [
+                itemCodeValue,
+                itemQty.toString(),
+                itemQty.toString(),
+                itemAmount.toFixed(2),
+                itemAmount.toFixed(2),
+                itemNameValue,
+                itemRate.toFixed(2),
+                itemRate.toFixed(2),
+                DEFAULT_UOM_TSV,
                 DEFAULT_CONVERSION_FACTOR_TSV,
                 DEFAULT_EXPENSE_ACCOUNT_TSV
             ].map(f => escapeTSVField(f));
 
-            tsvString += [...invoiceLevelData, ...placeholderItemData].join('\t') + '\n';
-        }
+            tsvString += [...invoiceLevelData, ...itemData].join('\t') + '\n';
+        });
+
     } else {
         const regularInvoice = invoice as IncomingInvoiceItem;
         const mainInvoiceDataStd = [
@@ -349,8 +336,3 @@ export function erpInvoicesToSupplierCSV(invoices: ERPIncomingInvoiceItem[]): st
 
   return csvString;
 }
-
-    
-
-    
-
