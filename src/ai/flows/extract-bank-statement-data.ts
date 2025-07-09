@@ -182,8 +182,14 @@ const extractBankStatementDataFlow = ai.defineFlow(
     outputSchema: z.object({ transactions: z.array(AIModelOutputTransactionSchema) }),
   },
   async input => {
-    const {output} = await prompt(input, {model: 'googleai/gemini-1.5-flash-latest'});
-    return output!;
+    try {
+      const {output} = await prompt(input, {model: 'googleai/gemini-1.5-flash-latest'});
+      return output!;
+    } catch (e: any) {
+      if (e.message && (e.message.includes('503') || e.message.includes('overloaded'))) {
+        throw new Error("The AI service is currently busy or unavailable. Please try again in a few moments.");
+      }
+      throw e;
+    }
   }
 );
-
