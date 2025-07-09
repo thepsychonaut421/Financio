@@ -71,8 +71,8 @@ const enrichProductDataFlow = ai.defineFlow(
   },
   async (input) => {
     try {
-      // Switched to a more powerful model for this complex, error-prone task to improve reliability.
-      const { output } = await prompt(input, { model: 'googleai/gemini-1.5-pro-latest' });
+      // Now uses the powerful global default model set in genkit.ts
+      const { output } = await prompt(input);
       if (!output?.product) {
         return { error: 'Das AI-Modell hat nicht die erwarteten Produktdaten zurückgegeben.' };
       }
