@@ -20,16 +20,16 @@ const EnrichedProductSchema = z.object({
   rawProductName: z.string().describe('The original, raw product name that was provided.'),
   enrichedTitle: z.string().describe('A clean, SEO-friendly, and attractive title for the product.'),
   summary: z.string().describe('A short, one-paragraph summary of the product.'),
-  technicalSpecifications: z.record(z.string()).optional().describe('A key-value object of the main technical specifications found (e.g., {"Power": "550 W", "Capacity": "3.8 L"}).'),
+  technicalSpecifications: z.record(z.string()).optional().describe('A key-value object of the main technical specifications found (e.g., {"Power": "550 W", "Capacity": "3.8 L"}). OMIT if not found.'),
   availabilityAndPricing: z.array(z.object({
       platform: z.string().describe('The platform where the info was found (e.g., eBay, Lidl).'),
-      price: z.string().optional().describe('The price found on the platform.'),
+      price: z.string().optional().describe('The price found on the platform. OMIT if not found.'),
       status: z.string().describe('The availability status (e.g., "Available", "Out of Stock").'),
       url: z.string().url().describe('The direct URL to the product page on the platform.')
-  })).optional().describe('An array of pricing, availability, and source URLs from different platforms.'),
+  })).optional().describe('An array of pricing, availability, and source URLs from different platforms. OMIT if none found.'),
   suggestedCategories: z.array(z.string()).describe('An array of 2-4 relevant categories or tags for the product.'),
   imageSearchKeywords: z.string().describe('A string containing one or two simple, relevant keywords for searching for a product image.'),
-  foundImageUrl: z.string().optional().describe('The direct URL of the product image found by the search tool.'),
+  foundImageUrl: z.string().optional().describe('The direct URL of the product image found by the search tool. OMIT if not found.'),
 });
 
 const EnrichProductDataOutputSchema = z.object({
@@ -77,7 +77,6 @@ If you receive the product name "SILVERCREST® Küchenmaschine »SKM 550 B3« (l
     },
     {
       "platform": "Lidl",
-      "price": null,
       "status": "Out of Stock",
       "url": "https://www.lidl.de/p/silvercrest-kitchen-tools-kuechenmaschine-skm-550-b3/p100268081"
     }
@@ -94,9 +93,8 @@ If you receive the product name "SILVERCREST® Küchenmaschine »SKM 550 B3« (l
 
 **CRITICAL INSTRUCTIONS:**
 - You must return a single JSON object with a key \`enrichedProducts\` which is an array of objects, one for each product name.
+- **VERY IMPORTANT: For optional fields (like \`price\`, \`technicalSpecifications\`, \`availabilityAndPricing\`, \`foundImageUrl\`), if you cannot find the information, OMIT THE FIELD OR THE OBJECT ENTIRELY from the JSON output. DO NOT use \`null\`, \`"N/A"\`, or empty strings for these fields. Notice in the example for Lidl, the \`price\` key is completely missing.**
 - The \`url\` in \`availabilityAndPricing\` must be a valid-looking URL.
-- \`technicalSpecifications\` and \`availabilityAndPricing\` are optional, but try your best to populate them.
-- \`price\` inside \`availabilityAndPricing\` is a string and can be optional.
 
 Now, process the following product names:
 {{{json productNames}}}
@@ -122,7 +120,7 @@ const enrichProductDataFlow = ai.defineFlow(
         }
         console.error("Error in enrichProductDataFlow:", e);
         // This error often happens if the AI's output doesn't match the Zod schema.
-        return { enrichedProducts: [], error: "An unexpected error occurred. The AI may have failed to generate a valid response. Please try simplifying the product names or try again later." };
+        return { enrichedProducts: [], error: "An unexpected error occurred. The AI may have failed to generate a valid response that matches the required data format. Please try again." };
     }
   }
 );
