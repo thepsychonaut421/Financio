@@ -1,40 +1,29 @@
 
 'use client';
 
-import dynamic from 'next/dynamic';
-import { Skeleton } from '@/components/ui/skeleton';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { PackageX } from 'lucide-react';
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
 
-const ProductCatalogPageContent = dynamic(
-  () => import('@/components/product-catalog/ProductCatalogPageContent').then(mod => mod.ProductCatalogPageContent),
-  {
-    loading: () => (
-      <div className="container mx-auto px-4 py-8 md:px-8 md:py-12 space-y-8">
-        <header className="mb-8 text-center">
-          <Skeleton className="h-10 w-3/4 mx-auto mb-2" />
-          <Skeleton className="h-6 w-full max-w-lg mx-auto" />
-        </header>
-        <main className="space-y-8">
-          <Skeleton className="h-48 w-full max-w-2xl mx-auto" />
-          <div className="my-6 p-4 border rounded-lg shadow-sm bg-card">
-            <Skeleton className="h-4 w-full mb-2" />
-            <Skeleton className="h-4 w-1/2 mx-auto" />
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            <Skeleton className="h-80 w-full rounded-lg" />
-            <Skeleton className="h-80 w-full rounded-lg" />
-            <Skeleton className="h-80 w-full rounded-lg" />
-          </div>
-        </main>
-      </div>
-    )
-  }
-);
+function ProductCatalogFeatureRemoved() {
+  return (
+    <div className="container mx-auto px-4 py-8 md:px-8 md:py-12">
+        <Alert variant="destructive">
+            <PackageX className="h-4 w-4" />
+            <AlertTitle>Feature Removed</AlertTitle>
+            <AlertDescription>
+                The Product Catalog feature has been removed due to persistent errors.
+            </AlertDescription>
+        </Alert>
+    </div>
+  );
+}
+
 
 export default function ProductCatalogPage() {
   return (
     <ProtectedRoute>
-      <ProductCatalogPageContent />
+      <ProductCatalogFeatureRemoved />
     </ProtectedRoute>
   );
 }
