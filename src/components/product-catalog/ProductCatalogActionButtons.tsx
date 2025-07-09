@@ -15,22 +15,22 @@ export function ProductCatalogActionButtons({ products }: ProductCatalogActionBu
 
   const handleExportJSON = () => {
     if (products.length === 0) {
-      toast({ title: "No data", description: "There are no products to export.", variant: "destructive" });
+      toast({ title: "Keine Daten", description: "Es gibt keine Produkte zum Exportieren.", variant: "destructive" });
       return;
     }
     const jsonData = productsToJSON(products);
-    downloadFile(jsonData, 'product_catalog.json', 'application/json;charset=utf-8;');
-    toast({ title: "JSON Exported", description: `${products.length} product(s) exported to JSON.` });
+    downloadFile(jsonData, 'produktkatalog.json', 'application/json;charset=utf-8;');
+    toast({ title: "JSON exportiert", description: `${products.length} Produkt(e) nach JSON exportiert.` });
   };
 
   const handleExportCSV = () => {
     if (products.length === 0) {
-      toast({ title: "No data", description: "There are no products to export.", variant: "destructive" });
+      toast({ title: "Keine Daten", description: "Es gibt keine Produkte zum Exportieren.", variant: "destructive" });
       return;
     }
     const csvData = productsToCSV(products);
-    downloadFile(csvData, 'product_catalog.csv', 'text/csv;charset=utf-8;');
-    toast({ title: "CSV Exported", description: `${products.length} product(s) exported to CSV.` });
+    downloadFile(csvData, 'produktkatalog.csv', 'text/csv;charset=utf-8;');
+    toast({ title: "CSV exportiert", description: `${products.length} Produkt(e) nach CSV exportiert.` });
   };
   
   if (products.length === 0) {
@@ -41,11 +41,11 @@ export function ProductCatalogActionButtons({ products }: ProductCatalogActionBu
     <div className="my-6 flex flex-col sm:flex-row justify-center items-center gap-4">
       <Button onClick={handleExportJSON} variant="outline" className="w-full sm:w-auto">
         <FileJson className="mr-2 h-4 w-4" />
-        Export All as JSON
+        Alle als JSON exportieren
       </Button>
       <Button onClick={handleExportCSV} className="w-full sm:w-auto">
         <FileSpreadsheet className="mr-2 h-4 w-4" />
-        Export All as CSV
+        Alle als CSV exportieren
       </Button>
     </div>
   );

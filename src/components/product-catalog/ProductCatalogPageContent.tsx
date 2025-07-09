@@ -26,7 +26,7 @@ export function ProductCatalogPageContent() {
   const handleProcessList = async () => {
     const productList = productNames.split('\n').filter(name => name.trim() !== '');
     if (productList.length === 0) {
-      setErrorMessage("Please enter at least one product name.");
+      setErrorMessage("Bitte geben Sie mindestens einen Produktnamen ein.");
       setStatus('error');
       return;
     }
@@ -40,7 +40,7 @@ export function ProductCatalogPageContent() {
     for (const productName of productList) {
       const result = await enrichProductData({ productName });
       if (result.error || !result.product) {
-        errors.push(result.error || `Failed to process "${productName}".`);
+        errors.push(result.error || `Verarbeitung von "${productName}" fehlgeschlagen.`);
       } else {
         results.push(result.product);
       }
@@ -64,9 +64,9 @@ export function ProductCatalogPageContent() {
   return (
     <div className="container mx-auto px-4 py-8 md:px-8 md:py-12">
       <header className="mb-8 text-center">
-        <h1 className="text-3xl md:text-4xl font-headline font-bold text-primary">Product Catalog Builder</h1>
+        <h1 className="text-3xl md:text-4xl font-headline font-bold text-primary">Produktkatalog-Ersteller</h1>
         <p className="text-muted-foreground mt-2">
-          Enter product names to generate detailed catalog entries using AI.
+          Geben Sie Produktnamen ein, um mit KI detaillierte Katalogeinträge zu erstellen.
         </p>
       </header>
 
@@ -75,9 +75,9 @@ export function ProductCatalogPageContent() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2 font-headline">
               <List className="w-6 h-6 text-primary" />
-              Enter Product Names
+              Produktnamen eingeben
             </CardTitle>
-            <CardDescription>Enter one product name per line. The AI will generate a detailed entry for each.</CardDescription>
+            <CardDescription>Geben Sie einen Produktnamen pro Zeile ein. Die KI generiert für jeden einen detaillierten Eintrag.</CardDescription>
           </CardHeader>
           <CardContent>
             <textarea
@@ -95,10 +95,10 @@ export function ProductCatalogPageContent() {
               className="w-full"
             >
               {status === 'processing' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <PackageSearch className="mr-2 h-4 w-4" />}
-              {status === 'processing' ? 'Generating...' : 'Generate Catalog'}
+              {status === 'processing' ? 'Wird generiert...' : 'Katalog erstellen'}
             </Button>
             <Button onClick={handleClear} variant="outline" className="w-full">
-                Clear
+                Leeren
             </Button>
           </CardFooter>
         </Card>
@@ -106,7 +106,7 @@ export function ProductCatalogPageContent() {
         {errorMessage && (
           <Alert variant="destructive" className="my-6 whitespace-pre-wrap">
             <AlertCircle className="h-4 w-4" />
-            <AlertTitle>An Error Occurred</AlertTitle>
+            <AlertTitle>Ein Fehler ist aufgetreten</AlertTitle>
             <AlertDescription>{errorMessage}</AlertDescription>
           </Alert>
         )}
@@ -114,9 +114,9 @@ export function ProductCatalogPageContent() {
         {status === 'idle' && enrichedProducts.length === 0 && (
           <Alert className="my-6 bg-primary/5 border-primary/20">
             <Info className="h-4 w-4 text-primary" />
-            <AlertTitle className="text-primary font-semibold">Get Started</AlertTitle>
+            <AlertTitle className="text-primary font-semibold">Los geht's</AlertTitle>
             <AlertDescription className="text-primary/80">
-              Enter product names in the text area above to build your catalog.
+              Geben Sie Produktnamen in das obige Textfeld ein, um Ihren Katalog zu erstellen.
             </AlertDescription>
           </Alert>
         )}
@@ -128,7 +128,7 @@ export function ProductCatalogPageContent() {
               <Card key={`${product.originalProductName}-${index}`} className="shadow-lg overflow-hidden">
                 <CardHeader>
                   <CardTitle className="font-headline text-xl text-primary">{product.enrichedTitle}</CardTitle>
-                  <CardDescription>Original query: {product.originalProductName}</CardDescription>
+                  <CardDescription>Ursprüngliche Anfrage: {product.originalProductName}</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">
                   <div className="flex flex-col md:flex-row gap-6">
@@ -147,7 +147,7 @@ export function ProductCatalogPageContent() {
                   
                   {product.specifications && product.specifications.length > 0 && (
                     <div>
-                      <h3 className="text-lg font-semibold mb-2">Specifications</h3>
+                      <h3 className="text-lg font-semibold mb-2">Spezifikationen</h3>
                       <div className="overflow-x-auto rounded-md border">
                           <Table>
                               <TableBody>
@@ -165,13 +165,13 @@ export function ProductCatalogPageContent() {
 
                   {product.availability && product.availability.length > 0 && (
                     <div>
-                      <h3 className="text-lg font-semibold mb-2">Availability</h3>
+                      <h3 className="text-lg font-semibold mb-2">Verfügbarkeit</h3>
                       <div className="overflow-x-auto rounded-md border">
                           <Table>
                               <TableHeader>
                                   <TableRow>
-                                      <TableHead>Store</TableHead>
-                                      <TableHead>Price</TableHead>
+                                      <TableHead>Shop</TableHead>
+                                      <TableHead>Preis</TableHead>
                                       <TableHead>Status</TableHead>
                                       <TableHead>Link</TableHead>
                                   </TableRow>
@@ -184,12 +184,12 @@ export function ProductCatalogPageContent() {
                                           <TableCell>
                                               <span className={`flex items-center gap-1.5 text-sm ${item.inStock ? 'text-green-600' : 'text-red-600'}`}>
                                                   {item.inStock ? <CheckCircle className="w-4 h-4"/> : <XCircle className="w-4 h-4"/>}
-                                                  {item.inStock ? 'In Stock' : 'Out of Stock'}
+                                                  {item.inStock ? 'Auf Lager' : 'Nicht vorrätig'}
                                               </span>
                                           </TableCell>
                                           <TableCell>
                                               <a href={item.url} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline flex items-center gap-1">
-                                                  View <ExternalLink className="w-3 h-3" />
+                                                  Ansehen <ExternalLink className="w-3 h-3" />
                                               </a>
                                           </TableCell>
                                       </TableRow>

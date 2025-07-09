@@ -31,15 +31,15 @@ export function productsToCSV(products: EnrichedProduct[]): string {
   if (!products || products.length === 0) return '';
 
   const headers = [
-    'Original Product Name',
-    'Enriched Title',
-    'Description',
-    'Image URL',
-    'Spec Key',
-    'Spec Value',
-    'Store',
-    'Price',
-    'In Stock',
+    'Ursprünglicher Produktname',
+    'Optimierter Titel',
+    'Beschreibung',
+    'Bild-URL',
+    'Merkmal',
+    'Wert',
+    'Shop',
+    'Preis',
+    'Auf Lager',
     'URL'
   ];
 
