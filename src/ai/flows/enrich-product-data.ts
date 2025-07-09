@@ -10,7 +10,6 @@
 
 import { ai } from '@/ai/genkit';
 import { z } from 'genkit';
-import { searchProductInfo } from '@/ai/tools/product-search-tool';
 
 const EnrichProductDataInputSchema = z.object({
   productNames: z.array(z.string()).describe('An array of raw product names to be enriched.'),
@@ -48,26 +47,27 @@ const prompt = ai.definePrompt({
   name: 'enrichProductDataPrompt',
   input: { schema: EnrichProductDataInputSchema },
   output: { schema: EnrichProductDataOutputSchema },
-  tools: [searchProductInfo],
-  prompt: `You are an expert e-commerce catalog manager. Your task is to take a list of raw product names and enrich them using structured data from a search tool.
+  prompt: `You are an expert e-commerce catalog manager. Your task is to take a list of raw product names and enrich them with structured data as if you have searched for them online.
 
-For each product name in the \`productNames\` array, you MUST:
+For each product name in the \`productNames\` array, you MUST generate a complete, structured JSON object.
 
-1.  **CRITICAL FIRST STEP: Use the \`searchProductInfo\` tool.** This tool will provide you with a structured JSON object containing a product title, description, specifications, an array of availability/pricing information from different platforms, and an image URL.
+**Example Task:**
+If you receive the product name "ERNESTO® Topfset, 6-tlg. - B-Ware neuwertig", you should act as if you've searched on Google, eBay, and Lidl and found the following details.
 
-2.  Based on the structured data returned by the tool, generate a refined output. **Your main job is to summarize and categorize, not to parse complex strings.**
-    *   **rawProductName**: Copy the original product name here.
-    *   **enrichedTitle**: Slightly refine the title from the tool to be clean and attractive.
-    *   **summary**: Write a compelling, one-paragraph summary based on the tool's description and specifications.
-    *   **technicalSpecifications**: Copy the key-value specifications directly from the tool.
-    *   **availabilityAndPricing**: Copy the entire array of availability, pricing, and URL data directly from the tool's result.
-    *   **suggestedCategories**: Generate 2-4 relevant categories or tags based on all the information.
-    *   **foundImageUrl**: Copy the image URL directly from the tool.
-    *   **imageSearchKeywords**: Provide one or two simple keywords for a manual image search (e.g., "kitchen machine").
+**Your thinking process should be:**
+1.  **Identify the core product:** It's a "SILVERCREST Kitchen Machine SKM 550 B3".
+2.  **Find Specs:** Power is 550W, capacity is 3.8L.
+3.  **Find Availability:** It's on eBay for 74.99 EUR but out of stock on Lidl.
+4.  **Create Summary & Title:** Write a clean title and a compelling summary.
+5.  **Suggest Categories:** "Kitchenware", "Appliances".
+6.  **Image Keywords:** "kitchen machine".
+7.  **Find Image URL:** Find a plausible placeholder or real URL.
 
-Process every single product name from the input array.
+**Based on that, you will construct this exact JSON structure for that one product inside the 'enrichedProducts' array.**
 
-Raw Product Names:
+Do this for every single product name from the input array.
+
+Raw Product Names to process:
 {{{json productNames}}}
 `,
 });
@@ -81,13 +81,17 @@ const enrichProductDataFlow = ai.defineFlow(
   async (input) => {
     try {
       const { output } = await prompt(input);
-      return output || { enrichedProducts: [] };
+      if (!output) {
+        return { enrichedProducts: [], error: "The AI returned no data. Please try again." };
+      }
+      return output;
     } catch (e: any) {
         if (e.message && (e.message.includes('503') || e.message.includes('overloaded'))) {
             return { enrichedProducts: [], error: "The AI service is currently busy or unavailable. Please try again in a few moments." };
         }
         console.error("Error in enrichProductDataFlow:", e);
-        return { enrichedProducts: [], error: "An unexpected error occurred during the enrichment process." };
+        // This error often happens if the AI's output doesn't match the Zod schema.
+        return { enrichedProducts: [], error: "An unexpected error occurred. The AI may have failed to generate a valid response. Please try simplifying the product names or try again later." };
     }
   }
 );

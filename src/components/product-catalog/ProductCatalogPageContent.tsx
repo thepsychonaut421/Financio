@@ -55,7 +55,7 @@ export function ProductCatalogPageContent() {
       }
     } catch (error) {
       console.error("Error enriching product data:", error);
-      const message = error instanceof Error ? error.message : "An unknown error occurred during enrichment.";
+      const message = error instanceof Error ? error.message : "An unexpected error occurred during enrichment.";
       setErrorMessage(message);
       setStatus('error');
     }
@@ -130,8 +130,8 @@ export function ProductCatalogPageContent() {
                        <Image
                         src={product.foundImageUrl || `https://placehold.co/400x400.png`}
                         alt={`Image for ${product.enrichedTitle}`}
-                        layout="fill"
-                        objectFit="cover"
+                        fill
+                        style={{ objectFit: 'cover' }}
                         className="rounded-lg border bg-muted"
                         data-ai-hint={product.imageSearchKeywords}
                         unoptimized
