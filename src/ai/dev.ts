@@ -7,7 +7,7 @@ import '@/ai/flows/extract-invoice-data.ts';
 import '@/ai/flows/extract-incoming-invoice-data.ts';
 import '@/ai/flows/extract-bank-statement-data.ts';
 import '@/ai/flows/suggest-pdf-filename.ts'; 
-// import '@/ai/flows/enrich-product-data.ts'; // Feature removed
+import '@/ai/flows/enrich-product-data.ts'; 
 // It's good practice to also "register" schemas if they were meant to be discoverable by Genkit tooling,
 // but for this specific use case (direct import for type safety), it's not strictly necessary.
 // If you had Genkit tools or other flows that needed to dynamically find this schema, you might add:
