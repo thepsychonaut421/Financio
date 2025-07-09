@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter }
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Info, AlertCircle, Package, FileText, Tags, Image as ImageIcon, Link as LinkIcon } from 'lucide-react';
+import { Info, AlertCircle, Package, FileText, Tags, Image as ImageIcon, Link as LinkIcon, Wrench, DollarSign } from 'lucide-react';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
 import Image from 'next/image';
@@ -66,7 +66,7 @@ export function ProductCatalogPageContent() {
       <header className="mb-8 text-center">
         <h1 className="text-3xl md:text-4xl font-headline font-bold text-primary">Product Catalog Builder</h1>
         <p className="text-muted-foreground mt-2 max-w-2xl mx-auto">
-          Paste a list of raw product names (one per line) to automatically generate clean titles, descriptions, categories, and image suggestions.
+          Paste a list of raw product names. The AI will research each one, generating a detailed profile with specs, pricing, and images.
         </p>
       </header>
       
@@ -80,7 +80,7 @@ export function ProductCatalogPageContent() {
             <Textarea
               value={rawProductList}
               onChange={(e) => setRawProductList(e.target.value)}
-              placeholder="Example:\nSuper-Cool T-Shirt Blue-L\nSAMSUNG EVO 980 1TB SSD\nCoffee Mug 'Best Dad'"
+              placeholder="Example:\nSuper-Cool T-Shirt Blue-L\nSAMSUNG EVO 980 1TB SSD\nERNESTO® Topfset, 6-tlg. - B-Ware neuwertig"
               rows={8}
               className="text-base"
               disabled={status === 'processing'}
@@ -96,7 +96,7 @@ export function ProductCatalogPageContent() {
         {status === 'processing' && (
           <div className="my-6 p-4 border rounded-lg shadow-sm bg-card">
             <Progress value={undefined} className="w-full mb-2 animate-pulse" />
-            <p className="text-sm text-center text-muted-foreground">AI is working its magic... Please wait.</p>
+            <p className="text-sm text-center text-muted-foreground">AI is researching products... Please wait.</p>
           </div>
         )}
 
@@ -124,9 +124,9 @@ export function ProductCatalogPageContent() {
             <ProductCatalogActionButtons products={enrichedProducts} />
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {enrichedProducts.map((product, index) => (
-                <Card key={index} className="flex flex-col shadow-lg hover:shadow-xl transition-shadow duration-300">
-                  <CardHeader>
-                    <div className="relative aspect-square w-full mb-4">
+                <Card key={index} className="flex flex-col shadow-lg hover:shadow-xl transition-shadow duration-300 bg-card">
+                  <CardHeader className="pb-4">
+                     <div className="relative aspect-video w-full mb-4">
                        <Image
                         src={product.foundImageUrl || `https://placehold.co/400x400.png`}
                         alt={`Image for ${product.enrichedTitle}`}
@@ -137,36 +137,53 @@ export function ProductCatalogPageContent() {
                         unoptimized
                       />
                     </div>
-                    <CardTitle className="font-headline text-lg text-primary flex items-center gap-2">
-                        <Package className="w-5 h-5" />
-                        {product.enrichedTitle}
-                    </CardTitle>
+                    <CardTitle className="font-headline text-lg text-primary">{product.enrichedTitle}</CardTitle>
                     <CardDescription className="text-xs">Original: {product.rawProductName}</CardDescription>
                   </CardHeader>
-                  <CardContent className="flex-grow space-y-4">
-                     <div>
-                        <h4 className="font-semibold text-sm flex items-center gap-1 mb-1"><FileText className="w-4 h-4 text-muted-foreground" />Description</h4>
-                        <p className="text-sm text-muted-foreground text-pretty">{product.enrichedDescription}</p>
-                     </div>
+                  <CardContent className="flex-grow space-y-4 text-sm">
+                      <p className="text-muted-foreground text-pretty">{product.summary}</p>
+                      
+                      {product.technicalSpecifications && Object.keys(product.technicalSpecifications).length > 0 && (
+                        <div>
+                          <h4 className="font-semibold flex items-center gap-1.5 mb-2"><Wrench className="w-4 h-4 text-muted-foreground" />Technical Specs</h4>
+                          <ul className="space-y-1 text-muted-foreground list-disc list-inside">
+                            {Object.entries(product.technicalSpecifications).map(([key, value]) => (
+                              <li key={key}><strong>{key}:</strong> {value}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+
+                      {product.availabilityAndPricing && product.availabilityAndPricing.length > 0 && (
+                        <div>
+                          <h4 className="font-semibold flex items-center gap-1.5 mb-2"><DollarSign className="w-4 h-4 text-muted-foreground" />Pricing & Availability</h4>
+                           <ul className="space-y-1 text-muted-foreground list-disc list-inside">
+                             {product.availabilityAndPricing.map((item, i) => (
+                               <li key={i}><strong>{item.platform}:</strong> {item.status} {item.price && ` - ${item.price}`}</li>
+                             ))}
+                           </ul>
+                        </div>
+                      )}
+
                       <div>
-                        <h4 className="font-semibold text-sm flex items-center gap-1 mb-2"><Tags className="w-4 h-4 text-muted-foreground" />Categories</h4>
+                        <h4 className="font-semibold flex items-center gap-1.5 mb-2"><Tags className="w-4 h-4 text-muted-foreground" />Categories</h4>
                         <div className="flex flex-wrap gap-2">
-                        {product.suggestedCategories.map((cat, i) => (
-                            <Badge key={i} variant="secondary">{cat}</Badge>
-                        ))}
+                          {product.suggestedCategories.map((cat, i) => (
+                              <Badge key={i} variant="secondary">{cat}</Badge>
+                          ))}
                         </div>
                      </div>
                   </CardContent>
-                   <CardFooter className="flex-col items-start gap-2 pt-4">
-                       <div className="text-xs text-muted-foreground flex items-center gap-1.5"><ImageIcon className="w-3 h-3"/> <span>Image Hint: {product.imageSearchKeywords}</span></div>
-                        {product.source && (
-                          <div className="text-xs text-muted-foreground flex items-center gap-1.5 w-full truncate">
-                            <LinkIcon className="w-3 h-3 flex-shrink-0"/> 
-                            <span className="truncate">
-                              Source: <a href={product.source} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">{product.source}</a>
-                            </span>
-                          </div>
+                   <CardFooter className="flex-col items-start gap-2 pt-4 text-xs text-muted-foreground">
+                        {product.sources && product.sources.length > 0 && (
+                           <div className="flex items-center gap-1.5 w-full truncate">
+                             <LinkIcon className="w-3 h-3 flex-shrink-0"/>
+                             <span className="truncate">
+                               Source: <a href={product.sources[0].url} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">{product.sources[0].platform}</a>
+                             </span>
+                           </div>
                         )}
+                        <div className="flex items-center gap-1.5"><ImageIcon className="w-3 h-3"/> <span>Image Hint: {product.imageSearchKeywords}</span></div>
                    </CardFooter>
                 </Card>
               ))}

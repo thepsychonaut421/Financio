@@ -15,10 +15,15 @@ export function downloadFile(content: string | Blob, fileName: string, mimeType:
   URL.revokeObjectURL(url);
 }
 
-function escapeCSVField(field: string | string[] | undefined | null): string {
+function escapeCSVField(field: any): string {
   if (field === undefined || field === null) return '';
   
-  const stringField = Array.isArray(field) ? field.join('; ') : String(field);
+  let stringField = '';
+  if (typeof field === 'object') {
+    stringField = JSON.stringify(field);
+  } else {
+    stringField = String(field);
+  }
   
   if (stringField.includes('"') || stringField.includes(',') || stringField.includes('\n') || stringField.includes('\r')) {
     return `"${stringField.replace(/"/g, '""')}"`;
@@ -33,11 +38,13 @@ export function enrichedProductsToCSV(products: EnrichedProduct[]): string {
   const headers = [
     'Raw Product Name',
     'Enriched Title',
-    'Enriched Description',
-    'Suggested Categories',
+    'Summary',
+    'Technical Specifications (JSON)',
+    'Availability and Pricing (JSON)',
+    'Suggested Categories (Semicolon-separated)',
     'Image Search Keywords',
     'Found Image URL',
-    'Source URL',
+    'Sources (JSON)',
   ];
 
   const csvRows = [
@@ -45,11 +52,13 @@ export function enrichedProductsToCSV(products: EnrichedProduct[]): string {
     ...products.map(product => [
       escapeCSVField(product.rawProductName),
       escapeCSVField(product.enrichedTitle),
-      escapeCSVField(product.enrichedDescription),
-      escapeCSVField(product.suggestedCategories),
+      escapeCSVField(product.summary),
+      escapeCSVField(product.technicalSpecifications),
+      escapeCSVField(product.availabilityAndPricing),
+      escapeCSVField(product.suggestedCategories.join('; ')),
       escapeCSVField(product.imageSearchKeywords),
       escapeCSVField(product.foundImageUrl),
-      escapeCSVField(product.source),
+      escapeCSVField(product.sources),
     ].join(','))
   ];
 
