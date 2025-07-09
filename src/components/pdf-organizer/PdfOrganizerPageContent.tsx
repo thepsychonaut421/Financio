@@ -73,61 +73,60 @@ export function PdfOrganizerPageContent() {
     
     const results: ProcessingResult[] = [];
     const filenamesToEdit: Record<string, string> = {};
-    let accumulatedError = '';
+    
+    try {
+        for (let i = 0; i < selectedFiles.length; i++) {
+          const file = selectedFiles[i];
+          const fileId = uuidv4();
+          setCurrentFileProgressText(`Processing ${i + 1}/${selectedFiles.length}: ${file.name}`);
+          
+          const dataUri = await readFileAsDataURL(file);
+          const aiResult = await suggestPdfFilename({
+            pdfDataUri: dataUri,
+            originalFilename: file.name,
+          });
 
-    for (let i = 0; i < selectedFiles.length; i++) {
-      const file = selectedFiles[i];
-      const fileId = uuidv4();
-      setCurrentFileProgressText(`Processing ${i + 1}/${selectedFiles.length}: ${file.name}`);
-      let dataUri = '';
-      try {
-        dataUri = await readFileAsDataURL(file);
-        const aiResult = await suggestPdfFilename({
-          pdfDataUri: dataUri,
-          originalFilename: file.name,
-        });
-
-        if (aiResult.error) {
-          throw new Error(aiResult.error);
+          if (aiResult.error) {
+              setErrorMessage(prev => (prev ? `${prev}\n` : '') + `${file.name}: ${aiResult.error}`);
+              const errorResultEntry: ProcessingResult = {
+                id: fileId,
+                originalName: file.name,
+                suggestedFilename: `Error_${file.name}`,
+                dataUri: dataUri,
+                error: aiResult.error,
+                extractedDate: 'Error',
+                extractedInvoiceNumber: undefined,
+                extractedSupplierName: undefined,
+              };
+              results.push(errorResultEntry);
+              filenamesToEdit[fileId] = `Error_${file.name}`;
+          } else {
+              const resultEntry: ProcessingResult = {
+                id: fileId,
+                originalName: file.name,
+                suggestedFilename: aiResult.suggestedFilename,
+                extractedInvoiceNumber: aiResult.extractedInvoiceNumber,
+                extractedSupplierName: aiResult.extractedSupplierName,
+                extractedDate: aiResult.extractedDate,
+                dataUri: dataUri,
+              };
+              results.push(resultEntry);
+              filenamesToEdit[fileId] = aiResult.suggestedFilename;
+          }
+          setOverallProgress(Math.round(((i + 1) / selectedFiles.length) * 100));
         }
-        
-        const resultEntry: ProcessingResult = {
-          id: fileId,
-          originalName: file.name,
-          suggestedFilename: aiResult.suggestedFilename,
-          extractedInvoiceNumber: aiResult.extractedInvoiceNumber,
-          extractedSupplierName: aiResult.extractedSupplierName,
-          extractedDate: aiResult.extractedDate,
-          dataUri: dataUri,
-        };
-        results.push(resultEntry);
-        filenamesToEdit[fileId] = aiResult.suggestedFilename;
 
-      } catch (err) {
-        console.error(`Error processing file ${file.name}:`, err);
-        const message = err instanceof Error ? err.message : `Failed to process ${file.name}.`;
-        accumulatedError += (accumulatedError ? '\n' : '') + message;
-        results.push({ 
-            id: fileId, 
-            originalName: file.name, 
-            suggestedFilename: `Error_${file.name}`, 
-            dataUri: dataUri,
-            extractedDate: 'Error',
-            extractedInvoiceNumber: undefined,
-            extractedSupplierName: undefined,
-        });
-        filenamesToEdit[fileId] = `Error_${file.name}`;
-      }
-      setOverallProgress(Math.round(((i + 1) / selectedFiles.length) * 100));
-    }
+        setProcessingResults(results);
+        setEditableFilenames(filenamesToEdit);
+        setCurrentFileProgressText(results.length > 0 ? 'Processing complete!' : 'No files processed.');
 
-    if (accumulatedError) {
-        setErrorMessage(accumulatedError);
+    } catch (err) {
+        console.error(`Unhandled error during file processing:`, err);
+        const message = err instanceof Error ? err.message : `A critical error occurred.`;
+        setErrorMessage(prev => (prev ? `${prev}\n` : '') + message);
+    } finally {
+        setIsProcessing(false);
     }
-    setProcessingResults(results);
-    setEditableFilenames(filenamesToEdit);
-    setCurrentFileProgressText(results.length > 0 ? 'Processing complete!' : 'No files processed.');
-    setIsProcessing(false);
   };
 
   const handleFilenameChange = (id: string, newName: string) => {

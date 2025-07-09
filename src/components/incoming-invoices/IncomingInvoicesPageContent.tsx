@@ -285,7 +285,10 @@ export function IncomingInvoicesPageContent() {
         const aiResult: ExtractIncomingInvoiceDataOutput = await extractIncomingInvoiceData({ invoiceDataUri: dataUri });
         
         if (aiResult.error) {
-          throw new Error(aiResult.error);
+          setErrorMessage(aiResult.error);
+          setStatus('error');
+          setCurrentFileProgress('Processing failed.');
+          return;
         }
 
         let finalLieferantName = (aiResult.lieferantName || "").trim();

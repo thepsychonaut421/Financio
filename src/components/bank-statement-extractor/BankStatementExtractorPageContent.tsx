@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useState, useCallback, ChangeEvent, useEffect } from 'react';
@@ -57,7 +58,10 @@ export function BankStatementExtractorPageContent() {
         const extractionResult = await extractBankStatementData({ statementDataUri: dataUri });
 
         if (extractionResult.error) {
-          throw new Error(extractionResult.error);
+          setErrorMessage(extractionResult.error);
+          setStatus('error');
+          setCurrentFileProgress('Processing failed.');
+          return;
         }
         
         if (extractionResult && extractionResult.transactions) {

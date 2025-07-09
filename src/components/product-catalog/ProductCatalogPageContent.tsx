@@ -41,14 +41,17 @@ export function ProductCatalogPageContent() {
       const result = await enrichProductData({ productNames });
 
       if (result.error) {
-        throw new Error(result.error);
+        setErrorMessage(result.error);
+        setStatus('error');
+        return;
       }
 
       if (result && result.enrichedProducts) {
         setEnrichedProducts(result.enrichedProducts);
         setStatus('success');
       } else {
-        throw new Error("The AI returned an unexpected or empty result.");
+        setErrorMessage("The AI returned an unexpected or empty result.");
+        setStatus('error');
       }
     } catch (error) {
       console.error("Error enriching product data:", error);
