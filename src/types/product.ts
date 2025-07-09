@@ -8,14 +8,11 @@ export type EnrichedProduct = {
     platform: string;
     price?: string;
     status: string;
+    url: string;
   }[];
   suggestedCategories: string[];
   imageSearchKeywords: string;
   foundImageUrl?: string;
-  sources?: {
-    platform: string;
-    url: string;
-  }[];
 };
 
 export type ProductCatalogProcessingStatus = 'idle' | 'processing' | 'success' | 'error';

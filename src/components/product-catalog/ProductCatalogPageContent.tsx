@@ -159,7 +159,12 @@ export function ProductCatalogPageContent() {
                           <h4 className="font-semibold flex items-center gap-1.5 mb-2"><DollarSign className="w-4 h-4 text-muted-foreground" />Pricing & Availability</h4>
                            <ul className="space-y-1 text-muted-foreground list-disc list-inside">
                              {product.availabilityAndPricing.map((item, i) => (
-                               <li key={i}><strong>{item.platform}:</strong> {item.status} {item.price && ` - ${item.price}`}</li>
+                               <li key={i}>
+                                 <a href={item.url} target="_blank" rel="noopener noreferrer" className="hover:underline text-primary/90">
+                                   <strong>{item.platform}:</strong>
+                                 </a>
+                                 {' '}{item.status} {item.price && ` - ${item.price}`}
+                               </li>
                              ))}
                            </ul>
                         </div>
@@ -175,11 +180,11 @@ export function ProductCatalogPageContent() {
                      </div>
                   </CardContent>
                    <CardFooter className="flex-col items-start gap-2 pt-4 text-xs text-muted-foreground">
-                        {product.sources && product.sources.length > 0 && (
+                        {product.availabilityAndPricing && product.availabilityAndPricing.length > 0 && (
                            <div className="flex items-center gap-1.5 w-full truncate">
                              <LinkIcon className="w-3 h-3 flex-shrink-0"/>
                              <span className="truncate">
-                               Source: <a href={product.sources[0].url} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">{product.sources[0].platform}</a>
+                               Source: <a href={product.availabilityAndPricing[0].url} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">{product.availabilityAndPricing[0].platform}</a>
                              </span>
                            </div>
                         )}

@@ -44,7 +44,6 @@ export function enrichedProductsToCSV(products: EnrichedProduct[]): string {
     'Suggested Categories (Semicolon-separated)',
     'Image Search Keywords',
     'Found Image URL',
-    'Sources (JSON)',
   ];
 
   const csvRows = [
@@ -58,7 +57,6 @@ export function enrichedProductsToCSV(products: EnrichedProduct[]): string {
       escapeCSVField(product.suggestedCategories.join('; ')),
       escapeCSVField(product.imageSearchKeywords),
       escapeCSVField(product.foundImageUrl),
-      escapeCSVField(product.sources),
     ].join(','))
   ];
 
