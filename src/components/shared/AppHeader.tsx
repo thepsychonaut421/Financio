@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { ListOrdered, ReceiptText, Landmark, FileEdit, FileScan, LogIn, LogOut, Home as HomeIcon, Menu, UserCircle, Package } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import React from 'react';
 import { useAuth } from '@/contexts/AuthContext'; // Import useAuth
 
@@ -102,11 +102,13 @@ export function AppHeader() {
                 </Button>
               </SheetTrigger>
               <SheetContent side="right" className="w-full max-w-xs sm:max-w-sm p-0">
-                <div className="p-4 border-b">
-                  <Link href="/" onClick={() => setIsMobileMenuOpen(false)} className="text-lg font-bold text-primary">
-                    PDF Suite
-                  </Link>
-                </div>
+                <SheetHeader className="p-4 border-b text-left">
+                  <SheetTitle>
+                    <Link href="/" onClick={() => setIsMobileMenuOpen(false)} className="text-lg font-bold text-primary">
+                      PDF Suite
+                    </Link>
+                  </SheetTitle>
+                </SheetHeader>
                 <nav className="flex flex-col space-y-1 p-4">
                   {mainNavLinks.map((link) => (
                     <Link
