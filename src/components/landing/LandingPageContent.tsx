@@ -1,7 +1,5 @@
-
 'use client';
 
-import React from 'react'; // Added React import
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { ListOrdered, ReceiptText, Landmark, FileEdit, FileScan, ArrowRight, Zap } from 'lucide-react';
@@ -12,31 +10,31 @@ const features = [
   {
     title: 'Line Item Extractor',
     description: 'Automatically extract product codes, names, quantities, and prices from PDF invoices.',
-    icon: <ListOrdered className="w-8 h-8 text-primary" />,
+    icon: <ListOrdered className="w-8 h-8" />,
     href: '/extractor',
   },
   {
     title: 'Incoming Invoice Details',
     description: 'Process German PDF invoices (Eingangsrechnungen) for comprehensive data extraction.',
-    icon: <ReceiptText className="w-8 h-8 text-primary" />,
+    icon: <ReceiptText className="w-8 h-8" />,
     href: '/incoming-invoices',
   },
   {
     title: 'Bank Statement Matcher',
     description: 'Match bank transactions with processed PDF invoices automatically.',
-    icon: <Landmark className="w-8 h-8 text-primary" />,
+    icon: <Landmark className="w-8 h-8" />,
     href: '/bank-matcher',
   },
   {
     title: 'PDF Organizer',
     description: 'Get intelligent filename suggestions for your PDFs and download them organized.',
-    icon: <FileEdit className="w-8 h-8 text-primary" />,
+    icon: <FileEdit className="w-8 h-8" />,
     href: '/pdf-organizer',
   },
   {
     title: 'Bank Statement Extractor',
     description: 'Extract transaction details from your bank statement PDFs efficiently.',
-    icon: <FileScan className="w-8 h-8 text-primary" />,
+    icon: <FileScan className="w-8 h-8" />,
     href: '/bank-statement-extractor',
   },
 ];
@@ -62,12 +60,12 @@ export function LandingPageContent() {
               PDF Suite leverages cutting-edge AI to extract, organize, and manage your PDF documents and financial data with unparalleled speed and accuracy.
             </p>
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-                <Link href="/extractor" passHref>
+                <Link href="/extractor">
                   <Button size="lg" className="font-semibold w-full sm:w-auto">
                     Get Started <ArrowRight className="ml-2 h-5 w-5" />
                   </Button>
                 </Link>
-                <Link href="/login" passHref>
+                <Link href="/login">
                     <Button size="lg" variant="outline" className="font-semibold w-full sm:w-auto">
                         Access Account
                     </Button>
@@ -99,11 +97,11 @@ export function LandingPageContent() {
             </p>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
               {features.map((feature) => (
-                <Link href={feature.href} key={feature.title} passHref>
+                <Link href={feature.href} key={feature.title}>
                   <Card className="h-full hover:shadow-xl hover:border-primary/50 transition-all duration-300 cursor-pointer flex flex-col group bg-card hover:bg-primary/5">
                     <CardHeader className="items-center text-center">
-                      <div className="p-4 bg-primary/10 rounded-full mb-4 group-hover:bg-primary group-hover:text-primary-foreground transition-colors">
-                        {React.cloneElement(feature.icon, { className: "w-8 h-8 text-primary group-hover:text-primary-foreground transition-colors"})}
+                      <div className="p-4 bg-primary/10 rounded-full mb-4 text-primary group-hover:bg-primary group-hover:text-primary-foreground transition-colors">
+                        {feature.icon}
                       </div>
                       <CardTitle className="font-headline text-xl group-hover:text-primary transition-colors">{feature.title}</CardTitle>
                     </CardHeader>
