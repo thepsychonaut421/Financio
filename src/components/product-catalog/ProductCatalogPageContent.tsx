@@ -147,56 +147,60 @@ export function ProductCatalogPageContent() {
                     <p className="text-muted-foreground flex-grow">{product.description}</p>
                   </div>
                   
-                  <div>
-                    <h3 className="text-lg font-semibold mb-2">Specifications</h3>
-                    <div className="overflow-x-auto rounded-md border">
-                        <Table>
-                            <TableBody>
-                                {product.specifications.map((spec, specIndex) => (
-                                    <TableRow key={specIndex}>
-                                        <TableCell className="font-medium">{spec.key}</TableCell>
-                                        <TableCell>{spec.value}</TableCell>
-                                    </TableRow>
-                                ))}
-                            </TableBody>
-                        </Table>
+                  {product.specifications && product.specifications.length > 0 && (
+                    <div>
+                      <h3 className="text-lg font-semibold mb-2">Specifications</h3>
+                      <div className="overflow-x-auto rounded-md border">
+                          <Table>
+                              <TableBody>
+                                  {product.specifications.map((spec, specIndex) => (
+                                      <TableRow key={specIndex}>
+                                          <TableCell className="font-medium">{spec.key}</TableCell>
+                                          <TableCell>{spec.value}</TableCell>
+                                      </TableRow>
+                                  ))}
+                              </TableBody>
+                          </Table>
+                      </div>
                     </div>
-                  </div>
+                  )}
 
-                  <div>
-                     <h3 className="text-lg font-semibold mb-2">Availability</h3>
-                    <div className="overflow-x-auto rounded-md border">
-                        <Table>
-                            <TableHeader>
-                                <TableRow>
-                                    <TableHead>Store</TableHead>
-                                    <TableHead>Price</TableHead>
-                                    <TableHead>Status</TableHead>
-                                    <TableHead>Link</TableHead>
-                                </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                                {product.availability.map((item, availIndex) => (
-                                    <TableRow key={availIndex}>
-                                        <TableCell className="font-medium">{item.store}</TableCell>
-                                        <TableCell>{item.price}</TableCell>
-                                        <TableCell>
-                                            <span className={`flex items-center gap-1.5 text-sm ${item.inStock ? 'text-green-600' : 'text-red-600'}`}>
-                                                {item.inStock ? <CheckCircle className="w-4 h-4"/> : <XCircle className="w-4 h-4"/>}
-                                                {item.inStock ? 'In Stock' : 'Out of Stock'}
-                                            </span>
-                                        </TableCell>
-                                        <TableCell>
-                                            <a href={item.url} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline flex items-center gap-1">
-                                                View <ExternalLink className="w-3 h-3" />
-                                            </a>
-                                        </TableCell>
-                                    </TableRow>
-                                ))}
-                            </TableBody>
-                        </Table>
+                  {product.availability && product.availability.length > 0 && (
+                    <div>
+                      <h3 className="text-lg font-semibold mb-2">Availability</h3>
+                      <div className="overflow-x-auto rounded-md border">
+                          <Table>
+                              <TableHeader>
+                                  <TableRow>
+                                      <TableHead>Store</TableHead>
+                                      <TableHead>Price</TableHead>
+                                      <TableHead>Status</TableHead>
+                                      <TableHead>Link</TableHead>
+                                  </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                  {product.availability.map((item, availIndex) => (
+                                      <TableRow key={availIndex}>
+                                          <TableCell className="font-medium">{item.store}</TableCell>
+                                          <TableCell>{item.price}</TableCell>
+                                          <TableCell>
+                                              <span className={`flex items-center gap-1.5 text-sm ${item.inStock ? 'text-green-600' : 'text-red-600'}`}>
+                                                  {item.inStock ? <CheckCircle className="w-4 h-4"/> : <XCircle className="w-4 h-4"/>}
+                                                  {item.inStock ? 'In Stock' : 'Out of Stock'}
+                                              </span>
+                                          </TableCell>
+                                          <TableCell>
+                                              <a href={item.url} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline flex items-center gap-1">
+                                                  View <ExternalLink className="w-3 h-3" />
+                                              </a>
+                                          </TableCell>
+                                      </TableRow>
+                                  ))}
+                              </TableBody>
+                          </Table>
+                      </div>
                     </div>
-                  </div>
+                  )}
 
                 </CardContent>
               </Card>
