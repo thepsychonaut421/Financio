@@ -5,7 +5,7 @@
  */
 
 import { ai } from '@/ai/genkit';
-import { z } from 'zod';
+import { z } from 'genkit';
 
 // This is a placeholder/mock implementation.
 // In a real application, this would use an API like SerpAPI or a web scraper.
