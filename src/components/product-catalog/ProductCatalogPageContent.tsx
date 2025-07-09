@@ -147,7 +147,7 @@ export function ProductCatalogPageContent() {
                     <p className="text-muted-foreground flex-grow">{product.description}</p>
                   </div>
                   
-                  {product.specifications && product.specifications.length > 0 && (
+                  {product.specifications.length > 0 && (
                     <div>
                       <h3 className="text-lg font-semibold mb-2">Specifications</h3>
                       <div className="overflow-x-auto rounded-md border">
@@ -165,7 +165,7 @@ export function ProductCatalogPageContent() {
                     </div>
                   )}
 
-                  {product.availability && product.availability.length > 0 && (
+                  {product.availability.length > 0 && (
                     <div>
                       <h3 className="text-lg font-semibold mb-2">Availability</h3>
                       <div className="overflow-x-auto rounded-md border">

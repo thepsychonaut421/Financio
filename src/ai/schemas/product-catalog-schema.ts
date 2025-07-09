@@ -11,6 +11,7 @@ export const EnrichedProductSchema = z.object({
   description: z.string().describe('A detailed and engaging product description.'),
   specifications: z
     .array(z.object({ key: z.string(), value: z.string() }))
+    .default([])
     .describe('A list of key-value pairs for technical specifications.'),
   availability: z
     .array(
@@ -21,6 +22,7 @@ export const EnrichedProductSchema = z.object({
         url: z.string().describe('A direct link to the product page.'),
       })
     )
+    .default([])
     .describe('A list of stores where the product is available, including price and stock status.'),
   imageUrl: z.string().describe("A relevant image URL for the product. Use a placeholder from 'https://placehold.co/600x400.png' if a real one isn't available."),
 });
