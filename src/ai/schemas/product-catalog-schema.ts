@@ -7,10 +7,11 @@ export type EnrichProductDataInput = z.infer<typeof EnrichProductDataInputSchema
 
 export const EnrichedProductSchema = z.object({
   originalProductName: z.string().describe('The original product name that was provided.'),
-  enrichedTitle: z.string().describe('A compelling, SEO-friendly title for the product.'),
-  description: z.string().describe('A detailed and engaging product description.'),
+  enrichedTitle: z.string().optional().describe('A compelling, SEO-friendly title for the product.'),
+  description: z.string().optional().describe('A detailed and engaging product description.'),
   specifications: z
     .array(z.object({ key: z.string(), value: z.string() }))
+    .optional()
     .describe('A list of key-value pairs for technical specifications.'),
   availability: z
     .array(
@@ -21,8 +22,9 @@ export const EnrichedProductSchema = z.object({
         url: z.string().describe("A direct link to the product page. Can be a non-URL string if a valid URL isn't found."),
       })
     )
+    .optional()
     .describe('A list of stores where the product is available, including price and stock status.'),
-  imageUrl: z.string().describe("A relevant image URL for the product. Use a placeholder from 'https://placehold.co/600x400.png' if a real one isn't available."),
+  imageUrl: z.string().optional().describe("A relevant image URL for the product. Use a placeholder from 'https://placehold.co/600x400.png' if a real one isn't available."),
 });
 export type EnrichedProduct = z.infer<typeof EnrichedProductSchema>;
 

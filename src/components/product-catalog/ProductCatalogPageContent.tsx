@@ -127,7 +127,7 @@ export function ProductCatalogPageContent() {
             {enrichedProducts.map((product, index) => (
               <Card key={`${product.originalProductName}-${index}`} className="shadow-lg overflow-hidden">
                 <CardHeader>
-                  <CardTitle className="font-headline text-xl text-primary">{product.enrichedTitle}</CardTitle>
+                  <CardTitle className="font-headline text-xl text-primary">{product.enrichedTitle || product.originalProductName}</CardTitle>
                   <CardDescription>Ursprüngliche Anfrage: {product.originalProductName}</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">
@@ -135,14 +135,14 @@ export function ProductCatalogPageContent() {
                     <div className="flex-shrink-0">
                       <Image
                         src={product.imageUrl || "https://placehold.co/600x400.png"}
-                        alt={product.enrichedTitle}
+                        alt={product.enrichedTitle || product.originalProductName}
                         width={250}
                         height={250}
                         className="rounded-lg border object-cover"
                         data-ai-hint="product photo"
                       />
                     </div>
-                    <p className="text-muted-foreground flex-grow">{product.description}</p>
+                    <p className="text-muted-foreground flex-grow">{product.description || 'Keine Beschreibung verfügbar.'}</p>
                   </div>
                   
                   {product.specifications && product.specifications.length > 0 && (
