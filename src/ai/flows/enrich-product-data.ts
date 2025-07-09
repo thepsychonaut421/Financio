@@ -25,22 +25,26 @@ const prompt = ai.definePrompt({
     name: 'enrichProductDataPrompt',
     input: { schema: EnrichProductDataInputSchema },
     output: { schema: EnrichedProductSchema }, // SIMPLIFIED: AI returns the product object directly
-    prompt: `Sie sind ein Experte für Produktkatalog-Management. Ihre Aufgabe ist es, einen Produktnamen zu nehmen und dafür ein detailliertes, strukturiertes JSON-Objekt auf Deutsch zu generieren.
-Sie müssen das Produkt recherchieren, um genaue Informationen zu finden. Alle textuellen Ausgaben (Titel, Beschreibung, Spezifikations-Schlüssel) müssen auf Deutsch sein. Wenn Informationen für ein bestimmtes Feld nicht gefunden werden können, verwenden Sie einen sinnvollen Standardwert oder ein leeres Array/String, aber erfinden Sie KEINE Details.
-Speziell für den Abschnitt 'specifications' (Merkmale) müssen Sie versuchen zu finden:
-- Marke
-- Modell
+    prompt: `You are an expert product catalog manager. Your task is to take a product name and generate a detailed, structured JSON object.
+
+IMPORTANT: All textual output (the values for enrichedTitle, description, and the 'key' in specifications) MUST be in GERMAN.
+
+You must research the product to find accurate information. If information for a specific field cannot be found, use a sensible default or an empty array/string, but do NOT invent details.
+
+Specifically for the 'specifications' section, you must try to find:
+- Marke (Brand)
+- Modell (Model)
 - Herstellernummer (MPN)
-- EAN (falls verfügbar)
-- Andere relevante technische Daten wie Leistung, Kapazität usw.
+- EAN (if available)
+- Other relevant technical data like power, capacity, etc.
 
-Wenn keine echte Bild-URL gefunden wird, verwenden Sie "https://placehold.co/600x400.png".
+If no real image URL is found, use "https://placehold.co/600x400.png".
 
-Produktname: {{{productName}}}
+Product Name: {{{productName}}}
 
-Basierend auf dem Produktnamen, generieren Sie ein JSON-Objekt, das strikt dieser Struktur folgt. Die Ausgabe darf NUR das JSON-Objekt sein.
+Based on the product name, generate a JSON object that strictly follows the required structure. The output must ONLY be the JSON object.
 
-Beispiel JSON-Struktur:
+Example of the required JSON structure (remember, content must be in GERMAN):
 {
   "originalProductName": "SILVERCREST® Kitchen Machine SKM 550 B3",
   "enrichedTitle": "SILVERCREST® Küchenmaschine SKM 550 B3 - Leistungsstarker 550W Mixer",
