@@ -56,14 +56,16 @@ export function productsToCSV(products: EnrichedProduct[]): string {
     let hasWrittenFirstRowForProduct = false;
 
     // Handle specifications and availability to create multiple rows if necessary
-    const maxRows = Math.max(product.specifications.length, product.availability.length, 1);
+    const specs = product.specifications || [];
+    const avails = product.availability || [];
+    const maxRows = Math.max(specs.length, avails.length, 1);
 
     for (let i = 0; i < maxRows; i++) {
-        const spec = product.specifications[i];
-        const avail = product.availability[i];
+        const spec = specs[i];
+        const avail = avails[i];
 
         const row = [
-            ...baseData,
+            ...(hasWrittenFirstRowForProduct ? Array(baseData.length).fill('') : baseData), // Only show base data on the first row for a product
             escapeCSVField(spec?.key),
             escapeCSVField(spec?.value),
             escapeCSVField(avail?.store),
@@ -73,13 +75,7 @@ export function productsToCSV(products: EnrichedProduct[]): string {
         ];
         
         csvRows.push(row.join(','));
-        // Clear base data after first use for this product to avoid repetition
-        if (!hasWrittenFirstRowForProduct) {
-            for(let j=0; j < baseData.length; j++) {
-                baseData[j] = '';
-            }
-            hasWrittenFirstRowForProduct = true;
-        }
+        hasWrittenFirstRowForProduct = true;
     }
   });
 

@@ -26,7 +26,7 @@ const prompt = ai.definePrompt({
     input: { schema: EnrichProductDataInputSchema },
     output: { schema: z.object({ product: EnrichedProductSchema }) }, // We expect the AI to return the product nested
     prompt: `You are an expert product catalog manager. Your task is to take a product name and generate a detailed, structured JSON object for it.
-You must research the product to find accurate information. If information for a specific field cannot be found, use a sensible default or leave it empty, but DO NOT invent details like technical specs.
+You must research the product to find accurate information. If information for a specific field cannot be found, use a sensible default or an empty array/string, but DO NOT invent details like technical specs. If a real image URL isn't found, use "https://placehold.co/600x400.png".
 
 Product Name: {{{productName}}}
 
@@ -48,7 +48,7 @@ Example JSON Structure:
       { "store": "eBay", "price": "74,99 €", "inStock": true, "url": "https://www.ebay.de/itm/316056367676" },
       { "store": "Lidl", "price": "N/A", "inStock": false, "url": "https://www.lidl.de/p/silvercrest-kuechenmaschine-skm-550-b3/p100323055" }
     ],
-    "imageUrl": "https://placehold.co/600x400.png"
+    "imageUrl": "https://i.ebayimg.com/images/g/e3MAAOSwT~RmdsYd/s-l1600.jpg"
   }
 }
 `,
@@ -71,6 +71,7 @@ const enrichProductDataFlow = ai.defineFlow(
         if (e.message && (e.message.includes('503') || e.message.includes('overloaded'))) {
             return { error: "The AI service is currently busy or unavailable. Please try again in a few moments." };
         }
+        console.error("Error in enrichProductDataFlow:", e);
         return { error: "An unexpected error occurred while enriching product data. The AI may have failed to generate a valid response." };
     }
   }

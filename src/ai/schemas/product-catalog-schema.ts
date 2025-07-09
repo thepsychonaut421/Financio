@@ -11,7 +11,6 @@ export const EnrichedProductSchema = z.object({
   description: z.string().describe('A detailed and engaging product description.'),
   specifications: z
     .array(z.object({ key: z.string(), value: z.string() }))
-    .default([])
     .describe('A list of key-value pairs for technical specifications.'),
   availability: z
     .array(
@@ -19,12 +18,11 @@ export const EnrichedProductSchema = z.object({
         store: z.string().describe('The name of the retailer (e.g., Amazon, eBay, Lidl).'),
         price: z.string().describe('The price of the product at this store, as a formatted string (e.g., "74,99 €").'),
         inStock: z.boolean().describe('Whether the product is currently in stock at this store.'),
-        url: z.string().describe('A direct link to the product page.'),
+        url: z.string().url().describe('A direct link to the product page.'),
       })
     )
-    .default([])
     .describe('A list of stores where the product is available, including price and stock status.'),
-  imageUrl: z.string().describe("A relevant image URL for the product. Use a placeholder from 'https://placehold.co/600x400.png' if a real one isn't available."),
+  imageUrl: z.string().url().describe("A relevant image URL for the product. Use a placeholder from 'https://placehold.co/600x400.png' if a real one isn't available."),
 });
 export type EnrichedProduct = z.infer<typeof EnrichedProductSchema>;
 

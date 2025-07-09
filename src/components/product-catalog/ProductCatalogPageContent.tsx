@@ -2,11 +2,10 @@
 
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertCircle, FilePlus, Info, Loader2, List, ExternalLink, CheckCircle, XCircle, PackageSearch } from 'lucide-react';
-import { Table, TableBody, TableCell, TableHeader, TableHead, TableRow, TableCaption } from '@/components/ui/table';
+import { Table, TableBody, TableCell, TableHeader, TableHead, TableRow } from '@/components/ui/table';
 import { enrichProductData } from '@/ai/flows/enrich-product-data';
 import type { EnrichedProduct } from '@/ai/schemas/product-catalog-schema';
 import { ProductCatalogActionButtons } from './ProductCatalogActionButtons';
@@ -36,7 +35,7 @@ export function ProductCatalogPageContent() {
     setErrorMessage(null);
     setEnrichedProducts([]);
     const results: EnrichedProduct[] = [];
-    let errors: string[] = [];
+    const errors: string[] = [];
 
     for (const productName of productList) {
       const result = await enrichProductData({ productName });
@@ -50,10 +49,9 @@ export function ProductCatalogPageContent() {
     setEnrichedProducts(results);
     if (errors.length > 0) {
       setErrorMessage(errors.join('\n'));
-      setStatus('error'); // Set status to error if there were any issues
-    } else {
-      setStatus('success');
+      // Keep status 'success' to show partial results, error message will be displayed
     }
+    setStatus('success');
   };
   
   const handleClear = () => {
@@ -105,7 +103,7 @@ export function ProductCatalogPageContent() {
           </CardFooter>
         </Card>
 
-        {errorMessage && status === 'error' && (
+        {errorMessage && (
           <Alert variant="destructive" className="my-6 whitespace-pre-wrap">
             <AlertCircle className="h-4 w-4" />
             <AlertTitle>An Error Occurred</AlertTitle>
@@ -147,7 +145,7 @@ export function ProductCatalogPageContent() {
                     <p className="text-muted-foreground flex-grow">{product.description}</p>
                   </div>
                   
-                  {product.specifications.length > 0 && (
+                  {product.specifications && product.specifications.length > 0 && (
                     <div>
                       <h3 className="text-lg font-semibold mb-2">Specifications</h3>
                       <div className="overflow-x-auto rounded-md border">
@@ -165,7 +163,7 @@ export function ProductCatalogPageContent() {
                     </div>
                   )}
 
-                  {product.availability.length > 0 && (
+                  {product.availability && product.availability.length > 0 && (
                     <div>
                       <h3 className="text-lg font-semibold mb-2">Availability</h3>
                       <div className="overflow-x-auto rounded-md border">
