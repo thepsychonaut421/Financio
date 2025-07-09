@@ -12,4 +12,3 @@ import '@/ai/flows/enrich-product-data.ts';
 // but for this specific use case (direct import for type safety), it's not strictly necessary.
 // If you had Genkit tools or other flows that needed to dynamically find this schema, you might add:
 // import '@/ai/schemas/invoice-item-schema';
-

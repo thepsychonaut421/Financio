@@ -18,7 +18,6 @@ export function downloadFile(content: string | Blob, fileName: string, mimeType:
 function escapeCSVField(field: string | string[] | undefined | null): string {
   if (field === undefined || field === null) return '';
   
-  // Handle array by joining with a semicolon
   const stringField = Array.isArray(field) ? field.join('; ') : String(field);
   
   if (stringField.includes('"') || stringField.includes(',') || stringField.includes('\n') || stringField.includes('\r')) {
@@ -36,7 +35,9 @@ export function enrichedProductsToCSV(products: EnrichedProduct[]): string {
     'Enriched Title',
     'Enriched Description',
     'Suggested Categories',
-    'Image Search Keywords'
+    'Image Search Keywords',
+    'Found Image URL',
+    'Source URL',
   ];
 
   const csvRows = [
@@ -47,6 +48,8 @@ export function enrichedProductsToCSV(products: EnrichedProduct[]): string {
       escapeCSVField(product.enrichedDescription),
       escapeCSVField(product.suggestedCategories),
       escapeCSVField(product.imageSearchKeywords),
+      escapeCSVField(product.foundImageUrl),
+      escapeCSVField(product.source),
     ].join(','))
   ];
 

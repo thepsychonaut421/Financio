@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter }
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Info, AlertCircle, Package, FileText, Tags, Image as ImageIcon } from 'lucide-react';
+import { Info, AlertCircle, Package, FileText, Tags, Image as ImageIcon, Link as LinkIcon } from 'lucide-react';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
 import Image from 'next/image';
@@ -120,12 +120,13 @@ export function ProductCatalogPageContent() {
                   <CardHeader>
                     <div className="relative aspect-square w-full mb-4">
                        <Image
-                        src={`https://placehold.co/400x400.png`}
-                        alt={`Placeholder for ${product.enrichedTitle}`}
+                        src={product.foundImageUrl || `https://placehold.co/400x400.png`}
+                        alt={`Image for ${product.enrichedTitle}`}
                         layout="fill"
                         objectFit="cover"
-                        className="rounded-lg border"
+                        className="rounded-lg border bg-muted"
                         data-ai-hint={product.imageSearchKeywords}
+                        unoptimized
                       />
                     </div>
                     <CardTitle className="font-headline text-lg text-primary flex items-center gap-2">
@@ -148,8 +149,16 @@ export function ProductCatalogPageContent() {
                         </div>
                      </div>
                   </CardContent>
-                   <CardFooter>
+                   <CardFooter className="flex-col items-start gap-2 pt-4">
                        <div className="text-xs text-muted-foreground flex items-center gap-1.5"><ImageIcon className="w-3 h-3"/> <span>Image Hint: {product.imageSearchKeywords}</span></div>
+                        {product.source && (
+                          <div className="text-xs text-muted-foreground flex items-center gap-1.5 w-full truncate">
+                            <LinkIcon className="w-3 h-3 flex-shrink-0"/> 
+                            <span className="truncate">
+                              Source: <a href={product.source} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">{product.source}</a>
+                            </span>
+                          </div>
+                        )}
                    </CardFooter>
                 </Card>
               ))}
