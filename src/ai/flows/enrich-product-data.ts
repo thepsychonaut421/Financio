@@ -118,8 +118,6 @@ const enrichProductDataFlow = ai.defineFlow(
         if (e.message && (e.message.includes('503') || e.message.includes('overloaded'))) {
             return { enrichedProducts: [], error: "The AI service is currently busy or unavailable. Please try again in a few moments." };
         }
-        console.error("Error in enrichProductDataFlow:", e);
-        // This error often happens if the AI's output doesn't match the Zod schema.
         return { enrichedProducts: [], error: "An unexpected error occurred. The AI may have failed to generate a valid response that matches the required data format. Please try again." };
     }
   }
