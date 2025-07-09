@@ -71,7 +71,11 @@ export function BankStatementExtractorPageContent() {
       console.error("Error processing bank statement PDFs:", error);
       let message = 'An unexpected error occurred during processing.';
       if (error instanceof Error) {
-        message = error.message;
+        if (error.message.includes('503') || error.message.includes('overloaded')) {
+          message = "The AI service is currently busy or unavailable. Please try again in a few moments.";
+        } else {
+          message = error.message;
+        }
       }
       setErrorMessage(message);
       setStatus('error');

@@ -377,7 +377,13 @@ export function IncomingInvoicesPageContent() {
     } catch (error) {
       console.error("Error processing files:", error);
       let message = 'An unexpected error occurred during processing.';
-      if (error instanceof Error) message = error.message;
+      if (error instanceof Error) {
+        if (error.message.includes('503') || error.message.includes('overloaded')) {
+          message = "The AI service is currently busy or unavailable. Please try again in a few moments.";
+        } else {
+          message = error.message;
+        }
+      }
       setErrorMessage(message);
       setStatus('error');
       setCurrentFileProgress('Processing failed.');
@@ -797,4 +803,3 @@ export function IncomingInvoicesPageContent() {
     </div>
   );
 }
-

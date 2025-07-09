@@ -261,7 +261,14 @@ export function BankMatcherPageContent() {
       }
     } catch (err) {
       console.error("Error processing bank statements:", err);
-      const message = err instanceof Error ? err.message : "An unknown error occurred.";
+      let message = "An unknown error occurred during processing.";
+      if (err instanceof Error) {
+        if (err.message.includes('503') || err.message.includes('overloaded')) {
+          message = "The AI service is currently busy or unavailable. Please try again in a few moments.";
+        } else {
+          message = err.message;
+        }
+      }
       setErrorMessage(`Failed to process bank statements: ${message}`);
       setStatusMessage(null);
       setCurrentFileProgressText('Processing failed.');
@@ -484,4 +491,3 @@ export function BankMatcherPageContent() {
     </div>
   );
 }
-

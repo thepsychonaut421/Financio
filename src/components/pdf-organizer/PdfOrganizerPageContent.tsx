@@ -73,10 +73,11 @@ export function PdfOrganizerPageContent() {
     
     const results: ProcessingResult[] = [];
     const filenamesToEdit: Record<string, string> = {};
+    let accumulatedError = '';
 
     for (let i = 0; i < selectedFiles.length; i++) {
       const file = selectedFiles[i];
-      const fileId = uuidv4(); // Use UUID for a guaranteed unique ID
+      const fileId = uuidv4();
       setCurrentFileProgressText(`Processing ${i + 1}/${selectedFiles.length}: ${file.name}`);
       let dataUri = '';
       try {
@@ -100,21 +101,32 @@ export function PdfOrganizerPageContent() {
 
       } catch (err) {
         console.error(`Error processing file ${file.name}:`, err);
+        let message = `Failed to process ${file.name}.`;
+        if (err instanceof Error) {
+            if (err.message.includes('503') || err.message.includes('overloaded')) {
+              message = `AI service is busy for file ${file.name}. Try again later.`;
+            } else if (err.message.length < 100) { // Avoid very long generic errors
+              message = `Error on ${file.name}: ${err.message}`;
+            }
+        }
+        accumulatedError += (accumulatedError ? '\n' : '') + message;
         results.push({ 
             id: fileId, 
             originalName: file.name, 
             suggestedFilename: `Error_${file.name}`, 
-            dataUri: dataUri, // Preserve the dataUri even on failure
+            dataUri: dataUri,
             extractedDate: 'Error',
             extractedInvoiceNumber: undefined,
             extractedSupplierName: undefined,
         });
         filenamesToEdit[fileId] = `Error_${file.name}`;
-        setErrorMessage((prev) => (prev ? `${prev}\n` : '') + `Failed to process ${file.name}.`);
       }
       setOverallProgress(Math.round(((i + 1) / selectedFiles.length) * 100));
     }
 
+    if (accumulatedError) {
+        setErrorMessage(accumulatedError);
+    }
     setProcessingResults(results);
     setEditableFilenames(filenamesToEdit);
     setCurrentFileProgressText(results.length > 0 ? 'Processing complete!' : 'No files processed.');
@@ -149,19 +161,16 @@ export function PdfOrganizerPageContent() {
             const blob = await dataUriToBlob(result.dataUri);
             let originalFilename = editableFilenames[result.id] || `file_${result.id}.pdf`;
             
-            // Ensure filename ends with .pdf
             if (!originalFilename.toLowerCase().endsWith('.pdf')) {
               originalFilename += '.pdf';
             }
 
             let finalFilename = originalFilename;
             let counter = 1;
-            // Separate filename from extension
             const lastDotIndex = finalFilename.lastIndexOf('.');
             const baseName = lastDotIndex !== -1 ? finalFilename.substring(0, lastDotIndex) : finalFilename;
             const extension = lastDotIndex !== -1 ? finalFilename.substring(lastDotIndex) : '';
 
-            // Check for duplicates and append a counter if needed
             while (usedFilenames.has(finalFilename)) {
               finalFilename = `${baseName} (${counter})${extension}`;
               counter++;

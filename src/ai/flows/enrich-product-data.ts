@@ -70,14 +70,7 @@ const enrichProductDataFlow = ai.defineFlow(
     outputSchema: EnrichProductDataOutputSchema,
   },
   async (input) => {
-    try {
-      const { output } = await prompt(input);
-      return output || { enrichedProducts: [] };
-    } catch (e: any) {
-      if (e.message && (e.message.includes('503') || e.message.includes('overloaded'))) {
-          throw new Error("The AI service is currently busy or unavailable. Please try again in a few moments.");
-      }
-      throw e;
-    }
+    const { output } = await prompt(input);
+    return output || { enrichedProducts: [] };
   }
 );

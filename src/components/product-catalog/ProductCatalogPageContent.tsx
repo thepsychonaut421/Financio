@@ -47,7 +47,14 @@ export function ProductCatalogPageContent() {
       }
     } catch (error) {
       console.error("Error enriching product data:", error);
-      const message = error instanceof Error ? error.message : "An unknown error occurred.";
+      let message = "An unknown error occurred during enrichment.";
+      if (error instanceof Error) {
+        if (error.message.includes('503') || error.message.includes('overloaded')) {
+          message = "The AI service is currently busy or unavailable. Please try again in a few moments.";
+        } else {
+          message = error.message;
+        }
+      }
       setErrorMessage(message);
       setStatus('error');
     }
