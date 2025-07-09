@@ -1,6 +1,6 @@
 'use client';
 
-import type { EnrichedProduct } from '@/ai/flows/enrich-product-data';
+import type { EnrichedProduct } from '@/ai/schemas/product-catalog-schema';
 
 export function downloadFile(content: string, fileName: string, mimeType: string) {
   const blob = new Blob([content], { type: mimeType });

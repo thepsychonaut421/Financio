@@ -1,4 +1,4 @@
-import type { EnrichedProduct as EnrichedProductFromAI } from '@/ai/flows/enrich-product-data';
+import type { EnrichedProduct as EnrichedProductFromAI } from '@/ai/schemas/product-catalog-schema';
 
 // Re-exporting the main type for use in components
 export type EnrichedProduct = EnrichedProductFromAI;

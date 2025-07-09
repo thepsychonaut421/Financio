@@ -7,7 +7,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter }
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertCircle, FilePlus, Info, Loader2, List, ExternalLink, CheckCircle, XCircle, PackageSearch } from 'lucide-react';
 import { Table, TableBody, TableCell, TableHeader, TableHead, TableRow, TableCaption } from '@/components/ui/table';
-import { enrichProductData, type EnrichedProduct } from '@/ai/flows/enrich-product-data';
+import { enrichProductData } from '@/ai/flows/enrich-product-data';
+import type { EnrichedProduct } from '@/ai/schemas/product-catalog-schema';
 import { ProductCatalogActionButtons } from './ProductCatalogActionButtons';
 import type { ProductCatalogProcessingStatus } from '@/types/product';
 import Image from 'next/image';
@@ -35,7 +36,7 @@ export function ProductCatalogPageContent() {
     setErrorMessage(null);
     setEnrichedProducts([]);
     const results: EnrichedProduct[] = [];
-    const errors: string[] = [];
+    let errors: string[] = [];
 
     for (const productName of productList) {
       const result = await enrichProductData({ productName });
@@ -49,8 +50,10 @@ export function ProductCatalogPageContent() {
     setEnrichedProducts(results);
     if (errors.length > 0) {
       setErrorMessage(errors.join('\n'));
+      setStatus('error'); // Set status to error if there were any issues
+    } else {
+      setStatus('success');
     }
-    setStatus('success');
   };
   
   const handleClear = () => {
@@ -102,7 +105,7 @@ export function ProductCatalogPageContent() {
           </CardFooter>
         </Card>
 
-        {errorMessage && (
+        {errorMessage && status === 'error' && (
           <Alert variant="destructive" className="my-6 whitespace-pre-wrap">
             <AlertCircle className="h-4 w-4" />
             <AlertTitle>An Error Occurred</AlertTitle>
