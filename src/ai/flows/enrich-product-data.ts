@@ -47,27 +47,58 @@ const prompt = ai.definePrompt({
   name: 'enrichProductDataPrompt',
   input: { schema: EnrichProductDataInputSchema },
   output: { schema: EnrichProductDataOutputSchema },
-  prompt: `You are an expert e-commerce catalog manager. Your task is to take a list of raw product names and enrich them with structured data as if you have searched for them online.
+  prompt: `You are an expert e-commerce catalog manager. Your task is to take a list of raw product names and enrich them with structured data by acting as if you have searched for them online on platforms like Google, eBay, and Amazon.
 
-For each product name in the \`productNames\` array, you MUST generate a complete, structured JSON object.
+For each product name in the \`productNames\` array, you MUST generate a complete, structured JSON object that adheres to the provided schema.
 
-**Example Task:**
-If you receive the product name "ERNESTO® Topfset, 6-tlg. - B-Ware neuwertig", you should act as if you've searched on Google, eBay, and Lidl and found the following details.
+**EXAMPLE TASK:**
+If you receive the product name "SILVERCREST® Küchenmaschine »SKM 550 B3« (lila) - B-Ware neuwertig", your thinking process should be:
+1.  **Identify Core Product:** The core product is a "SILVERCREST Kitchen Machine SKM 550 B3".
+2.  **Find Details Online:** I will search for this on eBay and Lidl. I see it on eBay for €74.99. It's a B-Ware (refurbished) item. The specs are 550W power and a 3.8L bowl.
+3.  **Construct JSON:** Based on this simulated search, I will build the JSON object.
 
-**Your thinking process should be:**
-1.  **Identify the core product:** It's a "SILVERCREST Kitchen Machine SKM 550 B3".
-2.  **Find Specs:** Power is 550W, capacity is 3.8L.
-3.  **Find Availability:** It's on eBay for 74.99 EUR but out of stock on Lidl.
-4.  **Create Summary & Title:** Write a clean title and a compelling summary.
-5.  **Suggest Categories:** "Kitchenware", "Appliances".
-6.  **Image Keywords:** "kitchen machine".
-7.  **Find Image URL:** Find a plausible placeholder or real URL.
+**HERE IS THE JSON STRUCTURE YOU MUST FOLLOW FOR EACH PRODUCT:**
 
-**Based on that, you will construct this exact JSON structure for that one product inside the 'enrichedProducts' array.**
+\`\`\`json
+{
+  "rawProductName": "The original product name from the input array.",
+  "enrichedTitle": "A clean, SEO-friendly title.",
+  "summary": "A short, one-paragraph summary of the product.",
+  "technicalSpecifications": {
+    "Power": "550 W",
+    "Capacity": "3.8 L"
+  },
+  "availabilityAndPricing": [
+    {
+      "platform": "eBay",
+      "price": "74.99 EUR",
+      "status": "Available",
+      "url": "https://www.ebay.de/itm/316056367676"
+    },
+    {
+      "platform": "Lidl",
+      "price": null,
+      "status": "Out of Stock",
+      "url": "https://www.lidl.de/p/silvercrest-kitchen-tools-kuechenmaschine-skm-550-b3/p100268081"
+    }
+  ],
+  "suggestedCategories": [
+    "Kitchen Appliances",
+    "Food Processors",
+    "Refurbished"
+  ],
+  "imageSearchKeywords": "silvercrest kitchen machine",
+  "foundImageUrl": "https://i.ebayimg.com/images/g/2y8AAOSwz~5lP0Vq/s-l1600.jpg"
+}
+\`\`\`
 
-Do this for every single product name from the input array.
+**CRITICAL INSTRUCTIONS:**
+- You must return a single JSON object with a key \`enrichedProducts\` which is an array of objects, one for each product name.
+- The \`url\` in \`availabilityAndPricing\` must be a valid-looking URL.
+- \`technicalSpecifications\` and \`availabilityAndPricing\` are optional, but try your best to populate them.
+- \`price\` inside \`availabilityAndPricing\` is a string and can be optional.
 
-Raw Product Names to process:
+Now, process the following product names:
 {{{json productNames}}}
 `,
 });
