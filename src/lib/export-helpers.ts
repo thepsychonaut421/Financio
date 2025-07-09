@@ -90,11 +90,24 @@ export function incomingInvoicesToERPNextCSVComplete(invoices: ERPIncomingInvoic
   if (!invoices || invoices.length === 0) return '';
 
   const allHeaders = [
-    "ID", "Supplier", "Date", "ID (Items)", "Accepted Qty (Items)",
-    "Accepted Qty in Stock UOM (Items)", "Amount (Items)",
-    "Amount (Company Currency) (Items)", "Item Name (Items)", "Rate (Items)",
-    "Rate (Company Currency) (Items)", "UOM (Items)",
-    "UOM Conversion Factor (Items)", "items.expense_account",
+    "ID",
+    "Series",
+    "Supplier",
+    "Date",
+    "Credit To",
+    "Supplier Invoice No",
+    "Supplier Invoice Date",
+    "ID (Items)",
+    "Accepted Qty (Items)",
+    "Accepted Qty in Stock UOM (Items)",
+    "Amount (Items)",
+    "Amount (Company Currency) (Items)",
+    "Item Name (Items)",
+    "Rate (Items)",
+    "Rate (Company Currency) (Items)",
+    "UOM (Items)",
+    "UOM Conversion Factor (Items)",
+    "items.expense_account",
   ];
   
   let csvString = allHeaders.map(escapeCSVField).join(',') + '\n';
@@ -116,15 +129,17 @@ export function incomingInvoicesToERPNextCSVComplete(invoices: ERPIncomingInvoic
       itemsToProcess.forEach((item, itemIndex) => {
           let invoiceLevelData;
           if (itemIndex === 0) {
-              // First row for this invoice gets the main details
               invoiceLevelData = [
-                  escapeCSVField(invoice.erpNextInvoiceName),
+                  "", // ID
+                  "", // Series
                   escapeCSVField(invoice.lieferantName),
+                  escapeCSVField(invoice.datum),
+                  escapeCSVField(invoice.kontenrahmen),
+                  escapeCSVField(invoice.rechnungsnummer),
                   escapeCSVField(invoice.datum),
               ];
           } else {
-              // Subsequent rows for the same invoice have blank main details
-              invoiceLevelData = ['', '', ''];
+              invoiceLevelData = ['', '', '', '', '', '', ''];
           }
 
           const itemCodeValue = item.productCode || item.productName || `FALLBACK_ITEM_INV${invoiceIndex + 1}_ITEM${itemIndex + 1}`;
@@ -170,11 +185,24 @@ export function incomingInvoicesToTSV(invoices: (IncomingInvoiceItem | ERPIncomi
   let tsvString = '';
 
   const erpHeaders = [
-    "ID", "Supplier", "Date", "ID (Items)", "Accepted Qty (Items)",
-    "Accepted Qty in Stock UOM (Items)", "Amount (Items)",
-    "Amount (Company Currency) (Items)", "Item Name (Items)", "Rate (Items)",
-    "Rate (Company Currency) (Items)", "UOM (Items)",
-    "UOM Conversion Factor (Items)", "items.expense_account",
+    "ID",
+    "Series",
+    "Supplier",
+    "Date",
+    "Credit To",
+    "Supplier Invoice No",
+    "Supplier Invoice Date",
+    "ID (Items)",
+    "Accepted Qty (Items)",
+    "Accepted Qty in Stock UOM (Items)",
+    "Amount (Items)",
+    "Amount (Company Currency) (Items)",
+    "Item Name (Items)",
+    "Rate (Items)",
+    "Rate (Company Currency) (Items)",
+    "UOM (Items)",
+    "UOM Conversion Factor (Items)",
+    "items.expense_account",
   ];
   
   const standardModeHeaders = [
@@ -208,13 +236,17 @@ export function incomingInvoicesToTSV(invoices: (IncomingInvoiceItem | ERPIncomi
             if (itemIndex === 0) {
                 // First row gets details
                 invoiceLevelData = [
-                    erpInvoice.erpNextInvoiceName,
+                    "",
+                    "",
                     erpInvoice.lieferantName,
+                    erpInvoice.datum,
+                    erpInvoice.kontenrahmen,
+                    erpInvoice.rechnungsnummer,
                     erpInvoice.datum,
                 ].map(f => escapeTSVField(f));
             } else {
                 // Subsequent rows are blank
-                invoiceLevelData = ['', '', ''];
+                invoiceLevelData = ['', '', '', '', '', '', ''];
             }
 
             const itemCodeValue = item.productCode || item.productName || `FALLBACK_ITEM_INV${invoiceIndex + 1}_ITEM${itemIndex + 1}`;
