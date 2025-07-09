@@ -2,7 +2,7 @@
 'use client';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { ListOrdered, ReceiptText, Landmark, FileEdit, FileScan, LogIn, LogOut, Home as HomeIcon, Menu, UserCircle } from 'lucide-react';
+import { ListOrdered, ReceiptText, Landmark, FileEdit, FileScan, LogIn, LogOut, Home as HomeIcon, Menu, UserCircle, Package } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import React from 'react';
@@ -15,6 +15,7 @@ const mainNavLinks = [
   { href: '/bank-matcher', label: 'Bank Matcher', icon: <Landmark className="w-5 h-5" /> },
   { href: '/pdf-organizer', label: 'PDF Organizer', icon: <FileEdit className="w-5 h-5" /> },
   { href: '/bank-statement-extractor', label: 'Bank Statements', icon: <FileScan className="w-5 h-5" /> },
+  { href: '/product-catalog', label: 'Product Catalog', icon: <Package className="w-5 h-5" /> },
 ];
 
 export function AppHeader() {
