@@ -26,7 +26,15 @@ const prompt = ai.definePrompt({
     input: { schema: EnrichProductDataInputSchema },
     output: { schema: z.object({ product: EnrichedProductSchema }) }, // We expect the AI to return the product nested
     prompt: `You are an expert product catalog manager. Your task is to take a product name and generate a detailed, structured JSON object for it.
-You must research the product to find accurate information. If information for a specific field cannot be found, use a sensible default or an empty array/string, but DO NOT invent details like technical specs. If a real image URL isn't found, use "https://placehold.co/600x400.png".
+You must research the product to find accurate information. If information for a specific field cannot be found, use a sensible default or an empty array/string, but DO NOT invent details.
+Specifically, for the 'specifications' (Merkmale) section, you must try to find:
+- Marke (Brand)
+- Modell (Model)
+- Herstellernummer (Manufacturer Part Number / MPN)
+- EAN (if available)
+- Other relevant technical specs like Leistung (Power), Kapazität (Capacity), etc.
+
+If a real image URL isn't found, use "https://placehold.co/600x400.png".
 
 Product Name: {{{productName}}}
 
@@ -35,14 +43,15 @@ Based on the product name, generate a JSON object that strictly follows this str
 Example JSON Structure:
 {
   "product": {
-    "originalProductName": "{{{productName}}}",
+    "originalProductName": "SILVERCREST® Kitchen Machine SKM 550 B3",
     "enrichedTitle": "SILVERCREST® Kitchen Machine SKM 550 B3 - Powerful 550W Mixer",
     "description": "The SILVERCREST® Kitchen Machine SKM 550 B3 is a versatile and powerful appliance for all your baking and cooking needs. With a 550W motor, it can handle everything from mixing and kneading to whipping and slicing. The large 3.8-liter mixing bowl and included accessories make it the perfect kitchen assistant.",
     "specifications": [
+      { "key": "Marke", "value": "Silvercrest" },
+      { "key": "Modell", "value": "SKM 550 B3" },
+      { "key": "Herstellernummer", "value": "100344871001" },
       { "key": "Power", "value": "550 W" },
-      { "key": "Mixing Bowl Capacity", "value": "3.8 liters" },
-      { "key": "Blender Capacity", "value": "1 liter" },
-      { "key": "Speed Settings", "value": "4 levels" }
+      { "key": "Mixing Bowl Capacity", "value": "3.8 liters" }
     ],
     "availability": [
       { "store": "eBay", "price": "74,99 €", "inStock": true, "url": "https://www.ebay.de/itm/316056367676" },
@@ -71,7 +80,6 @@ const enrichProductDataFlow = ai.defineFlow(
         if (e.message && (e.message.includes('503') || e.message.includes('overloaded'))) {
             return { error: "The AI service is currently busy or unavailable. Please try again in a few moments." };
         }
-        console.error("Error in enrichProductDataFlow:", e);
         return { error: "An unexpected error occurred while enriching product data. The AI may have failed to generate a valid response." };
     }
   }
