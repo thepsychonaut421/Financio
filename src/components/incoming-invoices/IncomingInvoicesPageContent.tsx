@@ -35,6 +35,7 @@ interface IncomingInvoicesPageCache {
   existingErpInvoiceKeys?: string[];
   erpSortKey?: ERPSortKey | null;
   erpSortOrder?: SortOrder;
+  kontenrahmen?: string;
 }
 
 const erpTableSortOptions: { key: ERPSortKey; label: string }[] = [
@@ -77,6 +78,8 @@ export function IncomingInvoicesPageContent() {
   const [isExportingZip, setIsExportingZip] = useState(false);
   const { toast } = useToast();
   const [currentYear, setCurrentYear] = useState<string>('');
+  const [kontenrahmen, setKontenrahmen] = useState('20000 - Verbindlichkeiten Lief Inland');
+
 
   const [erpExportFile, setErpExportFile] = useState<File | null>(null);
   const [existingErpInvoiceKeys, setExistingErpInvoiceKeys] = useState<Set<string>>(new Set());
@@ -106,6 +109,7 @@ export function IncomingInvoicesPageContent() {
           setExtractedInvoices(Array.isArray(cachedData.extractedInvoices) ? cachedData.extractedInvoices : []);
           setErpProcessedInvoices(Array.isArray(cachedData.erpProcessedInvoices) ? cachedData.erpProcessedInvoices : []);
           setErpMode(typeof cachedData.erpMode === 'boolean' ? cachedData.erpMode : false);
+          setKontenrahmen(cachedData.kontenrahmen || '20000 - Verbindlichkeiten Lief Inland');
           if (Array.isArray(cachedData.existingErpInvoiceKeys)) {
             setExistingErpInvoiceKeys(new Set(cachedData.existingErpInvoiceKeys));
           }
@@ -138,13 +142,14 @@ export function IncomingInvoicesPageContent() {
           existingErpInvoiceKeys: Array.from(existingErpInvoiceKeys),
           erpSortKey,
           erpSortOrder,
+          kontenrahmen,
         };
         localStorage.setItem(LOCAL_STORAGE_PAGE_CACHE_KEY, JSON.stringify(cacheToSave));
       } catch (error) {
         console.error("Failed to save incoming invoices page cache to localStorage:", error);
       }
     }
-  }, [extractedInvoices, erpProcessedInvoices, erpMode, status, existingErpInvoiceKeys, erpSortKey, erpSortOrder]);
+  }, [extractedInvoices, erpProcessedInvoices, erpMode, status, existingErpInvoiceKeys, erpSortKey, erpSortOrder, kontenrahmen]);
   
   const supplierMap: Record<string, string> = {
     "LIDL": "Lidl",
@@ -164,7 +169,6 @@ export function IncomingInvoicesPageContent() {
     "UNBEKANNT_SUPPLIER_AI_EXTRACTED": "UNBEKANNT_SUPPLIER_PLACEHOLDER",
   };
   
-  const DEFAULT_KREDITOR_ACCOUNT = ""; 
 
   const formatDateForERP = (dateString?: string): string | undefined => {
     if (!dateString || dateString.trim() === '') return undefined;
@@ -343,7 +347,7 @@ export function IncomingInvoicesPageContent() {
           dueDate: dueDateERP,   
           wahrung: 'EUR', 
           istBezahlt: istBezahltStatus, 
-          kontenrahmen: DEFAULT_KREDITOR_ACCOUNT, 
+          kontenrahmen: kontenrahmen.trim(), 
           remarks: remarks.trim(),
         };
         allProcessedForMatcher.push(erpCompatibleInvoice);
@@ -728,6 +732,35 @@ export function IncomingInvoicesPageContent() {
             </div>
           )}
         </div>
+        
+        {erpMode && (
+          <Card className="w-full max-w-2xl mx-auto shadow-lg">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 font-headline">
+                <FileCog className="w-6 h-6 text-primary" />
+                ERPNext Export Settings
+              </CardTitle>
+              <CardDescription>
+                Configure default values for ERPNext exports. This value will be saved for your next session.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2">
+                <Label htmlFor="kontenrahmen-input" className="font-medium">
+                  Default Accounts Payable (Kontenrahmen)
+                </Label>
+                <Input
+                  id="kontenrahmen-input"
+                  value={kontenrahmen}
+                  onChange={(e) => setKontenrahmen(e.target.value)}
+                  placeholder="e.g., 20000 - Verbindlichkeiten"
+                  disabled={status === 'processing'}
+                />
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
 
         {status === 'processing' && (
           <div className="my-6 p-4 border rounded-lg shadow-sm bg-card">
