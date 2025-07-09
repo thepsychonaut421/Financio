@@ -54,8 +54,11 @@ export function BankStatementExtractorPageContent() {
         setCurrentFileProgress(`Processing file ${i + 1} of ${selectedFiles.length}: ${file.name}`);
         
         const dataUri = await readFileAsDataURL(file);
-        // The extractBankStatementData flow already handles ID generation and normalization
         const extractionResult = await extractBankStatementData({ statementDataUri: dataUri });
+
+        if (extractionResult.error) {
+          throw new Error(extractionResult.error);
+        }
         
         if (extractionResult && extractionResult.transactions) {
           allTransactions = allTransactions.concat(extractionResult.transactions);
@@ -69,14 +72,7 @@ export function BankStatementExtractorPageContent() {
 
     } catch (error) {
       console.error("Error processing bank statement PDFs:", error);
-      let message = 'An unexpected error occurred during processing.';
-      if (error instanceof Error) {
-        if (error.message.includes('503') || error.message.includes('overloaded')) {
-          message = "The AI service is currently busy or unavailable. Please try again in a few moments.";
-        } else {
-          message = error.message;
-        }
-      }
+      const message = error instanceof Error ? error.message : 'An unexpected error occurred during processing.';
       setErrorMessage(message);
       setStatus('error');
       setCurrentFileProgress('Processing failed.');

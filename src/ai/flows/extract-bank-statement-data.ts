@@ -45,7 +45,8 @@ export type ExtractBankStatementDataInput = z.infer<typeof ExtractBankStatementD
 
 // Output schema uses the processed transaction schema with guaranteed unique IDs
 const ExtractBankStatementDataOutputSchema = z.object({
-  transactions: z.array(BankTransactionProcessedSchema).describe('An array of bank transactions with system-generated unique IDs.')
+  transactions: z.array(BankTransactionProcessedSchema).describe('An array of bank transactions with system-generated unique IDs.'),
+  error: z.string().optional().describe('An error message if the operation failed.'),
 });
 export type ExtractBankStatementDataOutput = z.infer<typeof ExtractBankStatementDataOutputSchema>;
 
@@ -121,6 +122,11 @@ function ensureDateYYYYMMDD(dateStrRaw: string | undefined): string {
 
 export async function extractBankStatementData(input: ExtractBankStatementDataInput): Promise<ExtractBankStatementDataOutput> {
   const flowResult = await extractBankStatementDataFlow(input);
+
+  if (flowResult.error) {
+    return { transactions: [], error: flowResult.error };
+  }
+
   const rawTransactionsFromAI = flowResult.transactions || [];
 
   const normalizedTransactions: BankTransactionAI[] = rawTransactionsFromAI.map(aiTx => {
@@ -144,6 +150,11 @@ export async function extractBankStatementData(input: ExtractBankStatementDataIn
 
   return { transactions: normalizedTransactions };
 }
+
+const AIFlowOutputSchema = z.object({ 
+    transactions: z.array(AIModelOutputTransactionSchema),
+    error: z.string().optional(),
+});
 
 const prompt = ai.definePrompt({
   name: 'extractBankStatementDataPrompt',
@@ -179,10 +190,17 @@ const extractBankStatementDataFlow = ai.defineFlow(
   {
     name: 'extractBankStatementDataFlow',
     inputSchema: ExtractBankStatementDataInputSchema,
-    outputSchema: z.object({ transactions: z.array(AIModelOutputTransactionSchema) }),
+    outputSchema: AIFlowOutputSchema,
   },
   async input => {
-    const {output} = await prompt(input, {model: 'googleai/gemini-1.5-flash-latest'});
-    return output!;
+    try {
+        const {output} = await prompt(input, {model: 'googleai/gemini-1.5-flash-latest'});
+        return output || { transactions: [] };
+    } catch (e: any) {
+        if (e.message && (e.message.includes('503') || e.message.includes('overloaded'))) {
+            return { transactions: [], error: "The AI service is currently busy or unavailable. Please try again in a few moments." };
+        }
+        return { transactions: [], error: "An unexpected error occurred during bank statement extraction." };
+    }
   }
 );

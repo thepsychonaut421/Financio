@@ -207,6 +207,11 @@ export function BankMatcherPageContent() {
           setStatusMessage(`Extracting transactions from PDF: ${file.name} using AI...`);
           const dataUri = await readFileAsDataURL(file);
           const aiResult = await extractBankStatementData({ statementDataUri: dataUri });
+          
+          if(aiResult.error) {
+            throw new Error(aiResult.error);
+          }
+
           parsedTxFromSource = (aiResult.transactions || []).map((tx: BankTransactionAI) => ({
             id: tx.id || uuidv4(),
             date: tx.date,
@@ -261,14 +266,7 @@ export function BankMatcherPageContent() {
       }
     } catch (err) {
       console.error("Error processing bank statements:", err);
-      let message = "An unknown error occurred during processing.";
-      if (err instanceof Error) {
-        if (err.message.includes('503') || err.message.includes('overloaded')) {
-          message = "The AI service is currently busy or unavailable. Please try again in a few moments.";
-        } else {
-          message = err.message;
-        }
-      }
+      const message = err instanceof Error ? err.message : "An unknown error occurred during processing.";
       setErrorMessage(`Failed to process bank statements: ${message}`);
       setStatusMessage(null);
       setCurrentFileProgressText('Processing failed.');

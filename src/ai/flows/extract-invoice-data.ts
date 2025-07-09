@@ -26,13 +26,15 @@ export type ExtractInvoiceDataInput = z.infer<typeof ExtractInvoiceDataInputSche
 // This schema defines what the AI model is asked to produce.
 // Line items use AILineItemSchema which allows for optional quantity/price.
 const AIOutputSchema = z.object({
-  invoiceDetails: z.array(AILineItemSchema).describe('An array of invoice details extracted from the invoice.')
+  invoiceDetails: z.array(AILineItemSchema).describe('An array of invoice details extracted from the invoice.'),
+  error: z.string().optional().describe('An error message if the operation failed.'),
 });
 
 // This type defines what the exported function will return after normalization.
 // Line items conform to AppLineItem where quantity/price are required.
 export type ExtractInvoiceDataOutput = {
   invoiceDetails: AppLineItem[];
+  error?: string;
 };
 
 
@@ -52,6 +54,10 @@ function normalizeProductCode(code: any): string {
 
 export async function extractInvoiceData(input: ExtractInvoiceDataInput): Promise<ExtractInvoiceDataOutput> {
   const rawOutput = await extractInvoiceDataFlow(input);
+
+  if (rawOutput.error) {
+    return { invoiceDetails: [], error: rawOutput.error };
+  }
 
   // Normalize the output
   const normalizedInvoiceDetails: AppLineItem[] = (rawOutput.invoiceDetails || []).map(item => ({
@@ -88,8 +94,15 @@ const extractInvoiceDataFlow = ai.defineFlow(
     inputSchema: ExtractInvoiceDataInputSchema,
     outputSchema: AIOutputSchema, // Flow's direct output matches AI's schema
   },
-  async input => {
-    const {output} = await prompt(input, {model: 'googleai/gemini-1.5-flash-latest'});
-    return output!;
+  async (input) => {
+    try {
+        const {output} = await prompt(input, {model: 'googleai/gemini-1.5-flash-latest'});
+        return output || { invoiceDetails: [] };
+    } catch (e: any) {
+        if (e.message && (e.message.includes('503') || e.message.includes('overloaded'))) {
+            return { invoiceDetails: [], error: "The AI service is currently busy or unavailable. Please try again in a few moments." };
+        }
+        return { invoiceDetails: [], error: "An unexpected error occurred during invoice data extraction." };
+    }
   }
 );

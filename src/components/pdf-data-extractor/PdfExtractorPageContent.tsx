@@ -10,7 +10,7 @@ import { AlertCircle, Info } from 'lucide-react';
 import { readFileAsDataURL } from '@/lib/file-helpers';
 import { extractInvoiceData } from '@/ai/flows/extract-invoice-data';
 import { normalizeAndDeduplicateData } from '@/ai/flows/normalize-and-deduplicate-data';
-import type { ExtractedItem as AIOutputItem } from '@/ai/flows/extract-invoice-data';
+import type { ExtractInvoiceDataOutput } from '@/ai/flows/extract-invoice-data';
 import type { ExtractedItem, ProcessingStatus } from '@/types/invoice';
 
 export function PdfExtractorPageContent() {
@@ -46,7 +46,7 @@ export function PdfExtractorPageContent() {
     setProgress(0);
     setExtractedItems([]);
     
-    let allInvoiceDetails: AIOutputItem[] = [];
+    let allInvoiceDetails: ExtractedItem[] = [];
 
     try {
       for (let i = 0; i < selectedFiles.length; i++) {
@@ -54,7 +54,11 @@ export function PdfExtractorPageContent() {
         setCurrentFileProgress(`Processing file ${i + 1} of ${selectedFiles.length}: ${file.name}`);
         
         const dataUri = await readFileAsDataURL(file);
-        const extractionResult = await extractInvoiceData({ invoiceDataUri: dataUri });
+        const extractionResult: ExtractInvoiceDataOutput = await extractInvoiceData({ invoiceDataUri: dataUri });
+
+        if (extractionResult.error) {
+          throw new Error(extractionResult.error);
+        }
         
         if (extractionResult && extractionResult.invoiceDetails) {
           allInvoiceDetails = allInvoiceDetails.concat(extractionResult.invoiceDetails);
@@ -76,14 +80,7 @@ export function PdfExtractorPageContent() {
 
     } catch (error) {
       console.error("Error processing files:", error);
-      let message = 'An unexpected error occurred during processing.';
-      if (error instanceof Error) {
-        if (error.message.includes('503') || error.message.includes('overloaded')) {
-          message = "The AI service is currently busy or unavailable. Please try again in a few moments.";
-        } else {
-          message = error.message;
-        }
-      }
+      const message = error instanceof Error ? error.message : 'An unexpected error occurred during processing.';
       setErrorMessage(message);
       setStatus('error');
       setCurrentFileProgress('Processing failed.');

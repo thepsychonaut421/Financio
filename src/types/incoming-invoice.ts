@@ -14,6 +14,7 @@ export interface IncomingInvoiceData {
   kundenNummer?: string;
   bestellNummer?: string;
   isPaidByAI?: boolean;
+  error?: string;
 }
 
 export interface IncomingInvoiceItem extends IncomingInvoiceData {

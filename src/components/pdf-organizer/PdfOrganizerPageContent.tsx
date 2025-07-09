@@ -86,6 +86,10 @@ export function PdfOrganizerPageContent() {
           pdfDataUri: dataUri,
           originalFilename: file.name,
         });
+
+        if (aiResult.error) {
+          throw new Error(aiResult.error);
+        }
         
         const resultEntry: ProcessingResult = {
           id: fileId,
@@ -101,14 +105,7 @@ export function PdfOrganizerPageContent() {
 
       } catch (err) {
         console.error(`Error processing file ${file.name}:`, err);
-        let message = `Failed to process ${file.name}.`;
-        if (err instanceof Error) {
-            if (err.message.includes('503') || err.message.includes('overloaded')) {
-              message = `AI service is busy for file ${file.name}. Try again later.`;
-            } else if (err.message.length < 100) { // Avoid very long generic errors
-              message = `Error on ${file.name}: ${err.message}`;
-            }
-        }
+        const message = err instanceof Error ? err.message : `Failed to process ${file.name}.`;
         accumulatedError += (accumulatedError ? '\n' : '') + message;
         results.push({ 
             id: fileId, 

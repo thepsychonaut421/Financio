@@ -25,6 +25,7 @@ const SuggestPdfFilenameOutputSchema = z.object({
   extractedInvoiceNumber: z.string().optional().describe('The extracted invoice number, if found.'),
   extractedSupplierName: z.string().optional().describe('The extracted supplier name, if found.'),
   extractedDate: z.string().optional().describe('The extracted invoice date (preferably YYYY-MM-DD), if found.'),
+  error: z.string().optional().describe('An error message if the operation failed.'),
 });
 export type SuggestPdfFilenameOutput = z.infer<typeof SuggestPdfFilenameOutputSchema>;
 
@@ -48,6 +49,10 @@ function sanitizeFilename(name: string): string {
 
 export async function suggestPdfFilename(input: SuggestPdfFilenameInput): Promise<SuggestPdfFilenameOutput> {
   const rawResult = await suggestPdfFilenameFlow(input);
+  
+  if (rawResult.error) {
+    return { ...rawResult, suggestedFilename: `Error_${input.originalFilename}` };
+  }
   
   let finalFilename = rawResult.suggestedFilename;
   if (!finalFilename || finalFilename.trim() === '' || finalFilename.toLowerCase() === '.pdf') {
@@ -103,7 +108,14 @@ const suggestPdfFilenameFlow = ai.defineFlow(
     outputSchema: SuggestPdfFilenameOutputSchema,
   },
   async (input) => {
-    const { output } = await prompt(input, {model: 'googleai/gemini-1.5-flash-latest'});
-    return output!;
+    try {
+      const { output } = await prompt(input, {model: 'googleai/gemini-1.5-flash-latest'});
+      return output || { suggestedFilename: `Processed_${input.originalFilename}` };
+    } catch (e: any) {
+        if (e.message && (e.message.includes('503') || e.message.includes('overloaded'))) {
+            return { suggestedFilename: `Error_${input.originalFilename}`, error: "The AI service is currently busy or unavailable. Please try again in a few moments." };
+        }
+        return { suggestedFilename: `Error_${input.originalFilename}`, error: "An unexpected error occurred while suggesting a filename." };
+    }
   }
 );

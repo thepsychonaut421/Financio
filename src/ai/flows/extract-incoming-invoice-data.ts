@@ -34,7 +34,8 @@ const AIOutputSchema = z.object({
   rechnungspositionen: z.array(AILineItemSchema).describe('An array of line items (Rechnungspositionen) from the invoice, including productCode, productName, quantity, and unitPrice. If quantity or unitPrice are not found, use 0 and 0.0 respectively.'),
   kundenNummer: z.string().optional().describe('The customer number (Kunden-Nr.) if present.'),
   bestellNummer: z.string().optional().describe('The order number (Bestell-Nr., Bestellnummer) if present and distinct from Rechnungsnummer.'),
-  isPaid: z.boolean().optional().describe('Whether the invoice is marked as paid ("Bezahlt"). True if paid, false or undefined otherwise.')
+  isPaid: z.boolean().optional().describe('Whether the invoice is marked as paid ("Bezahlt"). True if paid, false or undefined otherwise.'),
+  error: z.string().optional().describe('An error message if the operation failed.'),
 });
 
 // Type for the exported function's return value (uses AppLineItem for stricter line items)
@@ -51,6 +52,7 @@ export type ExtractIncomingInvoiceDataOutput = {
   kundenNummer?: string;
   bestellNummer?: string;
   isPaid?: boolean; // This is what AI directly returns, will be mapped to istBezahlt in calling component
+  error?: string;
 }
 
 // Helper function for product code normalization
@@ -68,6 +70,10 @@ function normalizeProductCode(code: any): string {
 
 export async function extractIncomingInvoiceData(input: ExtractIncomingInvoiceDataInput): Promise<ExtractIncomingInvoiceDataOutput> {
   const rawOutput = await extractIncomingInvoiceDataFlow(input);
+
+  if (rawOutput.error) {
+    return { rechnungspositionen: [], error: rawOutput.error };
+  }
 
   const normalizedLineItems: AppLineItem[] = (rawOutput.rechnungspositionen || []).map(item => ({
     productCode: normalizeProductCode(item.productCode),
@@ -175,8 +181,15 @@ const extractIncomingInvoiceDataFlow = ai.defineFlow(
     inputSchema: ExtractIncomingInvoiceDataInputSchema,
     outputSchema: AIOutputSchema, // Flow's direct output matches AI's schema
   },
-  async input => {
-    const {output} = await prompt(input, {model: 'googleai/gemini-1.5-flash-latest'});
-    return output!;
+  async (input) => {
+    try {
+        const {output} = await prompt(input, {model: 'googleai/gemini-1.5-flash-latest'});
+        return output || { rechnungspositionen: [] };
+    } catch (e: any) {
+        if (e.message && (e.message.includes('503') || e.message.includes('overloaded'))) {
+            return { rechnungspositionen: [], error: "The AI service is currently busy or unavailable. Please try again in a few moments." };
+        }
+        return { rechnungspositionen: [], error: "An unexpected error occurred during invoice extraction." };
+    }
   }
 );

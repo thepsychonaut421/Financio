@@ -29,6 +29,7 @@ const EnrichedProductSchema = z.object({
 
 const EnrichProductDataOutputSchema = z.object({
   enrichedProducts: z.array(EnrichedProductSchema).describe('An array of enriched product data objects.'),
+  error: z.string().optional().describe('An error message if the operation failed.'),
 });
 export type EnrichProductDataOutput = z.infer<typeof EnrichProductDataOutputSchema>;
 
@@ -70,7 +71,14 @@ const enrichProductDataFlow = ai.defineFlow(
     outputSchema: EnrichProductDataOutputSchema,
   },
   async (input) => {
-    const { output } = await prompt(input);
-    return output || { enrichedProducts: [] };
+    try {
+      const { output } = await prompt(input);
+      return output || { enrichedProducts: [] };
+    } catch (e: any) {
+        if (e.message && (e.message.includes('503') || e.message.includes('overloaded'))) {
+            return { enrichedProducts: [], error: "The AI service is currently busy or unavailable. Please try again in a few moments." };
+        }
+        return { enrichedProducts: [], error: "An unexpected error occurred during the enrichment process." };
+    }
   }
 );

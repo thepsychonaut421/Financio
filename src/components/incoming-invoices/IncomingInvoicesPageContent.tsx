@@ -284,6 +284,10 @@ export function IncomingInvoicesPageContent() {
         const dataUri = await readFileAsDataURL(file);
         const aiResult: ExtractIncomingInvoiceDataOutput = await extractIncomingInvoiceData({ invoiceDataUri: dataUri });
         
+        if (aiResult.error) {
+          throw new Error(aiResult.error);
+        }
+
         let finalLieferantName = (aiResult.lieferantName || "").trim();
         const upperCaseExtractedName = finalLieferantName.toUpperCase();
 
@@ -380,14 +384,7 @@ export function IncomingInvoicesPageContent() {
       setCurrentFileProgress('Processing complete!');
     } catch (error) {
       console.error("Error processing files:", error);
-      let message = 'An unexpected error occurred during processing.';
-      if (error instanceof Error) {
-        if (error.message.includes('503') || error.message.includes('overloaded')) {
-          message = "The AI service is currently busy or unavailable. Please try again in a few moments.";
-        } else {
-          message = error.message;
-        }
-      }
+      const message = error instanceof Error ? error.message : 'An unexpected error occurred during processing.';
       setErrorMessage(message);
       setStatus('error');
       setCurrentFileProgress('Processing failed.');

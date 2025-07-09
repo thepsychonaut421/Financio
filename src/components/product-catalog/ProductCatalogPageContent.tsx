@@ -39,6 +39,11 @@ export function ProductCatalogPageContent() {
 
     try {
       const result = await enrichProductData({ productNames });
+
+      if (result.error) {
+        throw new Error(result.error);
+      }
+
       if (result && result.enrichedProducts) {
         setEnrichedProducts(result.enrichedProducts);
         setStatus('success');
@@ -47,14 +52,7 @@ export function ProductCatalogPageContent() {
       }
     } catch (error) {
       console.error("Error enriching product data:", error);
-      let message = "An unknown error occurred during enrichment.";
-      if (error instanceof Error) {
-        if (error.message.includes('503') || error.message.includes('overloaded')) {
-          message = "The AI service is currently busy or unavailable. Please try again in a few moments.";
-        } else {
-          message = error.message;
-        }
-      }
+      const message = error instanceof Error ? error.message : "An unknown error occurred during enrichment.";
       setErrorMessage(message);
       setStatus('error');
     }
