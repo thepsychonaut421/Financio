@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useState, useEffect } from 'react';
@@ -49,7 +50,6 @@ export function ProductCatalogPageContent() {
     setEnrichedProducts(results);
     if (errors.length > 0) {
       setErrorMessage(errors.join('\n'));
-      // Keep status 'success' to show partial results, error message will be displayed
     }
     setStatus('success');
   };
