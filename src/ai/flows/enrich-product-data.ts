@@ -1,3 +1,4 @@
+
 'use server';
 /**
  * @fileOverview Enriches product data using an AI model.
@@ -88,7 +89,6 @@ const enrichProductDataFlow = ai.defineFlow(
   },
   async (input) => {
     try {
-      // The output is now a string that we need to parse
       const { output } = await prompt(input);
       if (!output) {
         return { error: 'Das AI-Modell hat eine leere Antwort zurückgegeben.' };
@@ -115,7 +115,6 @@ const enrichProductDataFlow = ai.defineFlow(
           return { error: `Die vom AI-Modell zurückgegebenen Daten haben ein unerwartetes Format. Fehler: ${validationResult.error.flatten().formErrors.join(', ')}` };
       }
 
-      // The flow's outputSchema is { product?: ..., error?: ... }, so wrap the result.
       return { product: validationResult.data };
 
     } catch (e: any) {
