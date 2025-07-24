@@ -53,12 +53,13 @@ export function LoginPageContent() {
         <CardHeader className="space-y-3 text-center bg-card p-8">
            <Link href="/" className="inline-block mx-auto">
             <Image 
-                src="/financio-logo.png" 
+                src="https://placehold.co/120x32.png" 
                 alt="Financio Logo"
                 width={120}
                 height={32}
                 className="mx-auto mb-4"
                 priority
+                data-ai-hint="logo"
             />
           </Link>
           <CardTitle className="text-3xl font-bold font-headline text-primary">Secure Login</CardTitle>

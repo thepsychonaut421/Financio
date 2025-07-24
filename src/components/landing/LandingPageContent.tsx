@@ -70,10 +70,11 @@ export function LandingPageContent() {
               <div className="absolute inset-0 bg-gradient-to-t from-background via-transparent to-transparent opacity-50 rounded-lg"></div>
               {/* Using a standard img tag to prevent layout issues */}
               <img
-                src="/financio-banner.png"
-                alt="Financio Banner with logo and tagline"
+                src="https://placehold.co/1200x400.png"
+                alt="Financio Banner"
                 className="rounded-xl shadow-2xl mx-auto relative z-10 border border-border max-w-full h-auto"
                 style={{ maxWidth: '1200px' }}
+                data-ai-hint="app screenshot"
               />
             </div>
           </div>
