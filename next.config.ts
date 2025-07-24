@@ -2,6 +2,7 @@ import type {NextConfig} from 'next';
 
 const nextConfig: NextConfig = {
   // Force rebuild to resolve EADDRINUSE error
+  // This comment is to force a rebuild
   typescript: {
     ignoreBuildErrors: true,
   },

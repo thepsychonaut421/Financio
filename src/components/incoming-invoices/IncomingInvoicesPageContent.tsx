@@ -275,6 +275,7 @@ export function IncomingInvoicesPageContent() {
     const regularResultsDisplay: IncomingInvoiceItem[] = [];
     const erpResultsDisplay: ERPIncomingInvoiceItem[] = [];
     const yearCounters: Record<string, number> = {};
+    let accumulatedErrors: string[] = [];
 
     try {
       for (let i = 0; i < selectedFiles.length; i++) {
@@ -285,10 +286,10 @@ export function IncomingInvoicesPageContent() {
         const aiResult: ExtractIncomingInvoiceDataOutput = await extractIncomingInvoiceData({ invoiceDataUri: dataUri });
         
         if (aiResult.error) {
-          setErrorMessage(aiResult.error);
-          setStatus('error');
-          setCurrentFileProgress('Processing failed.');
-          return;
+          accumulatedErrors.push(`${file.name}: ${aiResult.error}`);
+          // Continue to the next file instead of stopping
+          setProgressValue(Math.round(((i + 1) / selectedFiles.length) * 100));
+          continue;
         }
 
         let finalLieferantName = (aiResult.lieferantName || "").trim();
@@ -380,11 +381,20 @@ export function IncomingInvoicesPageContent() {
         }
         setProgressValue(Math.round(((i + 1) / selectedFiles.length) * 100));
       }
+
       setExtractedInvoices(regularResultsDisplay);
       setErpProcessedInvoices(erpResultsDisplay);
       localStorage.setItem(LOCAL_STORAGE_MATCHER_DATA_KEY, JSON.stringify(allProcessedForMatcher));
-      setStatus('success'); 
+      
+      if (accumulatedErrors.length > 0) {
+        setErrorMessage(accumulatedErrors.join('\n'));
+        setStatus(regularResultsDisplay.length > 0 || erpResultsDisplay.length > 0 ? 'success' : 'error');
+      } else {
+        setStatus('success'); 
+      }
+      
       setCurrentFileProgress('Processing complete!');
+
     } catch (error) {
       console.error("Error processing files:", error);
       const message = error instanceof Error ? error.message : 'An unexpected error occurred during processing.';
@@ -770,7 +780,7 @@ export function IncomingInvoicesPageContent() {
         )}
 
         {errorMessage && (
-          <Alert variant="destructive" className="my-6">
+          <Alert variant="destructive" className="my-6 whitespace-pre-wrap">
             <AlertCircle className="h-4 w-4" />
             <AlertTitle>Error</AlertTitle>
             <AlertDescription>{errorMessage}</AlertDescription>
