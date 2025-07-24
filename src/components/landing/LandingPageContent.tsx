@@ -3,7 +3,7 @@
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
-import { ReceiptText, Landmark, FileEdit, FileScan, ArrowRight, Zap } from 'lucide-react';
+import { Landmark, FileEdit, FileScan, ArrowRight, Zap, ReceiptText } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
 
@@ -70,10 +70,11 @@ export function LandingPageContent() {
               <div className="absolute inset-0 bg-gradient-to-t from-background via-transparent to-transparent opacity-50 rounded-lg"></div>
               {/* Using a standard img tag to prevent layout issues */}
               <img
-                src="https://images.unsplash.com/photo-1554224155-1696413565d3?q=80&w=1200&auto=format&fit=crop"
+                src="https://images.unsplash.com/photo-1587614295999-6c1c13675117"
                 alt="Financio Banner"
                 className="rounded-xl shadow-2xl mx-auto relative z-10 border border-border max-w-full h-auto"
                 style={{ maxWidth: '1200px' }}
+                data-ai-hint="person laptop charts"
               />
             </div>
           </div>
