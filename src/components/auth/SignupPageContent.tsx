@@ -18,7 +18,7 @@ export function SignupPageContent() {
 
   useEffect(() => {
     if (!isLoading && isAuthenticated) {
-      router.push('/extractor'); 
+      router.push('/incoming-invoices'); 
     }
   }, [isLoading, isAuthenticated, router]);
 
@@ -43,8 +43,8 @@ export function SignupPageContent() {
         <CardHeader className="space-y-3 text-center bg-card p-8">
            <Link href="/" className="inline-block mx-auto">
             <Image 
-                src="https://placehold.co/120x40.png?text=PDFSuite&font=roboto" 
-                alt="PDF Suite Logo"
+                src="https://placehold.co/120x40.png?text=Financio&font=roboto" 
+                alt="Financio Logo"
                 width={120}
                 height={40}
                 className="mx-auto mb-4"
@@ -54,7 +54,7 @@ export function SignupPageContent() {
           </Link>
           <CardTitle className="text-3xl font-bold font-headline text-primary">Create Account</CardTitle>
           <CardDescription className="text-muted-foreground">
-            Join PDF Suite and streamline your document workflow.
+            Join Financio and streamline your document workflow.
           </CardDescription>
         </CardHeader>
         <CardContent className="p-6 sm:p-8 space-y-6">

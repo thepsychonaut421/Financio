@@ -1,18 +1,13 @@
+
 'use client';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
-import { ListOrdered, ReceiptText, Landmark, FileEdit, FileScan, ArrowRight, Zap } from 'lucide-react';
+import { ReceiptText, Landmark, FileEdit, FileScan, ArrowRight, Zap } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
 
 const features = [
-  {
-    title: 'Line Item Extractor',
-    description: 'Automatically extract product codes, names, quantities, and prices from PDF invoices.',
-    icon: <ListOrdered className="w-8 h-8" />,
-    href: '/extractor',
-  },
   {
     title: 'Incoming Invoice Details',
     description: 'Process German PDF invoices (Eingangsrechnungen) for comprehensive data extraction.',
@@ -51,16 +46,16 @@ export function LandingPageContent() {
               role="alert"
             >
               <Zap className="w-4 h-4 mr-2 animate-pulse" />
-              <span>AI-Powered PDF Processing Suite</span>
+              <span>AI-Powered Financial Document Processing</span>
             </div>
             <h1 className="text-4xl md:text-6xl font-bold font-headline text-primary mb-6">
-              Unlock Your PDF Data
+              Unlock Your Financial Data
             </h1>
             <p className="text-lg md:text-xl text-muted-foreground mb-10 max-w-3xl mx-auto">
-              PDF Suite leverages cutting-edge AI to extract, organize, and manage your PDF documents and financial data with unparalleled speed and accuracy.
+              Financio leverages cutting-edge AI to extract, organize, and manage your financial documents with unparalleled speed and accuracy.
             </p>
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-                <Link href="/extractor">
+                <Link href="/incoming-invoices">
                   <Button size="lg" className="font-semibold w-full sm:w-auto">
                     Get Started <ArrowRight className="ml-2 h-5 w-5" />
                   </Button>
@@ -75,7 +70,7 @@ export function LandingPageContent() {
               <div className="absolute inset-0 bg-gradient-to-t from-background via-transparent to-transparent opacity-50 rounded-lg"></div>
               <Image
                 src="https://placehold.co/1000x563.png"
-                alt="PDF Suite Dashboard Mockup"
+                alt="Financio Dashboard Mockup"
                 width={1000}
                 height={563}
                 className="rounded-xl shadow-2xl mx-auto relative z-10 border border-border"
@@ -93,9 +88,9 @@ export function LandingPageContent() {
               Powerful Features, Effortless Workflow
             </h2>
             <p className="text-lg text-muted-foreground text-center mb-16 max-w-2xl mx-auto">
-              From simple data extraction to complex financial matching, PDF Suite is designed to streamline your document-heavy tasks.
+              From invoice data extraction to complex financial matching, Financio is designed to streamline your document-heavy tasks.
             </p>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
               {features.map((feature) => (
                 <Link href={feature.href} key={feature.title}>
                   <Card className="h-full hover:shadow-xl hover:border-primary/50 transition-all duration-300 cursor-pointer flex flex-col group bg-card hover:bg-primary/5">
@@ -123,7 +118,7 @@ export function LandingPageContent() {
 
       <footer className="text-center py-10 border-t bg-muted/50">
         <p className="text-sm text-muted-foreground">
-          &copy; {new Date().getFullYear()} PDF Suite. All rights reserved.
+          &copy; {new Date().getFullYear()} Financio. All rights reserved.
         </p>
       </footer>
     </div>

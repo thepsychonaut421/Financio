@@ -12,7 +12,7 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: 'PDF Suite',
+  title: 'Financio',
   description: 'Extract data from PDFs, organize files, and match bank statements using AI.',
 };
 

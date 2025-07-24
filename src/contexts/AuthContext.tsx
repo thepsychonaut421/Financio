@@ -13,7 +13,7 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const AUTH_TOKEN_KEY = 'pdf_suite_auth_token';
+const AUTH_TOKEN_KEY = 'financio_auth_token';
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
@@ -38,7 +38,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       localStorage.setItem(AUTH_TOKEN_KEY, 'dummy_token_simulated_login');
       setIsAuthenticated(true);
-      router.push('/extractor'); // Default redirect after login
+      router.push('/incoming-invoices'); // Default redirect after login
     } catch (error) {
       console.error("Failed to set auth token in localStorage:", error);
       // Handle error, maybe show a toast
@@ -59,7 +59,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Effect to handle redirection if user is authenticated and tries to access /login
   useEffect(() => {
     if (!isLoading && isAuthenticated && pathname === '/login') {
-      router.push('/extractor');
+      router.push('/incoming-invoices');
     }
   }, [isLoading, isAuthenticated, pathname, router]);
 

@@ -11,14 +11,16 @@ import { LogIn, ShieldCheck } from 'lucide-react';
 import Image from 'next/image';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
+import { useToast } from '@/hooks/use-toast';
 
 export function LoginPageContent() {
   const { login, isAuthenticated, isLoading } = useAuth();
   const router = useRouter();
+  const { toast } = useToast();
 
   useEffect(() => {
     if (!isLoading && isAuthenticated) {
-      router.push('/extractor'); 
+      router.push('/incoming-invoices'); 
     }
   }, [isLoading, isAuthenticated, router]);
 
@@ -26,6 +28,15 @@ export function LoginPageContent() {
     event.preventDefault();
     login(); 
   };
+  
+  const handleForgotPassword = (e: React.MouseEvent) => {
+    e.preventDefault();
+    toast({
+        title: "Forgot Password",
+        description: "Password reset functionality is not yet implemented in this demo.",
+        variant: "default"
+    });
+  }
 
   if (isLoading || (!isLoading && isAuthenticated)) {
     return (
@@ -42,8 +53,8 @@ export function LoginPageContent() {
         <CardHeader className="space-y-3 text-center bg-card p-8">
            <Link href="/" className="inline-block mx-auto">
             <Image 
-                src="https://placehold.co/120x40.png?text=PDFSuite&font=roboto" 
-                alt="PDF Suite Logo"
+                src="https://placehold.co/120x40.png?text=Financio&font=roboto" 
+                alt="Financio Logo"
                 width={120}
                 height={40}
                 className="mx-auto mb-4"
@@ -53,7 +64,7 @@ export function LoginPageContent() {
           </Link>
           <CardTitle className="text-3xl font-bold font-headline text-primary">Secure Login</CardTitle>
           <CardDescription className="text-muted-foreground">
-            Access your PDF Suite dashboard.
+            Access your Financio dashboard.
           </CardDescription>
         </CardHeader>
         <CardContent className="p-6 sm:p-8 space-y-6">
@@ -72,9 +83,9 @@ export function LoginPageContent() {
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <Label htmlFor="password" className="font-medium">Password</Label>
-                <Link href="#" className="text-sm text-primary hover:underline hover:text-primary/80 transition-colors">
+                <a href="#" onClick={handleForgotPassword} className="text-sm text-primary hover:underline hover:text-primary/80 transition-colors">
                   Forgot password?
-                </Link>
+                </a>
               </div>
               <Input 
                 id="password" 

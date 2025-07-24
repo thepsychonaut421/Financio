@@ -1,7 +1,8 @@
+
 'use client';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { ListOrdered, ReceiptText, Landmark, FileEdit, FileScan, LogIn, LogOut, Home as HomeIcon, Menu, UserCircle, Package } from 'lucide-react';
+import { ReceiptText, Landmark, FileEdit, FileScan, LogIn, LogOut, Home as HomeIcon, Menu, UserCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import React from 'react';
@@ -9,7 +10,6 @@ import { useAuth } from '@/contexts/AuthContext'; // Import useAuth
 
 const mainNavLinks = [
   { href: '/', label: 'Home', icon: <HomeIcon className="w-5 h-5" /> },
-  { href: '/extractor', label: 'Extractor', icon: <ListOrdered className="w-5 h-5" /> },
   { href: '/incoming-invoices', label: 'Incoming Invoices', icon: <ReceiptText className="w-5 h-5" /> },
   { href: '/bank-matcher', label: 'Bank Matcher', icon: <Landmark className="w-5 h-5" /> },
   { href: '/pdf-organizer', label: 'PDF Organizer', icon: <FileEdit className="w-5 h-5" /> },
@@ -67,7 +67,7 @@ export function AppHeader() {
     <header className="bg-card border-b border-border shadow-sm sticky top-0 z-50">
       <div className="container mx-auto px-4 md:px-8 h-16 flex items-center justify-between">
         <Link href="/" className="text-xl sm:text-2xl font-bold text-primary font-headline">
-          PDF Suite
+          Financio
         </Link>
         
         <nav className="hidden md:flex items-center space-x-1">
@@ -103,7 +103,7 @@ export function AppHeader() {
                 <SheetHeader className="p-4 border-b text-left">
                   <SheetTitle>
                     <Link href="/" onClick={() => setIsMobileMenuOpen(false)} className="text-lg font-bold text-primary">
-                      PDF Suite
+                      Financio
                     </Link>
                   </SheetTitle>
                 </SheetHeader>
