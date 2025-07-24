@@ -275,7 +275,7 @@ export function IncomingInvoicesPageContent() {
     const regularResultsDisplay: IncomingInvoiceItem[] = [];
     const erpResultsDisplay: ERPIncomingInvoiceItem[] = [];
     const yearCounters: Record<string, number> = {};
-    let accumulatedErrors: string[] = [];
+    let errorCount = 0;
 
     try {
       for (let i = 0; i < selectedFiles.length; i++) {
@@ -286,7 +286,8 @@ export function IncomingInvoicesPageContent() {
         const aiResult: ExtractIncomingInvoiceDataOutput = await extractIncomingInvoiceData({ invoiceDataUri: dataUri });
         
         if (aiResult.error) {
-          accumulatedErrors.push(`${file.name}: ${aiResult.error}`);
+          console.error(`Error processing ${file.name}: ${aiResult.error}`);
+          errorCount++;
           // Continue to the next file instead of stopping
           setProgressValue(Math.round(((i + 1) / selectedFiles.length) * 100));
           continue;
@@ -386,8 +387,8 @@ export function IncomingInvoicesPageContent() {
       setErpProcessedInvoices(erpResultsDisplay);
       localStorage.setItem(LOCAL_STORAGE_MATCHER_DATA_KEY, JSON.stringify(allProcessedForMatcher));
       
-      if (accumulatedErrors.length > 0) {
-        setErrorMessage(accumulatedErrors.join('\n'));
+      if (errorCount > 0) {
+        setErrorMessage(`Could not process ${errorCount} of ${selectedFiles.length} file(s). Please check the file format or content. The successfully processed invoices are displayed below.`);
         setStatus(regularResultsDisplay.length > 0 || erpResultsDisplay.length > 0 ? 'success' : 'error');
       } else {
         setStatus('success'); 
