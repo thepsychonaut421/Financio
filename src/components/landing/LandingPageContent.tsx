@@ -68,13 +68,12 @@ export function LandingPageContent() {
             </div>
             <div className="mt-12 md:mt-20 relative">
               <div className="absolute inset-0 bg-gradient-to-t from-background via-transparent to-transparent opacity-50 rounded-lg"></div>
-              <Image
+              {/* Using a standard img tag to prevent layout issues */}
+              <img
                 src="/financio-banner.png"
                 alt="Financio Banner with logo and tagline"
-                width={1200}
-                height={675}
-                className="rounded-xl shadow-2xl mx-auto relative z-10 border border-border"
-                priority
+                className="rounded-xl shadow-2xl mx-auto relative z-10 border border-border max-w-full h-auto"
+                style={{ maxWidth: '1200px' }}
               />
             </div>
           </div>
