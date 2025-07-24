@@ -46,7 +46,7 @@ export function SignupPageContent() {
                 src="/financio-logo.png" 
                 alt="Financio Logo"
                 width={120}
-                height={40}
+                height={32}
                 className="mx-auto mb-4"
                 priority
             />
