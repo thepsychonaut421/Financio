@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import type { IncomingInvoiceItem, ERPIncomingInvoiceItem } from '@/types/incoming-invoice';
@@ -17,7 +18,7 @@ export function downloadFile(content: string | Blob, fileName: string, mimeType:
 }
 
 function escapeCSVField(field: string | number | undefined | null): string {
-  if (field === undefined || field === null) return '';
+  if (field === undefined || field === null) return '""';
   let stringField = String(field);
 
   // Force treatment as text in Excel for long numbers
@@ -130,8 +131,8 @@ export function incomingInvoicesToERPNextCSVComplete(invoices: ERPIncomingInvoic
           let invoiceLevelData;
           if (itemIndex === 0) {
               invoiceLevelData = [
-                  "", // ID
-                  "", // Series
+                  '""', // ID - Leave blank for new documents
+                  '""', // Series - Leave blank to use default
                   escapeCSVField(invoice.lieferantName),
                   escapeCSVField(invoice.datum),
                   escapeCSVField(invoice.kontenrahmen),
@@ -236,8 +237,8 @@ export function incomingInvoicesToTSV(invoices: (IncomingInvoiceItem | ERPIncomi
             if (itemIndex === 0) {
                 // First row gets details
                 invoiceLevelData = [
-                    "",
-                    "",
+                    "", // ID - Leave blank
+                    "", // Series - Leave blank
                     erpInvoice.lieferantName,
                     erpInvoice.datum,
                     erpInvoice.kontenrahmen,
