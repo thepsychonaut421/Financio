@@ -24,7 +24,7 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${inter.variable} ${inter.className}`}>
       <head>
-        
+        <link rel="icon" href="/financio-logo.png" type="image/png" sizes="any" />
       </head>
       <body className="antialiased min-h-screen flex flex-col">
         <AuthProvider> {/* Wrapped with AuthProvider */}

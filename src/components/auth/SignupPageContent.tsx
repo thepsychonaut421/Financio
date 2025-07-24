@@ -43,12 +43,11 @@ export function SignupPageContent() {
         <CardHeader className="space-y-3 text-center bg-card p-8">
            <Link href="/" className="inline-block mx-auto">
             <Image 
-                src="https://placehold.co/120x40.png?text=Financio&font=roboto" 
+                src="/financio-logo.png" 
                 alt="Financio Logo"
                 width={120}
                 height={40}
                 className="mx-auto mb-4"
-                data-ai-hint="modern minimalist logo" 
                 priority
             />
           </Link>
