@@ -1,7 +1,7 @@
 import type {NextConfig} from 'next';
 
 const nextConfig: NextConfig = {
-  // The experimental block containing allowedDevOrigins has been removed as it caused a configuration error.
+  // Force rebuild to resolve EADDRINUSE error
   typescript: {
     ignoreBuildErrors: true,
   },
