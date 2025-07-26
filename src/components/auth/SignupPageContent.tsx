@@ -8,7 +8,6 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import Link from 'next/link';
 import { UserPlus, ShieldCheck } from 'lucide-react';
-import Image from 'next/image';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
 
@@ -41,17 +40,6 @@ export function SignupPageContent() {
     <div className="flex flex-col items-center justify-center min-h-[calc(100vh-4rem)] bg-gradient-to-br from-primary/5 via-background to-background p-4">
       <Card className="w-full max-w-md shadow-2xl border-t-4 border-primary rounded-xl overflow-hidden">
         <CardHeader className="space-y-3 text-center bg-card p-8">
-           <Link href="/" className="inline-block mx-auto">
-            <Image 
-                src="https://placehold.co/120x32.png" 
-                alt="Financio Logo"
-                width={120}
-                height={32}
-                className="mx-auto mb-4"
-                priority
-                data-ai-hint="logo"
-            />
-          </Link>
           <CardTitle className="text-3xl font-bold font-headline text-primary">Create Account</CardTitle>
           <CardDescription className="text-muted-foreground">
             Join Financio and streamline your document workflow.
