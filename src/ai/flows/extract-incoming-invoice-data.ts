@@ -87,42 +87,44 @@ export async function extractIncomingInvoiceData(input: ExtractIncomingInvoiceDa
     return { rechnungspositionen: [], error: rawOutput.error };
   }
 
-  const normalizedLineItems: AppLineItem[] = (rawOutput.rechnungspositionen || []).map(item => ({
-    productCode: normalizeProductCode(item.productCode),
-    productName: String(item.productName || '').trim().replace(/\n/g, ' '),
-    quantity: item.quantity === undefined ? 0 : item.quantity,
-    unitPrice: item.unitPrice === undefined ? 0.0 : item.unitPrice,
+  const normalizedLineItems: AppLineItem[] = (rawOutput.items || []).map(item => ({
+    // AI schema uses `description`, `totalPrice`, our app uses productName/unitPrice etc.
+    // This mapping normalizes it.
+    productCode: normalizeProductCode(null), // The new AI prompt doesn't extract item_code yet.
+    productName: String(item.description || '').trim().replace(/\n/g, ' '),
+    quantity: item.quantity === null ? 0 : item.quantity,
+    unitPrice: item.unitPrice === null ? 0.0 : item.unitPrice,
   }));
 
   // Determine the main VAT rate for the simplified 'mwstSatz' field for backward compatibility
   // This could be the one with the largest base amount.
   let mainVatRate = ""; // Deprecating mwstSatz
-  if (rawOutput.steuersaetze && rawOutput.steuersaetze.length > 0) {
-      mainVatRate = rawOutput.steuersaetze.reduce((prev, current) => (prev.basis > current.basis) ? prev : current).satz;
+  if (rawOutput.mwstBetrag && rawOutput.nettoBetrag && rawOutput.nettoBetrag > 0) {
+      mainVatRate = `${((rawOutput.mwstBetrag / rawOutput.nettoBetrag) * 100).toFixed(0)}%`;
   }
 
 
   const normalizedOutput: ExtractIncomingInvoiceDataOutput = {
-    rechnungsnummer: rawOutput.rechnungsnummer,
-    datum: rawOutput.datum,
-    lieferdatum: rawOutput.lieferdatum,
-    lieferantName: String(rawOutput.lieferantName || '').trim().replace(/\n/g, ' '),
-    lieferantAdresse: String(rawOutput.lieferantAdresse || '').trim().replace(/\n/g, ' '),
-    kundenName: String(rawOutput.kundenName || '').trim(),
-    kundenAdresse: String(rawOutput.kundenAdresse || '').trim(),
-    zahlungsziel: String(rawOutput.zahlungsziel || '').trim().replace(/\n/g, ' '),
-    zahlungsart: String(rawOutput.zahlungsart || '').trim().replace(/\n/g, ' '),
+    rechnungsnummer: rawOutput.invoiceNumber,
+    datum: rawOutput.invoiceDate,
+    lieferdatum: rawOutput.dueDate, // using dueDate as lieferdatum
+    lieferantName: String(rawOutput.supplier || '').trim().replace(/\n/g, ' '),
+    lieferantAdresse: "", // Not in new prompt
+    kundenName: "", // Not in new prompt
+    kundenAdresse: "", // Not in new prompt
+    zahlungsziel: "", // Not in new prompt
+    zahlungsart: "", // Not in new prompt
     nettoBetrag: rawOutput.nettoBetrag,
     mwstBetrag: rawOutput.mwstBetrag,
-    gesamtbetrag: rawOutput.bruttoBetrag, // Using bruttoBetrag as the main total
-    waehrung: rawOutput.waehrung,
-    steuersaetze: rawOutput.steuersaetze,
+    gesamtbetrag: rawOutput.bruttoBetrag,
+    waehrung: rawOutput.currency,
+    steuersaetze: [], // Not in new prompt
     mwstSatz: mainVatRate,
-    kundenNummer: String(rawOutput.kundenNummer || '').trim(),
-    bestellNummer: String(rawOutput.bestellNummer || '').trim(),
-    isPaid: rawOutput.isPaid,
+    kundenNummer: "", // Not in new prompt
+    bestellNummer: "", // Not in new prompt
+    isPaid: false, // Not in new prompt
     rechnungspositionen: normalizedLineItems,
-    sonstigeAnmerkungen: rawOutput.sonstigeAnmerkungen,
+    sonstigeAnmerkungen: "",
   };
   
   return normalizedOutput;
@@ -174,9 +176,11 @@ const extractIncomingInvoiceDataFlow = ai.defineFlow(
     try {
         const {output} = await prompt(input, {model: 'googleai/gemini-1.5-flash-latest'});
         // Basic validation: ensure the most important field is present
-        if (!output || !output.bruttoBetrag) {
+        if (!output || output.bruttoBetrag === null || output.bruttoBetrag === undefined) {
            // If the main total is missing, the extraction is likely a failure.
            return { 
+               supplier: null, invoiceNumber: null, invoiceDate: null, dueDate: null,
+               nettoBetrag: null, mwstBetrag: null, bruttoBetrag: null, currency: null,
                items: [], 
                error: "Extraction failed: The AI could not determine the invoice's total amount (bruttoBetrag)." 
            };
@@ -185,9 +189,17 @@ const extractIncomingInvoiceDataFlow = ai.defineFlow(
     } catch (e: any) {
         console.error("Critical error in extractIncomingInvoiceDataFlow:", e);
         if (e.message && (e.message.includes('503') || e.message.includes('overloaded'))) {
-            return { items: [], error: "The AI service is currently busy or unavailable. Please try again in a few moments." };
+            return { 
+                supplier: null, invoiceNumber: null, invoiceDate: null, dueDate: null,
+                nettoBetrag: null, mwstBetrag: null, bruttoBetrag: null, currency: null,
+                items: [], error: "The AI service is currently busy or unavailable. Please try again in a few moments." };
         }
-        return { items: [], error: `An unexpected error occurred during invoice extraction: ${e.message}` };
+        return { 
+            supplier: null, invoiceNumber: null, invoiceDate: null, dueDate: null,
+            nettoBetrag: null, mwstBetrag: null, bruttoBetrag: null, currency: null,
+            items: [], error: `An unexpected error occurred during invoice extraction: ${e.message}` };
     }
   }
 );
+
+    

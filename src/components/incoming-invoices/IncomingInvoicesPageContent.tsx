@@ -359,7 +359,7 @@ export function IncomingInvoicesPageContent() {
           continue;
         }
 
-        const validation = validateTotals(aiResult);
+        const validation = validateTotals(aiResult as AIInvoice);
         if (!validation.valid) {
             localDiscrepancyErrors.push({ filename: file.name, reason: validation.reason || 'Unknown discrepancy' });
         }
@@ -423,7 +423,7 @@ export function IncomingInvoicesPageContent() {
           erpNextInvoiceName: sanitizeText(internalRefId), 
           billDate: billDateERP, 
           dueDate: dueDateERP,   
-          wahrung: 'EUR', 
+          wahrung: aiResult.waehrung || 'EUR', 
           istBezahlt: istBezahltStatus, 
           kontenrahmen: sanitizeText(kontenrahmen), 
           remarks: sanitizeText(remarks),
@@ -938,3 +938,5 @@ export function IncomingInvoicesPageContent() {
     </div>
   );
 }
+
+    
