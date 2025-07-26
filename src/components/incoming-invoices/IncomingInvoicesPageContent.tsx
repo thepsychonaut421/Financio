@@ -32,6 +32,38 @@ interface DiscrepancyError {
     reason: string;
 }
 
+interface AIInvoice {
+  supplier: string | null;
+  invoiceNumber: string | null;
+  invoiceDate: string | null;
+  dueDate: string | null;
+  nettoBetrag: number | null;
+  mwstBetrag: number | null;
+  bruttoBetrag: number | null;
+  currency: string | null;
+  items: Array<{
+    description: string | null;
+    quantity: number | null;
+    unitPrice: number | null;
+    totalPrice: number | null;
+  }>;
+}
+
+function validateTotals(data: AIInvoice) {
+  const { nettoBetrag, mwstBetrag, bruttoBetrag } = data;
+  if (nettoBetrag == null || mwstBetrag == null || bruttoBetrag == null) {
+    return { valid: false, reason: 'One or more amounts missing' };
+  }
+  const sum = parseFloat((nettoBetrag + mwstBetrag).toFixed(2));
+  if (sum !== parseFloat(bruttoBetrag.toFixed(2))) {
+    return {
+      valid: false,
+      reason: `Netto (${nettoBetrag}) + MwSt (${mwstBetrag}) = ${sum}, but Brutto is ${bruttoBetrag}`
+    };
+  }
+  return { valid: true, reason: '' };
+}
+
 
 interface IncomingInvoicesPageCache {
   extractedInvoices: IncomingInvoiceItem[];
@@ -167,8 +199,10 @@ export function IncomingInvoicesPageContent() {
     }
   }, [extractedInvoices, erpProcessedInvoices, erpMode, status, existingErpInvoiceKeys, erpSortKey, erpSortOrder, kontenrahmen]);
   
-  const getERPNextSupplierName = (extractedName: string): string => {
+  const getERPNextSupplierName = (extractedName: string | null): string => {
+    if (!extractedName) return "UNBEKANNT_SUPPLIER_PLACEHOLDER";
     const nameUpper = extractedName.toUpperCase();
+    // This logic is now deterministic in code, not in the AI prompt.
     const supplierMap: Record<string, string> = {
       "LIDL": "Lidl",
       "LIDL DIGITAL DEUTSCHLAND GMBH & CO. KG": "Lidl",
@@ -186,7 +220,6 @@ export function IncomingInvoicesPageContent() {
       "SELLIX": "SELLIXX GmbH",
     };
 
-    // Find a match in the map, ignoring case and surrounding characters for robustness
     for (const key in supplierMap) {
         if (nameUpper.includes(key)) {
             return supplierMap[key];
@@ -197,11 +230,11 @@ export function IncomingInvoicesPageContent() {
       return "UNBEKANNT_SUPPLIER_PLACEHOLDER";
     }
 
-    return extractedName; // Return original if no mapping found
+    return extractedName;
   };
   
 
-  const formatDateForERP = (dateString?: string): string | undefined => {
+  const formatDateForERP = (dateString?: string | null): string | undefined => {
     if (!dateString || dateString.trim() === '') return undefined;
     if (/^\d{4}-\d{2}-\d{2}$/.test(dateString)) { 
         const d = parseISO(dateString); 
@@ -294,24 +327,6 @@ export function IncomingInvoicesPageContent() {
     setDiscrepancyErrors([]);
   }
 
-  const validateTotals = (data: ExtractIncomingInvoiceDataOutput): { valid: boolean; error?: string } => {
-    const { nettoBetrag, mwstBetrag, gesamtbetrag } = data; // gesamtbetrag is brutto
-    if (nettoBetrag === undefined || mwstBetrag === undefined || gesamtbetrag === undefined) {
-      // Not a failure, but amounts could not be extracted.
-      return { valid: true }; 
-    }
-    const sum = parseFloat((nettoBetrag + mwstBetrag).toFixed(2));
-    const brutto = parseFloat(gesamtbetrag.toFixed(2));
-
-    if (Math.abs(sum - brutto) > 0.011) { // Allow for small rounding differences
-      return {
-        valid: false,
-        error: `Netto (${nettoBetrag}) + MwSt (${mwstBetrag}) = ${sum}, but Brutto is ${brutto}`
-      };
-    }
-    return { valid: true };
-  }
-
   const handleProcessFiles = async () => {
     if (selectedFiles.length === 0) {
       setErrorMessage("No files selected. Please select PDF files to process.");
@@ -328,7 +343,7 @@ export function IncomingInvoicesPageContent() {
     const erpResultsDisplay: ERPIncomingInvoiceItem[] = [];
     const yearCounters: Record<string, number> = {};
     const localDiscrepancyErrors: DiscrepancyError[] = [];
-    const generalErrors: string[] = [];
+    const filesWithErrors: string[] = [];
 
     try {
       for (let i = 0; i < selectedFiles.length; i++) {
@@ -339,14 +354,14 @@ export function IncomingInvoicesPageContent() {
         const aiResult: ExtractIncomingInvoiceDataOutput = await extractIncomingInvoiceData({ invoiceDataUri: dataUri });
         
         if (aiResult.error) {
-          generalErrors.push(`${file.name}: ${aiResult.error}`);
+          filesWithErrors.push(`${file.name}: ${aiResult.error}`);
           setProgressValue(Math.round(((i + 1) / selectedFiles.length) * 100));
           continue;
         }
 
         const validation = validateTotals(aiResult);
         if (!validation.valid) {
-            localDiscrepancyErrors.push({ filename: file.name, reason: validation.error || 'Unknown discrepancy' });
+            localDiscrepancyErrors.push({ filename: file.name, reason: validation.reason || 'Unknown discrepancy' });
         }
 
 
@@ -450,8 +465,8 @@ export function IncomingInvoicesPageContent() {
       setDiscrepancyErrors(localDiscrepancyErrors);
       localStorage.setItem(LOCAL_STORAGE_MATCHER_DATA_KEY, JSON.stringify(allProcessedForMatcher));
       
-      if (generalErrors.length > 0) {
-        setErrorMessage(`Processing summary: ${selectedFiles.length - generalErrors.length} of ${selectedFiles.length} files succeeded. Errors occurred on: ${generalErrors.join('; ')}`);
+      if (filesWithErrors.length > 0) {
+        setErrorMessage(`Processing summary: ${selectedFiles.length - filesWithErrors.length} of ${selectedFiles.length} files succeeded. Errors occurred on: ${filesWithErrors.join('; ')}`);
         setStatus(regularResultsDisplay.length > 0 || erpResultsDisplay.length > 0 ? 'success' : 'error');
       } else {
         setStatus('success'); 
@@ -923,5 +938,3 @@ export function IncomingInvoicesPageContent() {
     </div>
   );
 }
-
-    
