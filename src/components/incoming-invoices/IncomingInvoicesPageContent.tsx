@@ -27,6 +27,12 @@ import Papa from 'papaparse';
 const LOCAL_STORAGE_PAGE_CACHE_KEY = 'incomingInvoicesPageCache';
 const LOCAL_STORAGE_MATCHER_DATA_KEY = 'processedIncomingInvoicesForMatcher';
 
+interface DiscrepancyError {
+    filename: string;
+    reason: string;
+}
+
+
 interface IncomingInvoicesPageCache {
   extractedInvoices: IncomingInvoiceItem[];
   erpProcessedInvoices: ERPIncomingInvoiceItem[];
@@ -82,6 +88,7 @@ export function IncomingInvoicesPageContent() {
   const [progressValue, setProgressValue] = useState(0);
   const [currentFileProgress, setCurrentFileProgress] = useState('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [discrepancyErrors, setDiscrepancyErrors] = useState<DiscrepancyError[]>([]);
   const [erpMode, setErpMode] = useState(false);
   const [isExportingToERPNext, setIsExportingToERPNext] = useState(false);
   const [isExportingZip, setIsExportingZip] = useState(false);
@@ -263,6 +270,7 @@ export function IncomingInvoicesPageContent() {
       setErpProcessedInvoices([]);
       setStatus('idle'); // Ready to process new files
       setErrorMessage(null);
+      setDiscrepancyErrors([]);
       setProgressValue(0);
       setCurrentFileProgress('');
     } else {
@@ -283,6 +291,25 @@ export function IncomingInvoicesPageContent() {
     setCurrentFileProgress('');
     setProgressValue(0);
     setErrorMessage(null);
+    setDiscrepancyErrors([]);
+  }
+
+  const validateTotals = (data: ExtractIncomingInvoiceDataOutput): { valid: boolean; error?: string } => {
+    const { nettoBetrag, mwstBetrag, gesamtbetrag } = data; // gesamtbetrag is brutto
+    if (nettoBetrag === undefined || mwstBetrag === undefined || gesamtbetrag === undefined) {
+      // Not a failure, but amounts could not be extracted.
+      return { valid: true }; 
+    }
+    const sum = parseFloat((nettoBetrag + mwstBetrag).toFixed(2));
+    const brutto = parseFloat(gesamtbetrag.toFixed(2));
+
+    if (Math.abs(sum - brutto) > 0.011) { // Allow for small rounding differences
+      return {
+        valid: false,
+        error: `Netto (${nettoBetrag}) + MwSt (${mwstBetrag}) = ${sum}, but Brutto is ${brutto}`
+      };
+    }
+    return { valid: true };
   }
 
   const handleProcessFiles = async () => {
@@ -293,13 +320,15 @@ export function IncomingInvoicesPageContent() {
     }
     setStatus('processing');
     setErrorMessage(null);
+    setDiscrepancyErrors([]);
     setProgressValue(0);
     
     const allProcessedForMatcher: ERPIncomingInvoiceItem[] = [];
     const regularResultsDisplay: IncomingInvoiceItem[] = [];
     const erpResultsDisplay: ERPIncomingInvoiceItem[] = [];
     const yearCounters: Record<string, number> = {};
-    const errorFileNames = new Set<string>();
+    const localDiscrepancyErrors: DiscrepancyError[] = [];
+    const generalErrors: string[] = [];
 
     try {
       for (let i = 0; i < selectedFiles.length; i++) {
@@ -310,10 +339,16 @@ export function IncomingInvoicesPageContent() {
         const aiResult: ExtractIncomingInvoiceDataOutput = await extractIncomingInvoiceData({ invoiceDataUri: dataUri });
         
         if (aiResult.error) {
-          errorFileNames.add(`${file.name}: ${aiResult.error}`);
+          generalErrors.push(`${file.name}: ${aiResult.error}`);
           setProgressValue(Math.round(((i + 1) / selectedFiles.length) * 100));
           continue;
         }
+
+        const validation = validateTotals(aiResult);
+        if (!validation.valid) {
+            localDiscrepancyErrors.push({ filename: file.name, reason: validation.error || 'Unknown discrepancy' });
+        }
+
 
         const finalLieferantName = getERPNextSupplierName(aiResult.lieferantName || 'UNBEKANNT');
         
@@ -377,6 +412,8 @@ export function IncomingInvoicesPageContent() {
           istBezahlt: istBezahltStatus, 
           kontenrahmen: sanitizeText(kontenrahmen), 
           remarks: sanitizeText(remarks),
+          nettoBetrag: aiResult.nettoBetrag,
+          mwstBetrag: aiResult.mwstBetrag,
         };
         allProcessedForMatcher.push(erpCompatibleInvoice);
 
@@ -401,6 +438,8 @@ export function IncomingInvoicesPageContent() {
               kundenNummer: sanitizeText(aiResult.kundenNummer),
               bestellNummer: sanitizeText(aiResult.bestellNummer),
               isPaidByAI: aiResult.isPaid,
+              nettoBetrag: aiResult.nettoBetrag,
+              mwstBetrag: aiResult.mwstBetrag,
           });
         }
         setProgressValue(Math.round(((i + 1) / selectedFiles.length) * 100));
@@ -408,13 +447,11 @@ export function IncomingInvoicesPageContent() {
 
       setExtractedInvoices(regularResultsDisplay);
       setErpProcessedInvoices(erpResultsDisplay);
+      setDiscrepancyErrors(localDiscrepancyErrors);
       localStorage.setItem(LOCAL_STORAGE_MATCHER_DATA_KEY, JSON.stringify(allProcessedForMatcher));
       
-      if (errorFileNames.size > 0) {
-        const totalFiles = selectedFiles.length;
-        const successCount = totalFiles - errorFileNames.size;
-        const failedFilesList = Array.from(errorFileNames).join('; ');
-        setErrorMessage(`Processing summary: ${successCount} of ${totalFiles} files succeeded. Errors occurred on: ${failedFilesList}`);
+      if (generalErrors.length > 0) {
+        setErrorMessage(`Processing summary: ${selectedFiles.length - generalErrors.length} of ${selectedFiles.length} files succeeded. Errors occurred on: ${generalErrors.join('; ')}`);
         setStatus(regularResultsDisplay.length > 0 || erpResultsDisplay.length > 0 ? 'success' : 'error');
       } else {
         setStatus('success'); 
@@ -655,6 +692,7 @@ export function IncomingInvoicesPageContent() {
     setProgressValue(0);
     setCurrentFileProgress('');
     setErrorMessage(null);
+    setDiscrepancyErrors([]);
     setErpExportFile(null);
     setExistingErpInvoiceKeys(new Set());
     setErpSortKey('datum'); // Reset sort
@@ -800,6 +838,23 @@ export function IncomingInvoicesPageContent() {
             <p className="text-sm text-center text-muted-foreground">{currentFileProgress}</p>
           </div>
         )}
+        
+        {discrepancyErrors.length > 0 && (
+            <Alert variant="destructive" className="my-6">
+                <AlertCircle className="h-4 w-4" />
+                <AlertTitle>Invoices with Discrepancies</AlertTitle>
+                <AlertDescription>
+                    <ul className="list-disc pl-5 space-y-1">
+                        {discrepancyErrors.map((e, index) => (
+                            <li key={index}>
+                                <strong>{e.filename}:</strong> {e.reason}
+                            </li>
+                        ))}
+                    </ul>
+                    <p className="mt-2">Please manually check these invoices before exporting.</p>
+                </AlertDescription>
+            </Alert>
+        )}
 
         {errorMessage && (
           <Alert variant="destructive" className="my-6 whitespace-pre-wrap">
@@ -868,3 +923,5 @@ export function IncomingInvoicesPageContent() {
     </div>
   );
 }
+
+    

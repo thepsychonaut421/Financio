@@ -15,6 +15,9 @@ export interface IncomingInvoiceData {
   bestellNummer?: string;
   isPaidByAI?: boolean;
   error?: string;
+  // New detailed financial fields
+  nettoBetrag?: number;
+  mwstBetrag?: number;
 }
 
 export interface IncomingInvoiceItem extends IncomingInvoiceData {
@@ -43,3 +46,5 @@ export type ERPSortKey =
   | 'erpNextInvoiceName';
 
 export type SortOrder = 'asc' | 'desc';
+
+    
