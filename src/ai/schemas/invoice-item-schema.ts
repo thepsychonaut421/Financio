@@ -23,5 +23,3 @@ export const ProcessedLineItemSchema = z.object({
 
 // TypeScript type derived from the stricter schema. This replaces the old interface.
 export type AppLineItem = z.infer<typeof ProcessedLineItemSchema>;
-
-    
