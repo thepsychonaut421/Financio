@@ -52,7 +52,7 @@ interface AIInvoice {
 function validateTotals(data: AIInvoice) {
   const { nettoBetrag, mwstBetrag, bruttoBetrag } = data;
   if (nettoBetrag == null || mwstBetrag == null || bruttoBetrag == null) {
-    return { valid: false, reason: 'One or more amounts missing' };
+    return { valid: false, reason: 'One or more amounts are missing' };
   }
   const sum = parseFloat((nettoBetrag + mwstBetrag).toFixed(2));
   if (sum !== parseFloat(bruttoBetrag.toFixed(2))) {
@@ -202,6 +202,7 @@ export function IncomingInvoicesPageContent() {
   const getERPNextSupplierName = (extractedName: string | null): string => {
     if (!extractedName) return "UNBEKANNT_SUPPLIER_PLACEHOLDER";
     const nameUpper = extractedName.toUpperCase();
+    
     // This logic is now deterministic in code, not in the AI prompt.
     const supplierMap: Record<string, string> = {
       "LIDL": "Lidl",
@@ -338,12 +339,14 @@ export function IncomingInvoicesPageContent() {
     setDiscrepancyErrors([]);
     setProgressValue(0);
     
-    const allProcessedForMatcher: ERPIncomingInvoiceItem[] = [];
-    const regularResultsDisplay: IncomingInvoiceItem[] = [];
-    const erpResultsDisplay: ERPIncomingInvoiceItem[] = [];
+    let allProcessedForMatcher: ERPIncomingInvoiceItem[] = [];
+    let regularResultsDisplay: IncomingInvoiceItem[] = [];
+    let erpResultsDisplay: ERPIncomingInvoiceItem[] = [];
+    
     const yearCounters: Record<string, number> = {};
     const localDiscrepancyErrors: DiscrepancyError[] = [];
     const filesWithErrors: string[] = [];
+    const processedInvoiceNumbers = new Set<string>(); // For duplicate detection
 
     try {
       for (let i = 0; i < selectedFiles.length; i++) {
@@ -351,12 +354,19 @@ export function IncomingInvoicesPageContent() {
         setCurrentFileProgress(`Processing file ${i + 1} of ${selectedFiles.length}: ${file.name}`);
         
         const dataUri = await readFileAsDataURL(file);
-        const aiResult: ExtractIncomingInvoiceDataOutput = await extractIncomingInvoiceData({ invoiceDataUri: dataUri });
+        const aiResult = await extractIncomingInvoiceData({ invoiceDataUri: dataUri });
         
         if (aiResult.error) {
           filesWithErrors.push(`${file.name}: ${aiResult.error}`);
           setProgressValue(Math.round(((i + 1) / selectedFiles.length) * 100));
           continue;
+        }
+        
+        if (aiResult.rechnungsnummer && processedInvoiceNumbers.has(aiResult.rechnungsnummer)) {
+            continue; // Skip duplicate invoice number
+        }
+        if (aiResult.rechnungsnummer) {
+            processedInvoiceNumbers.add(aiResult.rechnungsnummer);
         }
 
         const validation = validateTotals(aiResult as AIInvoice);
