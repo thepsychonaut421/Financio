@@ -412,6 +412,19 @@ export function IncomingInvoicesPageContent() {
         const internalRefId = `INTERNAL-${yearToUse}-${String(yearCounters[yearToUse]).padStart(5, '0')}`;
         const rechnungsnummerToUse = aiResult.rechnungsnummer || internalRefId;
 
+        // Currency Normalization
+        let normalizedCurrency = 'EUR'; // Default
+        if (aiResult.waehrung) {
+            if (aiResult.waehrung.includes('€')) {
+                normalizedCurrency = 'EUR';
+            } else if (aiResult.waehrung.toUpperCase() === 'RON' || aiResult.waehrung.toUpperCase() === 'LEI') {
+                normalizedCurrency = 'RON';
+            } else if (aiResult.waehrung.length === 3) {
+                normalizedCurrency = aiResult.waehrung.toUpperCase();
+            }
+        }
+
+
         const erpCompatibleInvoice: ERPIncomingInvoiceItem = {
           pdfFileName: file.name,
           rechnungsnummer: sanitizeText(rechnungsnummerToUse),
@@ -433,7 +446,7 @@ export function IncomingInvoicesPageContent() {
           erpNextInvoiceName: sanitizeText(internalRefId), 
           billDate: billDateERP, 
           dueDate: dueDateERP,   
-          wahrung: aiResult.waehrung || 'EUR', 
+          wahrung: normalizedCurrency, 
           istBezahlt: istBezahltStatus, 
           kontenrahmen: sanitizeText(kontenrahmen), 
           remarks: sanitizeText(remarks),
@@ -465,6 +478,7 @@ export function IncomingInvoicesPageContent() {
               isPaidByAI: aiResult.isPaid,
               nettoBetrag: aiResult.nettoBetrag,
               mwstBetrag: aiResult.mwstBetrag,
+              wahrung: normalizedCurrency,
           });
         }
         setProgressValue(Math.round(((i + 1) / selectedFiles.length) * 100));
@@ -948,5 +962,3 @@ export function IncomingInvoicesPageContent() {
     </div>
   );
 }
-
-    

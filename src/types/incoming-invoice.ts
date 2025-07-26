@@ -18,6 +18,7 @@ export interface IncomingInvoiceData {
   // New detailed financial fields
   nettoBetrag?: number;
   mwstBetrag?: number;
+  wahrung?: string; // Added currency field
 }
 
 export interface IncomingInvoiceItem extends IncomingInvoiceData {
@@ -46,5 +47,3 @@ export type ERPSortKey =
   | 'erpNextInvoiceName';
 
 export type SortOrder = 'asc' | 'desc';
-
-    
