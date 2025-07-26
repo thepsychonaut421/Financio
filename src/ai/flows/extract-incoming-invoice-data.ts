@@ -189,29 +189,29 @@ const extractIncomingInvoiceDataFlow = ai.defineFlow(
   async (input) => {
     try {
         const {output} = await prompt(input, {model: 'googleai/gemini-1.5-flash-latest'});
-        // Basic validation: ensure the most important field is present
-        if (!output || (output.bruttoBetrag === null && output.nettoBetrag === null)) {
-           // If the main total is missing, the extraction is likely a failure.
-           return { 
-               supplier: null, invoiceNumber: null, invoiceDate: null, dueDate: null,
-               nettoBetrag: null, mwstBetrag: null, bruttoBetrag: null, currency: null,
-               items: [], 
-               error: "Extraction failed: The AI could not determine the invoice's total amounts." 
-           };
+        // Always return the output, even if it's partially null.
+        // The calling function will handle validation and error display.
+        if (!output) {
+            return {
+                supplier: null, invoiceNumber: null, invoiceDate: null, dueDate: null,
+                nettoBetrag: null, mwstBetrag: null, bruttoBetrag: null, currency: null,
+                items: [],
+                error: "The AI model returned no output."
+            };
         }
         return output;
     } catch (e: any) {
         console.error("Critical error in extractIncomingInvoiceDataFlow:", e);
-        if (e.message && (e.message.includes('503') || e.message.includes('overloaded'))) {
-            return { 
-                supplier: null, invoiceNumber: null, invoiceDate: null, dueDate: null,
-                nettoBetrag: null, mwstBetrag: null, bruttoBetrag: null, currency: null,
-                items: [], error: "The AI service is currently busy or unavailable. Please try again in a few moments." };
-        }
-        return { 
+        const errorMessage = e.message && (e.message.includes('503') || e.message.includes('overloaded'))
+            ? "The AI service is currently busy or unavailable. Please try again in a few moments."
+            : `An unexpected error occurred during invoice extraction: ${e.message}`;
+
+        return {
             supplier: null, invoiceNumber: null, invoiceDate: null, dueDate: null,
             nettoBetrag: null, mwstBetrag: null, bruttoBetrag: null, currency: null,
-            items: [], error: `An unexpected error occurred during invoice extraction: ${e.message}` };
+            items: [],
+            error: errorMessage
+        };
     }
   }
 );

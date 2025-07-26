@@ -54,7 +54,7 @@ interface AIInvoice {
 function validateTotals(data: AIInvoice) {
   const { nettoBetrag, mwstBetrag, bruttoBetrag } = data;
   if (nettoBetrag === null || mwstBetrag === null || bruttoBetrag === null) {
-    return { valid: false, reason: 'One or more total amounts (net, vat, gross) are missing from the extraction.' };
+    return { valid: false, reason: 'One or more amounts are missing.' };
   }
   
   const sum = parseFloat((nettoBetrag + mwstBetrag).toFixed(2));
@@ -355,7 +355,13 @@ export function IncomingInvoicesPageContent() {
         setCurrentFileProgress(`Processing file ${i + 1} of ${selectedFiles.length}: ${file.name}`);
         
         const dataUri = await readFileAsDataURL(file);
-        const aiResult = (await extractIncomingInvoiceData({ invoiceDataUri: dataUri })) as AIInvoice;
+        const aiResult = (await extractIncomingInvoiceData({ invoiceDataUri: dataUri })) as AIInvoice | null;
+
+        if (!aiResult) {
+            filesWithErrors.push(`${file.name}: The AI flow returned null.`);
+            setProgressValue(Math.round(((i + 1) / selectedFiles.length) * 100));
+            continue;
+        }
         
         if (aiResult.error) {
           filesWithErrors.push(`${file.name}: ${aiResult.error}`);
