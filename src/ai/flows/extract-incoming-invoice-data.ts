@@ -44,7 +44,7 @@ export type ExtractIncomingInvoiceDataOutput = {
   lieferantAdresse?: string;
   zahlungsziel?: string;
   zahlungsart?: string;
-  gesamtbetrag?: number;
+  gesamtbetrag?: number | null; // Allow null to be passed to frontend
   mwstSatz?: string; // This can be deprecated or derived from steuersaetze
   rechnungspositionen: AppLineItem[];
   kundenNummer?: string;
@@ -55,8 +55,8 @@ export type ExtractIncomingInvoiceDataOutput = {
   lieferdatum?: string;
   kundenName?: string;
   kundenAdresse?: string;
-  nettoBetrag?: number;
-  mwstBetrag?: number;
+  nettoBetrag?: number | null; // Allow null
+  mwstBetrag?: number | null; // Allow null
   waehrung?: string;
   steuersaetze?: { satz: string; basis: number; betrag: number }[];
   sonstigeAnmerkungen?: string;
