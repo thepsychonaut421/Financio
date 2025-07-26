@@ -140,7 +140,8 @@ Extraction Rules for Invoices:
           "FAVORIO C/O HATRACO GMBH": "Favorio c/o Hatraco GmbH",
           "HATRACO GMBH": "Hatraco GmbH",
           "CUMO GMBH": "CUMO GmbH",
-          "SELLIXX GMBH": "SELLIXX GmbH"
+          "SELLIXX GMBH": "SELLIXX GmbH",
+          "SELLIX": "SELLIXX GmbH"
         }
     *   If the extracted supplier name (after converting it to uppercase for robust comparison) does not exactly match any key in the list above, return the originally extracted name. If you are very unsure or cannot extract a name, return "UNBEKANNT".
 

@@ -63,6 +63,15 @@ function compareERPValues(valA: any, valB: any, order: SortOrder): number {
   return order === 'asc' ? comparison : -comparison;
 }
 
+// Helper to sanitize text fields for UI and ERP export
+const sanitizeText = (text: string | undefined | null): string => {
+    if (!text) return '';
+    return text
+        .replace(/Ã¼/g, 'ü').replace(/Ã¤/g, 'ä').replace(/Ã¶/g, 'ö').replace(/Ã/g, 'ß') // Common encoding errors
+        .replace(/[\uFFFD]/g, '') // Remove replacement character
+        .trim();
+};
+
 
 export function IncomingInvoicesPageContent() {
   'use client';
@@ -164,7 +173,8 @@ export function IncomingInvoicesPageContent() {
     "FAVORIO C/O HATRACO GMBH": "Favorio c/o Hatraco GmbH", 
     "HATRACO GMBH": "Hatraco GmbH", 
     "CUMO GMBH": "CUMO GmbH", 
-    "SELLIXX GMBH": "SELLIXX GmbH", 
+    "SELLIXX GMBH": "SELLIXX GmbH",
+    "SELLIX": "SELLIXX GmbH",
     "UNBEKANNT": "UNBEKANNT_SUPPLIER_PLACEHOLDER", 
     "UNBEKANNT_SUPPLIER_AI_EXTRACTED": "UNBEKANNT_SUPPLIER_PLACEHOLDER",
   };
@@ -275,7 +285,7 @@ export function IncomingInvoicesPageContent() {
     const regularResultsDisplay: IncomingInvoiceItem[] = [];
     const erpResultsDisplay: ERPIncomingInvoiceItem[] = [];
     const yearCounters: Record<string, number> = {};
-    const errorMessages = new Set<string>();
+    const errorFiles: string[] = [];
 
     try {
       for (let i = 0; i < selectedFiles.length; i++) {
@@ -287,7 +297,7 @@ export function IncomingInvoicesPageContent() {
         
         if (aiResult.error) {
           console.error(`Error processing ${file.name}: ${aiResult.error}`);
-          errorMessages.add(aiResult.error);
+          errorFiles.push(file.name);
           setProgressValue(Math.round(((i + 1) / selectedFiles.length) * 100));
           continue;
         }
@@ -338,25 +348,29 @@ export function IncomingInvoicesPageContent() {
 
         const erpCompatibleInvoice: ERPIncomingInvoiceItem = {
           pdfFileName: file.name,
-          rechnungsnummer: rechnungsnummerToUse,
+          rechnungsnummer: sanitizeText(rechnungsnummerToUse),
           datum: postingDateERP, 
-          lieferantName: finalLieferantName,
-          lieferantAdresse: aiResult.lieferantAdresse,
-          zahlungsziel: aiResult.zahlungsziel,
-          zahlungsart: aiResult.zahlungsart,
+          lieferantName: sanitizeText(finalLieferantName),
+          lieferantAdresse: sanitizeText(aiResult.lieferantAdresse),
+          zahlungsziel: sanitizeText(aiResult.zahlungsziel),
+          zahlungsart: sanitizeText(aiResult.zahlungsart),
           gesamtbetrag: aiResult.gesamtbetrag,
-          mwstSatz: aiResult.mwstSatz,
-          rechnungspositionen: aiResult.rechnungspositionen || [],
-          kundenNummer: aiResult.kundenNummer,
-          bestellNummer: aiResult.bestellNummer,
+          mwstSatz: sanitizeText(aiResult.mwstSatz),
+          rechnungspositionen: (aiResult.rechnungspositionen || []).map(item => ({
+              ...item,
+              productCode: sanitizeText(item.productCode),
+              productName: sanitizeText(item.productName),
+          })),
+          kundenNummer: sanitizeText(aiResult.kundenNummer),
+          bestellNummer: sanitizeText(aiResult.bestellNummer),
           isPaidByAI: aiResult.isPaid,
-          erpNextInvoiceName: internalRefId, 
+          erpNextInvoiceName: sanitizeText(internalRefId), 
           billDate: billDateERP, 
           dueDate: dueDateERP,   
           wahrung: 'EUR', 
           istBezahlt: istBezahltStatus, 
-          kontenrahmen: kontenrahmen.trim(), 
-          remarks: remarks.trim(),
+          kontenrahmen: sanitizeText(kontenrahmen), 
+          remarks: sanitizeText(remarks),
         };
         allProcessedForMatcher.push(erpCompatibleInvoice);
 
@@ -365,17 +379,21 @@ export function IncomingInvoicesPageContent() {
         } else {
           regularResultsDisplay.push({
               pdfFileName: file.name,
-              rechnungsnummer: rechnungsnummerToUse,
-              datum: aiResult.datum, 
-              lieferantName: finalLieferantName,
-              lieferantAdresse: aiResult.lieferantAdresse,
-              zahlungsziel: aiResult.zahlungsziel,
-              zahlungsart: aiResult.zahlungsart,
+              rechnungsnummer: sanitizeText(rechnungsnummerToUse),
+              datum: sanitizeText(aiResult.datum), 
+              lieferantName: sanitizeText(finalLieferantName),
+              lieferantAdresse: sanitizeText(aiResult.lieferantAdresse),
+              zahlungsziel: sanitizeText(aiResult.zahlungsziel),
+              zahlungsart: sanitizeText(aiResult.zahlungsart),
               gesamtbetrag: aiResult.gesamtbetrag,
-              mwstSatz: aiResult.mwstSatz,
-              rechnungspositionen: aiResult.rechnungspositionen || [],
-              kundenNummer: aiResult.kundenNummer,
-              bestellNummer: aiResult.bestellNummer,
+              mwstSatz: sanitizeText(aiResult.mwstSatz),
+              rechnungspositionen: (aiResult.rechnungspositionen || []).map(item => ({
+                  ...item,
+                  productCode: sanitizeText(item.productCode),
+                  productName: sanitizeText(item.productName),
+              })),
+              kundenNummer: sanitizeText(aiResult.kundenNummer),
+              bestellNummer: sanitizeText(aiResult.bestellNummer),
               isPaidByAI: aiResult.isPaid,
           });
         }
@@ -386,11 +404,10 @@ export function IncomingInvoicesPageContent() {
       setErpProcessedInvoices(erpResultsDisplay);
       localStorage.setItem(LOCAL_STORAGE_MATCHER_DATA_KEY, JSON.stringify(allProcessedForMatcher));
       
-      if (errorMessages.size > 0) {
-        const fileCount = selectedFiles.length;
-        const errorCount = errorMessages.size;
-        const successCount = fileCount - errorCount;
-        setErrorMessage(`Could not process ${errorCount} of ${fileCount} file(s). Please check if they are image-based or have an unusual format. ${successCount > 0 ? 'The successfully processed invoices are displayed below.' : ''}`);
+      if (errorFiles.length > 0) {
+        const totalFiles = selectedFiles.length;
+        const successCount = totalFiles - errorFiles.length;
+        setErrorMessage(`Processing complete. ${successCount} of ${totalFiles} files succeeded. Could not process ${errorFiles.length} file(s), likely due to complex formats or being image-based. Please review the successful invoices below.`);
         setStatus(regularResultsDisplay.length > 0 || erpResultsDisplay.length > 0 ? 'success' : 'error');
       } else {
         setStatus('success'); 
@@ -785,7 +802,7 @@ export function IncomingInvoicesPageContent() {
         {errorMessage && (
           <Alert variant="destructive" className="my-6 whitespace-pre-wrap">
             <AlertCircle className="h-4 w-4" />
-            <AlertTitle>Error</AlertTitle>
+            <AlertTitle>Error / Status</AlertTitle>
             <AlertDescription>{errorMessage}</AlertDescription>
           </Alert>
         )}
