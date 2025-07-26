@@ -285,7 +285,7 @@ export function IncomingInvoicesPageContent() {
     const regularResultsDisplay: IncomingInvoiceItem[] = [];
     const erpResultsDisplay: ERPIncomingInvoiceItem[] = [];
     const yearCounters: Record<string, number> = {};
-    const errorFiles: string[] = [];
+    const errorFileNames = new Set<string>();
 
     try {
       for (let i = 0; i < selectedFiles.length; i++) {
@@ -297,7 +297,7 @@ export function IncomingInvoicesPageContent() {
         
         if (aiResult.error) {
           console.error(`Error processing ${file.name}: ${aiResult.error}`);
-          errorFiles.push(file.name);
+          errorFileNames.add(file.name);
           setProgressValue(Math.round(((i + 1) / selectedFiles.length) * 100));
           continue;
         }
@@ -404,10 +404,11 @@ export function IncomingInvoicesPageContent() {
       setErpProcessedInvoices(erpResultsDisplay);
       localStorage.setItem(LOCAL_STORAGE_MATCHER_DATA_KEY, JSON.stringify(allProcessedForMatcher));
       
-      if (errorFiles.length > 0) {
+      if (errorFileNames.size > 0) {
         const totalFiles = selectedFiles.length;
-        const successCount = totalFiles - errorFiles.length;
-        setErrorMessage(`Processing complete. ${successCount} of ${totalFiles} files succeeded. Could not process ${errorFiles.length} file(s), likely due to complex formats or being image-based. Please review the successful invoices below.`);
+        const successCount = totalFiles - errorFileNames.size;
+        const failedFilesList = Array.from(errorFileNames).join(', ');
+        setErrorMessage(`Processing complete. ${successCount} of ${totalFiles} files succeeded. Could not process: ${failedFilesList}.`);
         setStatus(regularResultsDisplay.length > 0 || erpResultsDisplay.length > 0 ? 'success' : 'error');
       } else {
         setStatus('success'); 
@@ -866,3 +867,5 @@ export function IncomingInvoicesPageContent() {
     </div>
   );
 }
+
+    
