@@ -69,11 +69,13 @@ export function LandingPageContent() {
             <div className="mt-12 md:mt-20 relative">
               <div className="absolute inset-0 bg-gradient-to-t from-background via-transparent to-transparent opacity-50 rounded-lg"></div>
               {/* Using a standard img tag to prevent layout issues */}
-              <img
-                src="https://images.unsplash.com/photo-1587614295999-6c1c13675117"
-                alt="Financio Banner"
+              <Image
+                src="https://images.unsplash.com/photo-1587614295999-6c1c13675117?q=80&w=2070&auto=format&fit=crop&ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D"
+                alt="Financio Banner - A person working on a laptop with financial charts"
+                width={1200}
+                height={675}
+                priority={true}
                 className="rounded-xl shadow-2xl mx-auto relative z-10 border border-border max-w-full h-auto"
-                style={{ maxWidth: '1200px' }}
                 data-ai-hint="person laptop charts"
               />
             </div>

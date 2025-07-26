@@ -12,8 +12,8 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: 'Financio',
-  description: 'Extract data from PDFs, organize files, and match bank statements using AI.',
+  title: 'Financio - AI-Powered Financial Document Processing',
+  description: 'Financio uses AI to extract, organize, and manage your financial documents like invoices and bank statements with unparalleled speed and accuracy. Streamline your workflow today.',
 };
 
 export default function RootLayout({
