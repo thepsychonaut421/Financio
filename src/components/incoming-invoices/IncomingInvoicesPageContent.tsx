@@ -15,7 +15,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { readFileAsDataURL } from '@/lib/file-helpers';
-import { extractIncomingInvoiceData, type ExtractIncomingInvoiceDataOutput } from '@/ai/flows/extract-incoming-invoice-data';
+import { extractIncomingInvoiceData } from '@/ai/flows/extract-incoming-invoice-data';
 import type { IncomingInvoiceItem, ERPIncomingInvoiceItem, IncomingProcessingStatus, ERPSortKey, SortOrder } from '@/types/incoming-invoice';
 import { addDays, parseISO, isValid, format as formatDateFns } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
@@ -48,11 +48,12 @@ interface AIInvoice {
     unitPrice: number | null;
     totalPrice: number | null;
   }>;
+  error?: string;
 }
 
 function validateTotals(data: AIInvoice) {
   const { nettoBetrag, mwstBetrag, bruttoBetrag } = data;
-  if (nettoBetrag == null || mwstBetrag == null || bruttoBetrag == null) {
+  if (nettoBetrag === null || mwstBetrag === null || bruttoBetrag === null) {
     return { valid: false, reason: 'One or more total amounts (net, vat, gross) are missing from the extraction.' };
   }
   
@@ -356,7 +357,7 @@ export function IncomingInvoicesPageContent() {
         const dataUri = await readFileAsDataURL(file);
         const aiResult = (await extractIncomingInvoiceData({ invoiceDataUri: dataUri })) as AIInvoice;
         
-        if ('error' in aiResult && typeof aiResult.error === 'string') {
+        if (aiResult.error) {
           filesWithErrors.push(`${file.name}: ${aiResult.error}`);
           setProgressValue(Math.round(((i + 1) / selectedFiles.length) * 100));
           continue;

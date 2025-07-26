@@ -16,7 +16,7 @@ const ExtractIncomingInvoiceDataInputSchema = z.object({
   invoiceDataUri: z
     .string()
     .describe(
-      "An invoice PDF, as a data URI that must include a MIME type and use Base64 encoding. Expected format: 'data:<mimetype>;base64,<encoded_data>'."
+      "An invoice PDF, as a data URI that must include a MIME type and use Base64 encoding. Expected format: 'data:<mimetype>;base64,<encoded_data>'"
     ),
 });
 export type ExtractIncomingInvoiceDataInput = z.infer<typeof ExtractIncomingInvoiceDataInputSchema>;
@@ -151,22 +151,27 @@ For a given invoice, extract these fields into a JSON object. It is critical tha
   ]
 }
 
-## **Extraction Rules**
+## **Extraction Rules & Fallbacks**
 
-*   **Accuracy is key.** If a value is missing or cannot be determined, return \`null\` for that specific field. Do not guess or invent data.
+*   **Accuracy is key.** If a value is missing or cannot be determined after applying fallbacks, return \`null\` for that specific field. Do not guess or invent data.
 *   **Numbers**: Always use a dot (.) as the decimal separator. Remove any thousands separators (like commas or periods).
 *   **Dates**: Strictly use YYYY-MM-DD format. Convert from other formats (like DD.MM.YYYY) if necessary.
+*   **Totals (Critical Fallbacks)**:
+    *   Find the final total amount first. Look for labels like "Gesamtbetrag", "Total Amount", "Amount Due", "Rechnungsendbetrag", "Summe". This is your \`bruttoBetrag\`.
+    *   Find the total VAT/tax amount. Look for "MwSt.", "VAT", "USt.". This is your \`mwstBetrag\`.
+    *   Find the total net amount. Look for "Netto", "Subtotal", "Warenwert". This is your \`nettoBetrag\`.
+    *   **If one of the three totals is missing, CALCULATE it**.
+        *   If \`nettoBetrag\` is missing: \`nettoBetrag = bruttoBetrag - mwstBetrag\`
+        *   If \`mwstBetrag\` is missing: \`mwstBetrag = bruttoBetrag - nettoBetrag\`
+        *   If \`bruttoBetrag\` is missing: \`bruttoBetrag = nettoBetrag + mwstBetrag\`
+    *   **If two or more totals are missing, the extraction for totals has failed.** Return \`null\` for all three (\`nettoBetrag\`, \`mwstBetrag\`, \`bruttoBetrag\`).
 *   **Line Items**:
     *   **productCode**: Extract the item code, article number (Art.-Nr.), or SKU. If none is present for a line item, return \`null\`.
     *   **productName**: The name or description of the line item.
     *   **quantity**: The quantity.
     *   **unitPrice**: The net price per unit (Einzelpreis Netto).
     *   **totalPrice**: The total net price for the line (Gesamt Netto), which is typically quantity * unitPrice.
-*   **Totals**:
-    *   **nettoBetrag**: The total net amount of all items and services.
-    *   **mwstBetrag**: The total VAT/tax amount for the entire invoice.
-    *   **bruttoBetrag**: The final gross total to be paid (Gesamtbetrag, Total Amount).
-*   **Currency**: The currency of the invoice (e.g., "EUR", "RON", "USD"). Look for symbols (€, $, RON) or codes.
+*   **Currency**: The currency of the invoice (e.g., "EUR", "RON", "USD"). Look for symbols (€, $, RON) or codes. If missing, infer from context or default to EUR for German invoices.
 
 The final output MUST be a single, valid JSON object that strictly follows this schema. Do not add any extra fields or introductory text.
 
@@ -185,13 +190,13 @@ const extractIncomingInvoiceDataFlow = ai.defineFlow(
     try {
         const {output} = await prompt(input, {model: 'googleai/gemini-1.5-flash-latest'});
         // Basic validation: ensure the most important field is present
-        if (!output || output.bruttoBetrag === null || output.bruttoBetrag === undefined) {
+        if (!output || (output.bruttoBetrag === null && output.nettoBetrag === null)) {
            // If the main total is missing, the extraction is likely a failure.
            return { 
                supplier: null, invoiceNumber: null, invoiceDate: null, dueDate: null,
                nettoBetrag: null, mwstBetrag: null, bruttoBetrag: null, currency: null,
                items: [], 
-               error: "Extraction failed: The AI could not determine the invoice's total amount (bruttoBetrag)." 
+               error: "Extraction failed: The AI could not determine the invoice's total amounts." 
            };
         }
         return output;
