@@ -25,7 +25,7 @@ export type ExtractIncomingInvoiceDataInput = z.infer<typeof ExtractIncomingInvo
 const AIOutputSchema = z.object({
   rechnungsnummer: z.string().optional().describe('The invoice number (Rechnungsnummer). This must be the number explicitly and clearly labeled as "Rechnungs-Nr.", "Rechnungsnummer", or "Invoice No.". Absolutely do NOT use any number labeled "Bestell-Nr.", "Order Number", "Bestellnummer", "Auftragsnummer", or similar order/customer identifiers, NOR from the filename. If no value is explicitly labeled as "Rechnungs-Nr." or "Rechnungsnummer", this field must be left empty.'),
   datum: z.string().optional().describe('The invoice date (Datum), preferably in YYYY-MM-DD format (convert if DD.MM.YYYY). Look for labels like "Rechnungsdatum".'),
-  lieferantName: z.string().optional().describe('The name of the supplier (Lieferant). Try to match to the ERPNext supplier name from the provided list. If no match, return the extracted name or "UNBEKANNT".'),
+  lieferantName: z.string().optional().describe('The name of the supplier (Lieferant). Extract the name as it appears on the invoice.'),
   lieferantAdresse: z.string().optional().describe('The full address of the supplier (Adresse Lieferant).'),
   zahlungsziel: z.string().optional().describe('The payment terms (Zahlungsziel), e.g., "14 Tage netto", "sofort zahlbar".'),
   zahlungsart: z.string().optional().describe('The payment method (Zahlungsart), e.g., "Überweisung", "Sofort", "PayPal", "Lastschrift".'),
@@ -124,26 +124,8 @@ Extraction Rules for Invoices:
     *   CRITICAL: Return the date in YYYY-MM-DD ISO format. If the invoice shows DD.MM.YYYY (e.g., 17.01.2025), you MUST convert it to YYYY-MM-DD (e.g., 2025-01-17).
 
 3.  Lieferant (Supplier):
-    *   Extract the supplier's name from the invoice.
-    *   Then, try to match the extracted name to an exact name from this valid ERPNext supplier list. Return the ERPNext name if a match is found.
-        Valid ERPNext Supplier Names (supplierMap, keys should be uppercase for matching):
-        {
-          "LIDL": "Lidl",
-          "LIDL DIGITAL DEUTSCHLAND GMBH & CO. KG": "Lidl",
-          "GD ARTLANDS ETRADING GMBH": "GD Artlands eTrading GmbH",
-          "RETOURA": "RETOURA",
-          "DOITBAU GMBH & CO.KG": "doitBau",
-          "KAUFLAND": "Kaufland",
-          "ALDI": "ALDI E-Commerce",
-          "FIRMA HANDLOWA KABIS BOZENA KEDZIORA": "FIRMA HANDLOWA KABIS BOZENA KEDZIORA",
-          "ZWECO UG": "Zweco UG",
-          "FAVORIO C/O HATRACO GMBH": "Favorio c/o Hatraco GmbH",
-          "HATRACO GMBH": "Hatraco GmbH",
-          "CUMO GMBH": "CUMO GmbH",
-          "SELLIXX GMBH": "SELLIXX GmbH",
-          "SELLIX": "SELLIXX GmbH"
-        }
-    *   If the extracted supplier name (after converting it to uppercase for robust comparison) does not exactly match any key in the list above, return the originally extracted name. If you are very unsure or cannot extract a name, return "UNBEKANNT".
+    *   Extract the supplier's name exactly as it appears on the invoice. Do not abbreviate or change it.
+    *   If you cannot find a clear supplier name, return "UNBEKANNT".
 
 4.  Lieferant Adresse (Supplier Address): The full postal address of the supplier. Clean any newline characters.
 

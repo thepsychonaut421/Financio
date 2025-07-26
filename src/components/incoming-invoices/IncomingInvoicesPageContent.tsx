@@ -160,23 +160,34 @@ export function IncomingInvoicesPageContent() {
     }
   }, [extractedInvoices, erpProcessedInvoices, erpMode, status, existingErpInvoiceKeys, erpSortKey, erpSortOrder, kontenrahmen]);
   
-  const supplierMap: Record<string, string> = {
-    "LIDL": "Lidl",
-    "LIDL DIGITAL DEUTSCHLAND GMBH & CO. KG": "Lidl",
-    "GD ARTLANDS ETRADING GMBH": "GD Artlands eTrading GmbH", 
-    "RETOURA": "RETOURA",
-    "DOITBAU GMBH & CO.KG": "doitBau", 
-    "KAUFLAND": "Kaufland",
-    "ALDI": "ALDI E-Commerce", 
-    "FIRMA HANDLOWA KABIS BOZENA KEDZIORA": "FIRMA HANDLOWA KABIS BOZENA KEDZIORA",
-    "ZWECO UG": "Zweco UG", 
-    "FAVORIO C/O HATRACO GMBH": "Favorio c/o Hatraco GmbH", 
-    "HATRACO GMBH": "Hatraco GmbH", 
-    "CUMO GMBH": "CUMO GmbH", 
-    "SELLIXX GMBH": "SELLIXX GmbH",
-    "SELLIX": "SELLIXX GmbH",
-    "UNBEKANNT": "UNBEKANNT_SUPPLIER_PLACEHOLDER", 
-    "UNBEKANNT_SUPPLIER_AI_EXTRACTED": "UNBEKANNT_SUPPLIER_PLACEHOLDER",
+  const getERPNextSupplierName = (extractedName: string): string => {
+    const nameUpper = extractedName.toUpperCase();
+    const supplierMap: Record<string, string> = {
+      "LIDL": "Lidl",
+      "LIDL DIGITAL DEUTSCHLAND GMBH & CO. KG": "Lidl",
+      "GD ARTLANDS ETRADING GMBH": "GD Artlands eTrading GmbH",
+      "RETOURA": "RETOURA",
+      "DOITBAU GMBH & CO.KG": "doitBau",
+      "KAUFLAND": "Kaufland",
+      "ALDI": "ALDI E-Commerce",
+      "FIRMA HANDLOWA KABIS BOZENA KEDZIORA": "FIRMA HANDLOWA KABIS BOZENA KEDZIORA",
+      "ZWECO UG": "Zweco UG",
+      "FAVORIO C/O HATRACO GMBH": "Favorio c/o Hatraco GmbH",
+      "HATRACO GMBH": "Hatraco GmbH",
+      "CUMO GMBH": "CUMO GmbH",
+      "SELLIXX GMBH": "SELLIXX GmbH",
+      "SELLIX": "SELLIXX GmbH",
+    };
+
+    if (supplierMap[nameUpper]) {
+      return supplierMap[nameUpper];
+    }
+    
+    if (nameUpper === "UNBEKANNT" || nameUpper === "UNBEKANNT_SUPPLIER_AI_EXTRACTED") {
+      return "UNBEKANNT_SUPPLIER_PLACEHOLDER";
+    }
+
+    return extractedName; // Return original if no mapping found
   };
   
 
@@ -296,21 +307,13 @@ export function IncomingInvoicesPageContent() {
         const aiResult: ExtractIncomingInvoiceDataOutput = await extractIncomingInvoiceData({ invoiceDataUri: dataUri });
         
         if (aiResult.error) {
-          console.error(`Error processing ${file.name}: ${aiResult.error}`);
-          errorFileNames.add(file.name);
+          errorFileNames.add(`${file.name}: ${aiResult.error}`);
           setProgressValue(Math.round(((i + 1) / selectedFiles.length) * 100));
           continue;
         }
 
-        let finalLieferantName = (aiResult.lieferantName || "").trim();
-        const upperCaseExtractedName = finalLieferantName.toUpperCase();
-
-        if (supplierMap[upperCaseExtractedName]) {
-            finalLieferantName = supplierMap[upperCaseExtractedName];
-        } else if (finalLieferantName === "" || finalLieferantName === "UNBEKANNT" || finalLieferantName === "UNBEKANNT_SUPPLIER_AI_EXTRACTED") {
-            finalLieferantName = "UNBEKANNT_SUPPLIER_PLACEHOLDER"; 
-        }
-
+        const finalLieferantName = getERPNextSupplierName(aiResult.lieferantName || 'UNBEKANNT');
+        
         const postingDateERP = formatDateForERP(aiResult.datum);
         const billDateERP = postingDateERP; 
         const dueDateERP = calculateDueDate(postingDateERP, aiResult.zahlungsziel);
@@ -407,8 +410,8 @@ export function IncomingInvoicesPageContent() {
       if (errorFileNames.size > 0) {
         const totalFiles = selectedFiles.length;
         const successCount = totalFiles - errorFileNames.size;
-        const failedFilesList = Array.from(errorFileNames).join(', ');
-        setErrorMessage(`Processing complete. ${successCount} of ${totalFiles} files succeeded. Could not process: ${failedFilesList}.`);
+        const failedFilesList = Array.from(errorFileNames).join('; ');
+        setErrorMessage(`Processing summary: ${successCount} of ${totalFiles} files succeeded. Errors occurred on: ${failedFilesList}`);
         setStatus(regularResultsDisplay.length > 0 || erpResultsDisplay.length > 0 ? 'success' : 'error');
       } else {
         setStatus('success'); 
@@ -595,12 +598,7 @@ export function IncomingInvoicesPageContent() {
 
         results.data.forEach((row: any) => {
           const rawSupplierNameFromErp = (row[supplierHeader] || '').trim();
-          let normalizedSupplierNameForErpKey = rawSupplierNameFromErp.toLowerCase();
-          const upperCaseErpSupplierName = rawSupplierNameFromErp.toUpperCase();
-
-          if (supplierMap[upperCaseErpSupplierName]) {
-            normalizedSupplierNameForErpKey = supplierMap[upperCaseErpSupplierName].toLowerCase();
-          }
+          let normalizedSupplierNameForErpKey = getERPNextSupplierName(rawSupplierNameFromErp).toLowerCase();
           
           const invoiceNumberFromErp = (row[billNoHeader] || '').trim().toLowerCase();
           const rawDateFromErp = (row[dateHeader] || '').trim();
