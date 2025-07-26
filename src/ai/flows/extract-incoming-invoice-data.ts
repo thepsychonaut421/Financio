@@ -64,8 +64,9 @@ export type ExtractIncomingInvoiceDataOutput = {
 
 // Helper function for product code normalization
 function normalizeProductCode(code: any): string {
-  let strCode = String(code || '').trim().replace(/\n/g, ' ');
-  if (/^[-+]?[0-9]*\.?[0-9]+([eE][-+]?[0-9]+)$/.test(strCode)) {
+  let strCode = String(code || '').trim().replace(/
+/g, ' ');
+  if (/^[-+]?[0-9]*.?[0-9]+([eE][-+]?[0-9]+)$/.test(strCode)) {
     const num = Number(strCode);
     if (!isNaN(num) && isFinite(num)) {
       return num.toString();
@@ -82,9 +83,17 @@ export async function extractIncomingInvoiceData(input: ExtractIncomingInvoiceDa
     return { rechnungspositionen: [], error: rawOutput.error };
   }
 
-  const normalizedLineItems: AppLineItem[] = (rawOutput.items || []).map(item => ({
+   const data = JSON.parse(JSON.stringify(rawOutput)); // Create a deep copy to avoid modifying rawOutput
+
+    // Validate and normalize data
+    if (!Array.isArray(data.items) || data.items.some((i: any) => isNaN(i.totalPrice) || i.totalPrice === null)) {
+      throw new Error("Line items parsing failed or contained invalid total prices.");
+    }
+
+  const normalizedLineItems: AppLineItem[] = (data.items || []).map((item: any) => ({
     productCode: normalizeProductCode(item.productCode),
-    productName: String(item.productName || '').trim().replace(/\n/g, ' '),
+    productName: String(item.productName || '').trim().replace(/
+/g, ' '),
     quantity: item.quantity === null ? 0 : item.quantity,
     unitPrice: item.unitPrice === null ? 0.0 : item.unitPrice,
   }));
@@ -92,25 +101,26 @@ export async function extractIncomingInvoiceData(input: ExtractIncomingInvoiceDa
   // Determine the main VAT rate for the simplified 'mwstSatz' field for backward compatibility
   // This could be the one with the largest base amount.
   let mainVatRate = ""; // Deprecating mwstSatz
-  if (rawOutput.mwstBetrag && rawOutput.nettoBetrag && rawOutput.nettoBetrag > 0) {
-      mainVatRate = `${((rawOutput.mwstBetrag / rawOutput.nettoBetrag) * 100).toFixed(0)}%`;
+  if (data.mwstBetrag && data.nettoBetrag && data.nettoBetrag > 0) {
+      mainVatRate = `${((data.mwstBetrag / data.nettoBetrag) * 100).toFixed(0)}%`;
   }
 
 
   const normalizedOutput: ExtractIncomingInvoiceDataOutput = {
-    rechnungsnummer: rawOutput.invoiceNumber,
-    datum: rawOutput.invoiceDate,
-    lieferdatum: rawOutput.dueDate, // using dueDate as lieferdatum
-    lieferantName: String(rawOutput.supplier || '').trim().replace(/\n/g, ' '),
+    rechnungsnummer: data.invoiceNumber,
+    datum: data.invoiceDate,
+    lieferdatum: data.dueDate, // using dueDate as lieferdatum
+    lieferantName: String(data.supplier || '').trim().replace(/
+/g, ' '),
     lieferantAdresse: "", // Not in new prompt
     kundenName: "", // Not in new prompt
     kundenAdresse: "", // Not in new prompt
     zahlungsziel: "", // Not in new prompt
     zahlungsart: "", // Not in new prompt
-    nettoBetrag: rawOutput.nettoBetrag,
-    mwstBetrag: rawOutput.mwstBetrag,
-    gesamtbetrag: rawOutput.bruttoBetrag,
-    waehrung: rawOutput.currency,
+    nettoBetrag: data.nettoBetrag,
+    mwstBetrag: data.mwstBetrag,
+    gesamtbetrag: data.bruttoBetrag,
+    waehrung: data.currency,
     steuersaetze: [], // Not in new prompt
     mwstSatz: mainVatRate,
     kundenNummer: "", // Not in new prompt
@@ -127,56 +137,86 @@ const prompt = ai.definePrompt({
   name: 'extractIncomingInvoiceDataPrompt',
   input: {schema: ExtractIncomingInvoiceDataInputSchema},
   output: {schema: AIOutputSchema}, // AI tries to fill this schema
-  prompt: `You are a powerful invoice data extractor. Your primary goal is to parse the content of an invoice PDF and return a structured JSON object.
-
-For a given invoice, extract these fields into a JSON object. It is critical that you extract every field exactly as specified.
+  prompt: `
+YouYou are a highly-accurate invoice parser. 
+You will receive the full text of a single German invoice PDF.
+Output **only** valid JSON matching this schema:
 
 {
-  "supplier": string | null,
-  "invoiceNumber": string | null,
-  "invoiceDate": string | null,
-  "dueDate": string | null,
-  "nettoBetrag": number | null,
-  "mwstBetrag": number | null,
-  "bruttoBetrag": number | null,
-  "currency": string | null,
+  "supplier": string,
+  "invoiceNumber": string,
+  "date": "YYYY-MM-DD",
+  "currency": string,
   "items": [
     {
-      "productCode": string | null,
-      "productName": string | null,
-      "quantity": number | null,
-      "unitPrice": number | null,
-      "totalPrice": number | null
-    }
-  ]
+      "description": string,
+      "quantity": number,
+      "unitPrice": number,
+      "totalLine": number
+    }, ...
+  ],
+  "netAmount": number,
+  "vatAmount": number,
+  "grossAmount": number
 }
 
-## **Extraction Rules & Fallbacks**
+### EXAMPLE 1
+INPUT:
+“Rechnung Nr.: 12345
+ Datum: 01.12.2024
+ Pos 1: Teppich 5 Stk à €28,59 = €142,95
+ Pos 2: Versandpauschale 1 Stk à €5,95 = €5,95
+ Zwischensumme: €148,90
+ MwSt 19%: €28,29
+ Gesamtbetrag: €177,19”
+OUTPUT:
+{
+  "supplier": "Mustermann GmbH",
+  "invoiceNumber": "12345",
+  "date": "2024-12-01",
+  "currency": "EUR",
+  "items": [
+    {"description":"Teppich","quantity":5,"unitPrice":28.59,"totalLine":142.95},
+    {"description":"Versandpauschale","quantity":1,"unitPrice":5.95,"totalLine":5.95}
+  ],
+  "netAmount":148.90,
+  "vatAmount":28.29,
+  "grossAmount":177.19
+}
 
-*   **Accuracy is key.** If a value is missing or cannot be determined after applying fallbacks, return \`null\` for that specific field. Do not guess or invent data.
-*   **Numbers**: Always use a dot (.) as the decimal separator. Remove any thousands separators (like commas or periods).
-*   **Dates**: Strictly use YYYY-MM-DD format. Convert from other formats (like DD.MM.YYYY) if necessary.
-*   **Totals (Critical Fallbacks)**:
-    *   Find the final total amount first. Look for labels like "Gesamtbetrag", "Total Amount", "Amount Due", "Rechnungsendbetrag", "Summe". This is your \`bruttoBetrag\`.
-    *   Find the total VAT/tax amount. Look for "MwSt.", "VAT", "USt.". This is your \`mwstBetrag\`.
-    *   Find the total net amount. Look for "Netto", "Subtotal", "Warenwert". This is your \`nettoBetrag\`.
-    *   **If one of the three totals is missing, CALCULATE it**.
-        *   If \`nettoBetrag\` is missing: \`nettoBetrag = bruttoBetrag - mwstBetrag\`
-        *   If \`mwstBetrag\` is missing: \`mwstBetrag = bruttoBetrag - nettoBetrag\`
-        *   If \`bruttoBetrag\` is missing: \`bruttoBetrag = nettoBetrag + mwstBetrag\`
-    *   **If two or more totals are missing, the extraction for totals has failed.** Return \`null\` for all three (\`nettoBetrag\`, \`mwstBetrag\`, \`bruttoBetrag\`).
-*   **Line Items**:
-    *   **productCode**: Extract the item code, article number (Art.-Nr.), or SKU. If none is present for a line item, return \`null\`.
-    *   **productName**: The name or description of the line item.
-    *   **quantity**: The quantity.
-    *   **unitPrice**: The net price per unit (Einzelpreis Netto).
-    *   **totalPrice**: The total net price for the line (Gesamt Netto), which is typically quantity * unitPrice.
-*   **Currency**: The currency of the invoice (e.g., "EUR", "RON", "USD"). Look for symbols (€, $, RON) or codes. If missing, infer from context or default to EUR for German invoices.
+### EXAMPLE 2
+INPUT:
+“Rechnung
+Kunde: Max Mustermann
+Rechnungsnummer: R-9876
+Datum: 15.07.2024
+Währung: EUR
+Artikel:
+1. Laptop ABC x 2 @ 1200.00 = 2400.00
+2. Maus XYZ x 5 @ 25.00 = 125.00
+Nettobetrag: 2525.00
+Mehrwertsteuer (19%): 479.75
+Gesamtbetrag: 3004.75”
+OUTPUT:
+{
+  "supplier": "Tech Solutions AG",
+  "invoiceNumber": "R-9876",
+  "date": "2024-07-15",
+  "currency": "EUR",
+  "items": [
+    {"description":"Laptop ABC","quantity":2,"unitPrice":1200.00,"totalLine":2400.00},
+    {"description":"Maus XYZ","quantity":5,"unitPrice":25.00,"totalLine":125.00}
+  ],
+  "netAmount":2525.00,
+  "vatAmount":479.75,
+  "grossAmount":3004.75
+}
 
-The final output MUST be a single, valid JSON object that strictly follows this schema. Do not add any extra fields or introductory text.
-
-Invoice Content: {{media url=invoiceDataUri}}
-`,
+### NOW PARSE:
+INPUT:
+"""${invoiceDataUri}"""
+OUTPUT:
+`.trim(),
 });
 
 
