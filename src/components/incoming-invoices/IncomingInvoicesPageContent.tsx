@@ -179,8 +179,11 @@ export function IncomingInvoicesPageContent() {
       "SELLIX": "SELLIXX GmbH",
     };
 
-    if (supplierMap[nameUpper]) {
-      return supplierMap[nameUpper];
+    // Find a match in the map, ignoring case and surrounding characters for robustness
+    for (const key in supplierMap) {
+        if (nameUpper.includes(key)) {
+            return supplierMap[key];
+        }
     }
     
     if (nameUpper === "UNBEKANNT" || nameUpper === "UNBEKANNT_SUPPLIER_AI_EXTRACTED") {
@@ -865,5 +868,3 @@ export function IncomingInvoicesPageContent() {
     </div>
   );
 }
-
-    
