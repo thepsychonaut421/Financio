@@ -21,17 +21,16 @@ const ExtractIncomingInvoiceDataInputSchema = z.object({
 });
 export type ExtractIncomingInvoiceDataInput = z.infer<typeof ExtractIncomingInvoiceDataInputSchema>;
 
-// Schema for AI model output (uses AILineItemSchema for flexibility)
+// Schema for AI model output, aligned with the new robust prompt
 const AIOutputSchema = z.object({
-  supplier: z.string().nullable().describe("The supplier's name, exactly as printed."),
-  invoiceNumber: z.string().nullable().describe('The invoice number.'),
+  supplier: z.string().nullable(),
+  invoiceNumber: z.string().nullable(),
   invoiceDate: z.string().nullable().describe('The invoice date in YYYY-MM-DD format.'),
-  dueDate: z.string().nullable().describe('The due date in YYYY-MM-DD format.'),
-  nettoBetrag: z.number().nullable().describe('The total net amount.'),
-  mwstBetrag: z.number().nullable().describe('The total VAT amount.'),
-  bruttoBetrag: z.number().nullable().describe('The final gross total amount of the invoice.'),
-  currency: z.string().nullable().describe('The currency (e.g., "EUR", "RON").'),
+  currency: z.string().nullable(),
   items: z.array(AILineItemSchema).describe('An array of line items from the invoice.'),
+  netAmount: z.number().nullable(),
+  vatAmount: z.number().nullable(),
+  grossAmount: z.number().nullable(),
   error: z.string().optional().describe('An error message if the operation failed.'),
 });
 
@@ -44,19 +43,18 @@ export type ExtractIncomingInvoiceDataOutput = {
   lieferantAdresse?: string;
   zahlungsziel?: string;
   zahlungsart?: string;
-  gesamtbetrag?: number | null; // Allow null to be passed to frontend
-  mwstSatz?: string; // This can be deprecated or derived from steuersaetze
+  gesamtbetrag?: number | null;
+  mwstSatz?: string;
   rechnungspositionen: AppLineItem[];
   kundenNummer?: string;
   bestellNummer?: string;
-  isPaid?: boolean; // This is what AI directly returns, will be mapped to istBezahlt in calling component
+  isPaid?: boolean;
   error?: string;
-  // Add new fields from AIOutputSchema that you want to pass to the frontend
   lieferdatum?: string;
   kundenName?: string;
   kundenAdresse?: string;
-  nettoBetrag?: number | null; // Allow null
-  mwstBetrag?: number | null; // Allow null
+  nettoBetrag?: number | null;
+  mwstBetrag?: number | null;
   waehrung?: string;
   steuersaetze?: { satz: string; basis: number; betrag: number }[];
   sonstigeAnmerkungen?: string;
@@ -78,52 +76,66 @@ function normalizeProductCode(code: any): string {
 export async function extractIncomingInvoiceData(input: ExtractIncomingInvoiceDataInput): Promise<ExtractIncomingInvoiceDataOutput> {
   const rawOutput = await extractIncomingInvoiceDataFlow(input);
 
-  if (rawOutput.error) {
-    return { rechnungspositionen: [], error: rawOutput.error };
+  if (!rawOutput || rawOutput.error) {
+    return { rechnungspositionen: [], error: rawOutput?.error || "The AI model returned no output." };
   }
 
-   const data = JSON.parse(JSON.stringify(rawOutput)); // Create a deep copy to avoid modifying rawOutput
+  // Post-parse validation and normalization
+  let { netAmount, vatAmount, grossAmount } = rawOutput;
 
-    // Validate and normalize data
-    if (!Array.isArray(data.items) || data.items.some((i: any) => isNaN(i.totalPrice) || i.totalPrice === null)) {
-      throw new Error("Line items parsing failed or contained invalid total prices.");
-    }
+  // Attempt to compute missing numeric fields
+  if (typeof netAmount !== 'number' && typeof vatAmount === 'number' && typeof grossAmount === 'number') {
+    netAmount = grossAmount - vatAmount;
+  }
+  if (typeof vatAmount !== 'number' && typeof netAmount === 'number' && typeof grossAmount === 'number') {
+    vatAmount = grossAmount - netAmount;
+  }
+  if (typeof grossAmount !== 'number' && typeof netAmount === 'number' && typeof vatAmount === 'number') {
+    grossAmount = netAmount + vatAmount;
+  }
 
-  const normalizedLineItems: AppLineItem[] = (data.items || []).map((item: any) => ({
+  // Final validation check after computation
+  if (typeof netAmount !== 'number' || typeof vatAmount !== 'number' || typeof grossAmount !== 'number') {
+      return {
+          rechnungspositionen: [],
+          error: `Invoice amounts are incomplete. Net: ${netAmount}, VAT: ${vatAmount}, Gross: ${grossAmount}`
+      };
+  }
+
+  const normalizedLineItems: AppLineItem[] = (rawOutput.items || []).map((item: any) => ({
     productCode: normalizeProductCode(item.productCode),
-    productName: String(item.productName || '').trim().replace(/\n/g, ' '),
-    quantity: item.quantity === null ? 0 : item.quantity,
-    unitPrice: item.unitPrice === null ? 0.0 : item.unitPrice,
+    productName: String(item.productName || item.description || '').trim().replace(/\n/g, ' '),
+    quantity: typeof item.quantity === 'number' ? item.quantity : 0,
+    unitPrice: typeof item.unitPrice === 'number' ? item.unitPrice : 0.0,
   }));
 
-  // Determine the main VAT rate for the simplified 'mwstSatz' field for backward compatibility
-  // This could be the one with the largest base amount.
-  let mainVatRate = ""; // Deprecating mwstSatz
-  if (data.mwstBetrag && data.nettoBetrag && data.nettoBetrag > 0) {
-      mainVatRate = `${((data.mwstBetrag / data.nettoBetrag) * 100).toFixed(0)}%`;
+  // Simplified VAT rate calculation for display
+  let mainVatRate = "";
+  if (vatAmount > 0 && netAmount > 0) {
+      mainVatRate = `${((vatAmount / netAmount) * 100).toFixed(0)}%`;
   }
 
-
   const normalizedOutput: ExtractIncomingInvoiceDataOutput = {
-    rechnungsnummer: data.invoiceNumber,
-    datum: data.invoiceDate,
-    lieferdatum: data.dueDate, // using dueDate as lieferdatum
-    lieferantName: String(data.supplier || '').trim().replace(/\n/g, ' '),
-    lieferantAdresse: "", // Not in new prompt
-    kundenName: "", // Not in new prompt
-    kundenAdresse: "", // Not in new prompt
-    zahlungsziel: "", // Not in new prompt
-    zahlungsart: "", // Not in new prompt
-    nettoBetrag: data.nettoBetrag,
-    mwstBetrag: data.mwstBetrag,
-    gesamtbetrag: data.bruttoBetrag,
-    waehrung: data.currency,
-    steuersaetze: [], // Not in new prompt
+    rechnungsnummer: rawOutput.invoiceNumber || undefined,
+    datum: rawOutput.invoiceDate || undefined,
+    lieferantName: String(rawOutput.supplier || '').trim().replace(/\n/g, ' '),
+    nettoBetrag: netAmount,
+    mwstBetrag: vatAmount,
+    gesamtbetrag: grossAmount,
+    waehrung: rawOutput.currency || 'EUR',
     mwstSatz: mainVatRate,
-    kundenNummer: "", // Not in new prompt
-    bestellNummer: "", // Not in new prompt
-    isPaid: false, // Not in new prompt
     rechnungspositionen: normalizedLineItems,
+    // Defaulting other fields
+    lieferantAdresse: "",
+    zahlungsziel: "",
+    zahlungsart: "",
+    kundenNummer: "",
+    bestellNummer: "",
+    isPaid: false,
+    lieferdatum: undefined,
+    kundenName: "",
+    kundenAdresse: "",
+    steuersaetze: [],
     sonstigeAnmerkungen: "",
   };
   
@@ -133,48 +145,41 @@ export async function extractIncomingInvoiceData(input: ExtractIncomingInvoiceDa
 const prompt = ai.definePrompt({
   name: 'extractIncomingInvoiceDataPrompt',
   input: {schema: ExtractIncomingInvoiceDataInputSchema},
-  output: {schema: AIOutputSchema}, // AI tries to fill this schema
+  output: {schema: AIOutputSchema},
   prompt: `
-YouYou are a highly-accurate invoice parser. 
-You will receive the full text of a single German invoice PDF.
-Output **only** valid JSON matching this schema:
+You are an expert invoice parser. Output **only** valid JSON matching this schema:
 
 {
-  "supplier": string,
-  "invoiceNumber": string,
-  "date": "YYYY-MM-DD",
-  "currency": string,
+  "supplier": string | null,
+  "invoiceNumber": string | null,
+  "invoiceDate": "YYYY-MM-DD" | null,
+  "currency": string | null,
   "items": [
     {
-      "description": string,
-      "quantity": number,
-      "unitPrice": number,
-      "totalLine": number
+      "productCode": string | null,
+      "productName": string | null,
+      "quantity": number | null,
+      "unitPrice": number | null,
+      "totalPrice": number | null
     }, ...
   ],
-  "netAmount": number,
-  "vatAmount": number,
-  "grossAmount": number
+  "netAmount": number | null,
+  "vatAmount": number | null,
+  "grossAmount": number | null
 }
 
 ### EXAMPLE 1
 INPUT:
-“Rechnung Nr.: 12345
- Datum: 01.12.2024
- Pos 1: Teppich 5 Stk à €28,59 = €142,95
- Pos 2: Versandpauschale 1 Stk à €5,95 = €5,95
- Zwischensumme: €148,90
- MwSt 19%: €28,29
- Gesamtbetrag: €177,19”
+“Rechnung Nr.: 12345, Datum: 01.12.2024, Pos 1: Teppich (Code: TEP-01) 5 Stk à €28,59 = €142,95, Pos 2: Versandpauschale 1 Stk à €5,95 = €5,95, Zwischensumme: €148,90, MwSt 19%: €28,29, Gesamtbetrag: €177,19”
 OUTPUT:
 {
-  "supplier": "Mustermann GmbH",
+  "supplier": "Unknown Supplier",
   "invoiceNumber": "12345",
-  "date": "2024-12-01",
+  "invoiceDate": "2024-12-01",
   "currency": "EUR",
   "items": [
-    {"description":"Teppich","quantity":5,"unitPrice":28.59,"totalLine":142.95},
-    {"description":"Versandpauschale","quantity":1,"unitPrice":5.95,"totalLine":5.95}
+    {"productCode":"TEP-01","productName":"Teppich","quantity":5,"unitPrice":28.59,"totalPrice":142.95},
+    {"productCode":"VERSAND","productName":"Versandpauschale","quantity":1,"unitPrice":5.95,"totalPrice":5.95}
   ],
   "netAmount":148.90,
   "vatAmount":28.29,
@@ -189,20 +194,20 @@ Rechnungsnummer: R-9876
 Datum: 15.07.2024
 Währung: EUR
 Artikel:
-1. Laptop ABC x 2 @ 1200.00 = 2400.00
+1. Laptop ABC (SKU: LT-ABC-01) x 2 @ 1200.00 = 2400.00
 2. Maus XYZ x 5 @ 25.00 = 125.00
 Nettobetrag: 2525.00
 Mehrwertsteuer (19%): 479.75
 Gesamtbetrag: 3004.75”
 OUTPUT:
 {
-  "supplier": "Tech Solutions AG",
+  "supplier": "Unknown Supplier",
   "invoiceNumber": "R-9876",
-  "date": "2024-07-15",
+  "invoiceDate": "2024-07-15",
   "currency": "EUR",
   "items": [
-    {"description":"Laptop ABC","quantity":2,"unitPrice":1200.00,"totalLine":2400.00},
-    {"description":"Maus XYZ","quantity":5,"unitPrice":25.00,"totalLine":125.00}
+    {"productCode":"LT-ABC-01","productName":"Laptop ABC","quantity":2,"unitPrice":1200.00,"totalPrice":2400.00},
+    {"productCode":null,"productName":"Maus XYZ","quantity":5,"unitPrice":25.00,"totalPrice":125.00}
   ],
   "netAmount":2525.00,
   "vatAmount":479.75,
@@ -211,7 +216,7 @@ OUTPUT:
 
 ### NOW PARSE:
 INPUT:
-"""${invoiceDataUri}"""
+{{media url=invoiceDataUri}}
 OUTPUT:
 `.trim(),
 });
@@ -221,18 +226,15 @@ const extractIncomingInvoiceDataFlow = ai.defineFlow(
   {
     name: 'extractIncomingInvoiceDataFlow',
     inputSchema: ExtractIncomingInvoiceDataInputSchema,
-    outputSchema: AIOutputSchema, // Flow's direct output matches AI's schema
+    outputSchema: AIOutputSchema,
   },
   async (input) => {
     try {
         const {output} = await prompt(input, {model: 'googleai/gemini-1.5-flash-latest'});
-        // Always return the output, even if it's partially null.
-        // The calling function will handle validation and error display.
         if (!output) {
             return {
-                supplier: null, invoiceNumber: null, invoiceDate: null, dueDate: null,
-                nettoBetrag: null, mwstBetrag: null, bruttoBetrag: null, currency: null,
-                items: [],
+                supplier: null, invoiceNumber: null, invoiceDate: null, currency: null,
+                items: [], netAmount: null, vatAmount: null, grossAmount: null,
                 error: "The AI model returned no output."
             };
         }
@@ -244,9 +246,8 @@ const extractIncomingInvoiceDataFlow = ai.defineFlow(
             : `An unexpected error occurred during invoice extraction: ${e.message}`;
 
         return {
-            supplier: null, invoiceNumber: null, invoiceDate: null, dueDate: null,
-            nettoBetrag: null, mwstBetrag: null, bruttoBetrag: null, currency: null,
-            items: [],
+            supplier: null, invoiceNumber: null, invoiceDate: null, currency: null,
+            items: [], netAmount: null, vatAmount: null, grossAmount: null,
             error: errorMessage
         };
     }
