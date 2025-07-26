@@ -31,12 +31,7 @@ const AIOutputSchema = z.object({
   mwstBetrag: z.number().nullable().describe('The total VAT amount.'),
   bruttoBetrag: z.number().nullable().describe('The final gross total amount of the invoice.'),
   currency: z.string().nullable().describe('The currency (e.g., "EUR", "RON").'),
-  items: z.array(z.object({
-      description: z.string().nullable(),
-      quantity: z.number().nullable(),
-      unitPrice: z.number().nullable(),
-      totalPrice: z.number().nullable(),
-  })).describe('An array of line items from the invoice.'),
+  items: z.array(AILineItemSchema).describe('An array of line items from the invoice.'),
   error: z.string().optional().describe('An error message if the operation failed.'),
 });
 
@@ -88,10 +83,8 @@ export async function extractIncomingInvoiceData(input: ExtractIncomingInvoiceDa
   }
 
   const normalizedLineItems: AppLineItem[] = (rawOutput.items || []).map(item => ({
-    // AI schema uses `description`, `totalPrice`, our app uses productName/unitPrice etc.
-    // This mapping normalizes it.
-    productCode: normalizeProductCode(null), // The new AI prompt doesn't extract item_code yet.
-    productName: String(item.description || '').trim().replace(/\n/g, ' '),
+    productCode: normalizeProductCode(item.productCode),
+    productName: String(item.productName || '').trim().replace(/\n/g, ' '),
     quantity: item.quantity === null ? 0 : item.quantity,
     unitPrice: item.unitPrice === null ? 0.0 : item.unitPrice,
   }));
@@ -134,7 +127,51 @@ const prompt = ai.definePrompt({
   name: 'extractIncomingInvoiceDataPrompt',
   input: {schema: ExtractIncomingInvoiceDataInputSchema},
   output: {schema: AIOutputSchema}, // AI tries to fill this schema
-  prompt: 'You are a powerful invoice data extractor. Your primary goal is to parse the content of an invoice PDF and return a structured JSON object.\n\nFor a given invoice, extract these fields into a JSON object:\n{\n  "supplier": string | null,          // The supplier\'s full name, exactly as printed.\n  "invoiceNumber": string | null,     // The unique invoice number (e.g., "Rechnungs-Nr.", "Invoice No.").\n  "invoiceDate": string | null,       // The issue date of the invoice, formatted as YYYY-MM-DD.\n  "dueDate": string | null,           // The payment due date, formatted as YYYY-MM-DD.\n  "nettoBetrag": number | null,       // The total net amount of all items and services.\n  "mwstBetrag": number | null,        // The total VAT/tax amount.\n  "bruttoBetrag": number | null,      // The final gross total to be paid.\n  "currency": string | null,          // The currency (e.g., "EUR", "RON", "USD").\n  "items": [\n    {\n      "description": string | null,   // The name or description of the line item.\n      "quantity": number | null,      // The quantity.\n      "unitPrice": number | null,     // The net price per unit.\n      "totalPrice": number | null     // The total net price for the line (quantity * unitPrice).\n    }\n  ]\n}\n\n## **General Rules for All Invoices**\n\n*   **Accuracy is key.** If a value is missing, return `null`. Do not guess.\n*   **Numbers**: Always use a dot (.) as the decimal separator.\n*   **Dates**: Strictly use YYYY-MM-DD format.\n*   **JSON Output**: The final output MUST be a single, valid JSON object matching the schema. Do not add extra fields.\n\nInvoice Content: {{media url=invoiceDataUri}}\n',
+  prompt: `You are a powerful invoice data extractor. Your primary goal is to parse the content of an invoice PDF and return a structured JSON object.
+
+For a given invoice, extract these fields into a JSON object. It is critical that you extract every field exactly as specified.
+
+{
+  "supplier": string | null,
+  "invoiceNumber": string | null,
+  "invoiceDate": string | null,
+  "dueDate": string | null,
+  "nettoBetrag": number | null,
+  "mwstBetrag": number | null,
+  "bruttoBetrag": number | null,
+  "currency": string | null,
+  "items": [
+    {
+      "productCode": string | null,
+      "productName": string | null,
+      "quantity": number | null,
+      "unitPrice": number | null,
+      "totalPrice": number | null
+    }
+  ]
+}
+
+## **Extraction Rules**
+
+*   **Accuracy is key.** If a value is missing or cannot be determined, return \`null\` for that specific field. Do not guess or invent data.
+*   **Numbers**: Always use a dot (.) as the decimal separator. Remove any thousands separators (like commas or periods).
+*   **Dates**: Strictly use YYYY-MM-DD format. Convert from other formats (like DD.MM.YYYY) if necessary.
+*   **Line Items**:
+    *   **productCode**: Extract the item code, article number (Art.-Nr.), or SKU. If none is present for a line item, return \`null\`.
+    *   **productName**: The name or description of the line item.
+    *   **quantity**: The quantity.
+    *   **unitPrice**: The net price per unit (Einzelpreis Netto).
+    *   **totalPrice**: The total net price for the line (Gesamt Netto), which is typically quantity * unitPrice.
+*   **Totals**:
+    *   **nettoBetrag**: The total net amount of all items and services.
+    *   **mwstBetrag**: The total VAT/tax amount for the entire invoice.
+    *   **bruttoBetrag**: The final gross total to be paid (Gesamtbetrag, Total Amount).
+*   **Currency**: The currency of the invoice (e.g., "EUR", "RON", "USD"). Look for symbols (€, $, RON) or codes.
+
+The final output MUST be a single, valid JSON object that strictly follows this schema. Do not add any extra fields or introductory text.
+
+Invoice Content: {{media url=invoiceDataUri}}
+`,
 });
 
 
@@ -173,7 +210,5 @@ const extractIncomingInvoiceDataFlow = ai.defineFlow(
     }
   }
 );
-
-    
 
     
