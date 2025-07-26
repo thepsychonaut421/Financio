@@ -9,7 +9,7 @@
  */
 
 import {ai} from '@/ai/genkit';
-import {z} from 'genkit';
+import {z}from 'genkit';
 import { AILineItemSchema, type AppLineItem } from '@/ai/schemas/invoice-item-schema';
 
 const ExtractIncomingInvoiceDataInputSchema = z.object({
@@ -116,7 +116,7 @@ export async function extractIncomingInvoiceData(input: ExtractIncomingInvoiceDa
 
   // Determine the main VAT rate for the simplified 'mwstSatz' field for backward compatibility
   // This could be the one with the largest base amount.
-  let mainVatRate = rawOutput.mwstSatz;
+  let mainVatRate = ""; // Deprecating mwstSatz
   if (rawOutput.steuersaetze && rawOutput.steuersaetze.length > 0) {
       mainVatRate = rawOutput.steuersaetze.reduce((prev, current) => (prev.basis > current.basis) ? prev : current).satz;
   }
@@ -152,62 +152,7 @@ const prompt = ai.definePrompt({
   name: 'extractIncomingInvoiceDataPrompt',
   input: {schema: ExtractIncomingInvoiceDataInputSchema},
   output: {schema: AIOutputSchema}, // AI tries to fill this schema
-  prompt: `You are an expert AI assistant specialized in extracting detailed information from German and Romanian invoices (Eingangsrechnungen / Facturi) for ERPNext integration.
-You will receive an invoice as a data URI. Extract the following information meticulously, following all rules.
-
-**CRITICAL RULES for Data Extraction:**
-
-1.  **Rechnungsnummer (Invoice Number):**
-    *   Search **ONLY** for labels like "Rechnungs-Nr.", "Rechnungsnummer", "Invoice No.", "Factura nr.".
-    *   **NEVER** use numbers from the file title/filename or those labeled "Bestell-Nr." (Order Number), "Kunden-Nr." (Customer Number), "Auftragsnummer", "PO Number".
-    *   If a document has "Rechnung 12345" in the title, but "12345" is also next to "Bestell-Nr.", then it is **NOT** the Rechnungsnummer. The Rechnungsnummer must have its own distinct label.
-    *   If no specific invoice number label is found, leave the field empty.
-
-2.  **Datum (Invoice Date / Rechnungsdatum):**
-    *   Look for "Rechnungsdatum", "Invoice Date", "Data Facturii".
-    *   **CRITICAL:** Return the date in **YYYY-MM-DD** ISO format. Convert DD.MM.YYYY or other formats.
-
-3.  **Lieferdatum (Delivery Date / Data Livrării):**
-    *   Find the delivery or service date if it is different from the invoice date. Look for "Lieferdatum", "Leistungsdatum", "Service Date".
-    *   Return in **YYYY-MM-DD** format.
-
-4.  **Lieferant (Supplier / Furnizor):**
-    *   Extract the supplier's name **exactly** as it appears. Do not abbreviate. If not found, return "UNBEKANNT".
-    *   Extract the supplier's full postal address.
-
-5.  **Kunde (Customer / Client):**
-    *   Extract the customer's name and full postal address.
-
-6.  **Finanzielle Details (Financials):**
-    *   **nettoBetrag:** The total net amount before tax (Zwischensumme, Netto, Total fără TVA).
-    *   **mwstBetrag:** The total VAT amount (MwSt., USt., Total TVA).
-    *   **bruttoBetrag:** The **final, grand total** amount of the invoice (Gesamtbetrag, Total, Amount Due, Total de plată). This is the most important total.
-    *   **waehrung:** The currency of the invoice (e.g., EUR, RON, USD).
-    *   **steuersaetze:** Create an array for **each distinct VAT rate** found in the invoice summary. Each object in the array should contain:
-        *   \`satz\`: The rate (e.g., "19%", "9%").
-        *   \`basis\`: The net amount (base) for that specific rate.
-        *   \`betrag\`: The tax amount (betrag) for that specific rate.
-
-7.  **Zahlungsdetails (Payment Details):**
-    *   **zahlungsziel:** Payment terms (e.g., "14 Tage netto", "sofort zahlbar", "Plata la 30 de zile").
-    *   **zahlungsart:** Payment method (e.g., "Überweisung", "PayPal", "Card").
-    *   **isPaid:** Check for any text indicating the invoice is already paid (e.g., "Bezahlt", "Paid", "Achitat", "Summe erhalten"). Set to \`true\` if found.
-
-8.  **Rechnungspositionen (Line Items / Linii de factură):**
-    *   Create a list of all individual items. For each item, extract:
-        *   \`productCode\` (item_code / Art.-Nr.): The product code or article number. If not available, leave it \`null\`.
-        *   \`productName\` (description / Beschreibung): The name/description of the product/service.
-        *   \`quantity\` (qty / Menge): The quantity. If not stated, use 1.
-        *   \`unitPrice\` (rate / Einzelpreis): The price per unit (NET, without VAT). If not available, use 0.0.
-    *   **Sonderfall Versandkosten (Special Case: Shipping Costs):**
-        *   If you find a line for shipping costs ('Versandkosten', 'Versand', 'Fracht', 'Transport'), create a **separate line item** for it. Use "VERSAND" as \`productCode\` and "Versandkosten" (or similar) as \`productName\`.
-
-9.  **Sonstige Anmerkungen (Other Mentions):**
-    *   Scan the entire document for special legal mentions and combine them into a single string. Look for terms like "Taxare inversă", "Reverse Charge", "TVA la încasare", "Scutit conform art...", "Regimul marjei".
-
-Return the full, structured JSON object.
-
-Invoice: {{media url=invoiceDataUri}}`,
+  prompt: "You are an expert AI assistant specialized in extracting detailed information from German and Romanian invoices (Eingangsrechnungen / Facturi) for ERPNext integration. \nYou will receive an invoice as a data URI. Extract the following information meticulously, following all rules.\n\n**CRITICAL RULES for Data Extraction:**\n\n1.  **Rechnungsnummer (Invoice Number):**\n    *   Search **ONLY** for labels like \"Rechnungs-Nr.\", \"Rechnungsnummer\", \"Invoice No.\", \"Factura nr.\".\n    *   **NEVER** use numbers from the file title/filename or those labeled \"Bestell-Nr.\" (Order Number), \"Kunden-Nr.\" (Customer Number), \"Auftragsnummer\", \"PO Number\".\n    *   If a document has \"Rechnung 12345\" in the title, but \"12345\" is also next to \"Bestell-Nr.\", then it is **NOT** the Rechnungsnummer. The Rechnungsnummer must have its own distinct label.\n    *   If no specific invoice number label is found, leave the field empty.\n\n2.  **Datum (Invoice Date / Rechnungsdatum):**\n    *   Look for \"Rechnungsdatum\", \"Invoice Date\", \"Data Facturii\".\n    *   **CRITICAL:** Return the date in **YYYY-MM-DD** ISO format. Convert DD.MM.YYYY or other formats.\n\n3.  **Lieferdatum (Delivery Date / Data Livrării):**\n    *   Find the delivery or service date if it is different from the invoice date. Look for \"Lieferdatum\", \"Leistungsdatum\", \"Service Date\".\n    *   Return in **YYYY-MM-DD** format.\n\n4.  **Lieferant (Supplier / Furnizor):**\n    *   Extract the supplier's name **exactly** as it appears. Do not abbreviate. If not found, return \"UNBEKANNT\".\n    *   Extract the supplier's full postal address.\n\n5.  **Kunde (Customer / Client):**\n    *   Extract the customer's name and full postal address.\n\n6.  **Finanzielle Details (Financials):**\n    *   **nettoBetrag:** The total net amount before tax (Zwischensumme, Netto, Total fără TVA).\n    *   **mwstBetrag:** The total VAT amount (MwSt., USt., Total TVA).\n    *   **bruttoBetrag:** The **final, grand total** amount of the invoice (Gesamtbetrag, Total, Amount Due, Total de plată). This is the most important total.\n    *   **waehrung:** The currency of the invoice (e.g., EUR, RON, USD).\n    *   **steuersaetze:** Create an array for **each distinct VAT rate** found in the invoice summary. Each object in the array should contain:\n        *   `satz`: The rate (e.g., \"19%\", \"9%\").\n        *   `basis`: The net amount (base) for that specific rate.\n        *   `betrag`: The tax amount (betrag) for that specific rate.\n\n7.  **Zahlungsdetails (Payment Details):**\n    *   **zahlungsziel:** Payment terms (e.g., \"14 Tage netto\", \"sofort zahlbar\", \"Plata la 30 de zile\").\n    *   **zahlungsart:** Payment method (e.g., \"Überweisung\", \"PayPal\", \"Card\").\n    *   **isPaid:** Check for any text indicating the invoice is already paid (e.g., \"Bezahlt\", \"Paid\", \"Achitat\", \"Summe erhalten\"). Set to `true` if found.\n\n8.  **Rechnungspositionen (Line Items / Linii de factură):**\n    *   Create a list of all individual items. For each item, extract:\n        *   `productCode` (item_code / Art.-Nr.): The product code or article number. If not available, leave it `null`.\n        *   `productName` (description / Beschreibung): The name/description of the product/service.\n        *   `quantity` (qty / Menge): The quantity. If not stated, use 1.\n        *   `unitPrice` (rate / Einzelpreis): The price per unit (NET, without VAT). If not available, use 0.0.\n    *   **Sonderfall Versandkosten (Special Case: Shipping Costs):**\n        *   If you find a line for shipping costs ('Versandkosten', 'Versand', 'Fracht', 'Transport'), create a **separate line item** for it. Use \"VERSAND\" as `productCode` and \"Versandkosten\" (or similar) as `productName`.\n\n9.  **Sonstige Anmerkungen (Other Mentions):**\n    *   Scan the entire document for special legal mentions and combine them into a single string. Look for terms like \"Taxare inversă\", \"Reverse Charge\", \"TVA la încasare\", \"Scutit conform art...\", \"Regimul marjei\".\n\nReturn the full, structured JSON object.\n\nInvoice: {{media url=invoiceDataUri}}",
 });
 
 
@@ -238,3 +183,5 @@ const extractIncomingInvoiceDataFlow = ai.defineFlow(
     }
   }
 );
+
+    
