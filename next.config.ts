@@ -5,6 +5,7 @@ const withBundleAnalyzer = require('@next/bundle-analyzer')({
 });
 
 const nextConfig: NextConfig = {
+  output: 'export',
   swcMinify: true,
   typescript: {
     ignoreBuildErrors: true,
