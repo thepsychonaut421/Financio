@@ -6,7 +6,6 @@ const withBundleAnalyzer = require('@next/bundle-analyzer')({
 
 const nextConfig: NextConfig = {
   output: 'export',
-  swcMinify: true,
   typescript: {
     ignoreBuildErrors: true,
   },
@@ -29,13 +28,10 @@ const nextConfig: NextConfig = {
         pathname: '/**',
       },
       {
-        protocol: 'https',
-        hostname: 'images.unsplash.com',
-        port: '',
-        pathname: '/**',
-      },
-    ],
-  },
+        protocol: 'https'
+      }
+    ]
+  }
 };
 
 export default withBundleAnalyzer(nextConfig);
