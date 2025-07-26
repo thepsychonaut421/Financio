@@ -1,8 +1,11 @@
 import type {NextConfig} from 'next';
 
+const withBundleAnalyzer = require('@next/bundle-analyzer')({
+  enabled: process.env.ANALYZE === 'true',
+});
+
 const nextConfig: NextConfig = {
-  // Force rebuild to resolve EADDRINUSE error
-  // This comment is to force a rebuild
+  swcMinify: true,
   typescript: {
     ignoreBuildErrors: true,
   },
@@ -33,4 +36,4 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+export default withBundleAnalyzer(nextConfig);
