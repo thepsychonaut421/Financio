@@ -83,15 +83,20 @@ export async function extractIncomingInvoiceData(input: ExtractIncomingInvoiceDa
   // Post-parse validation and normalization
   let { netAmount, vatAmount, grossAmount } = rawOutput;
 
-  // Attempt to compute missing numeric fields
-  if (typeof netAmount !== 'number' && typeof vatAmount === 'number' && typeof grossAmount === 'number') {
+  // Stricter validation and fallback calculation
+  const netIsNum = typeof netAmount === 'number';
+  const vatIsNum = typeof vatAmount === 'number';
+  const grossIsNum = typeof grossAmount === 'number';
+
+  if (!netIsNum && vatIsNum && grossIsNum) {
     netAmount = grossAmount - vatAmount;
-  }
-  if (typeof vatAmount !== 'number' && typeof netAmount === 'number' && typeof grossAmount === 'number') {
+    console.warn(`[Fallback Calculation] netAmount was calculated for invoice ${rawOutput.invoiceNumber || 'N/A'}`);
+  } else if (netIsNum && !vatIsNum && grossIsNum) {
     vatAmount = grossAmount - netAmount;
-  }
-  if (typeof grossAmount !== 'number' && typeof netAmount === 'number' && typeof vatAmount === 'number') {
+    console.warn(`[Fallback Calculation] vatAmount was calculated for invoice ${rawOutput.invoiceNumber || 'N/A'}`);
+  } else if (netIsNum && vatIsNum && !grossIsNum) {
     grossAmount = netAmount + vatAmount;
+     console.warn(`[Fallback Calculation] grossAmount was calculated for invoice ${rawOutput.invoiceNumber || 'N/A'}`);
   }
 
   // Final validation check after computation
@@ -99,6 +104,14 @@ export async function extractIncomingInvoiceData(input: ExtractIncomingInvoiceDa
       return {
           rechnungspositionen: [],
           error: `Invoice amounts are incomplete. Net: ${netAmount}, VAT: ${vatAmount}, Gross: ${grossAmount}`
+      };
+  }
+  
+  // Validate that the totals add up, allowing for small rounding differences
+  if (Math.abs((netAmount + vatAmount) - grossAmount) > 0.02) {
+      return {
+          rechnungspositionen: [],
+          error: `Totals do not add up. Net (${netAmount}) + VAT (${vatAmount}) = ${netAmount + vatAmount}, but Gross is ${grossAmount}.`
       };
   }
 
@@ -116,13 +129,13 @@ export async function extractIncomingInvoiceData(input: ExtractIncomingInvoiceDa
   }
 
   const normalizedOutput: ExtractIncomingInvoiceDataOutput = {
-    rechnungsnummer: rawOutput.invoiceNumber || undefined,
-    datum: rawOutput.invoiceDate || undefined,
-    lieferantName: String(rawOutput.supplier || '').trim().replace(/\n/g, ' '),
+    rechnungsnummer: rawOutput.invoiceNumber ? String(rawOutput.invoiceNumber).trim() : undefined,
+    datum: rawOutput.invoiceDate ? String(rawOutput.invoiceDate).trim() : undefined,
+    lieferantName: rawOutput.supplier ? String(rawOutput.supplier).trim().replace(/\n/g, ' ') : undefined,
     nettoBetrag: netAmount,
     mwstBetrag: vatAmount,
     gesamtbetrag: grossAmount,
-    waehrung: rawOutput.currency || 'EUR',
+    waehrung: rawOutput.currency ? String(rawOutput.currency).trim() : 'EUR',
     mwstSatz: mainVatRate,
     rechnungspositionen: normalizedLineItems,
     // Defaulting other fields
@@ -168,6 +181,14 @@ You are an expert invoice parser. Output **only** valid JSON matching this schem
   "grossAmount": number | null
 }
 
+IMPORTANT:
+- Extract all amounts as numbers (e.g., 1.234,56 becomes 1234.56).
+- If one of the totals (netAmount, vatAmount, grossAmount) is missing, but the other two are present, CALCULATE the missing one.
+  - netAmount = grossAmount - vatAmount
+  - vatAmount = grossAmount - netAmount
+  - grossAmount = netAmount + vatAmount
+- Always return all three total fields, even if calculated.
+
 ### EXAMPLE 1
 INPUT:
 “Rechnung Nr.: 12345, Datum: 01.12.2024, Pos 1: Teppich (Code: TEP-01) 5 Stk à €28,59 = €142,95, Pos 2: Versandpauschale 1 Stk à €5,95 = €5,95, Zwischensumme: €148,90, MwSt 19%: €28,29, Gesamtbetrag: €177,19”
@@ -186,29 +207,21 @@ OUTPUT:
   "grossAmount":177.19
 }
 
-### EXAMPLE 2
+### EXAMPLE 2 (grossAmount is missing, so it's calculated)
 INPUT:
 “Rechnung
 Kunde: Max Mustermann
 Rechnungsnummer: R-9876
 Datum: 15.07.2024
-Währung: EUR
-Artikel:
-1. Laptop ABC (SKU: LT-ABC-01) x 2 @ 1200.00 = 2400.00
-2. Maus XYZ x 5 @ 25.00 = 125.00
 Nettobetrag: 2525.00
-Mehrwertsteuer (19%): 479.75
-Gesamtbetrag: 3004.75”
+Mehrwertsteuer (19%): 479.75”
 OUTPUT:
 {
   "supplier": "Unknown Supplier",
   "invoiceNumber": "R-9876",
   "invoiceDate": "2024-07-15",
   "currency": "EUR",
-  "items": [
-    {"productCode":"LT-ABC-01","productName":"Laptop ABC","quantity":2,"unitPrice":1200.00,"totalPrice":2400.00},
-    {"productCode":null,"productName":"Maus XYZ","quantity":5,"unitPrice":25.00,"totalPrice":125.00}
-  ],
+  "items": [],
   "netAmount":2525.00,
   "vatAmount":479.75,
   "grossAmount":3004.75
