@@ -118,6 +118,16 @@ export function incomingInvoicesToERPNextCSVComplete(invoices: ERPIncomingInvoic
   const DEFAULT_CONVERSION_FACTOR = '1';
 
   invoices.forEach((invoice, invoiceIndex) => {
+      const invoiceLevelData = [
+          '""', // ID - Leave blank for new documents
+          '""', // Series - Leave blank to use default
+          escapeCSVField(invoice.lieferantName),
+          escapeCSVField(invoice.datum),
+          escapeCSVField(invoice.kontenrahmen),
+          escapeCSVField(invoice.rechnungsnummer),
+          escapeCSVField(invoice.datum),
+      ];
+
       const itemsToProcess = (invoice.rechnungspositionen && invoice.rechnungspositionen.length > 0)
         ? invoice.rechnungspositionen
         : [{ 
@@ -128,21 +138,6 @@ export function incomingInvoicesToERPNextCSVComplete(invoices: ERPIncomingInvoic
         }];
 
       itemsToProcess.forEach((item, itemIndex) => {
-          let invoiceLevelData;
-          if (itemIndex === 0) {
-              invoiceLevelData = [
-                  '""', // ID - Leave blank for new documents
-                  '""', // Series - Leave blank to use default
-                  escapeCSVField(invoice.lieferantName),
-                  escapeCSVField(invoice.datum),
-                  escapeCSVField(invoice.kontenrahmen),
-                  escapeCSVField(invoice.rechnungsnummer),
-                  escapeCSVField(invoice.datum),
-              ];
-          } else {
-              invoiceLevelData = ['', '', '', '', '', '', ''];
-          }
-
           const itemCodeValue = item.productCode || item.productName || `FALLBACK_ITEM_INV${invoiceIndex + 1}_ITEM${itemIndex + 1}`;
           const itemNameValue = item.productName || item.productCode || `Item from Invoice ${invoice.rechnungsnummer || `INV${invoiceIndex + 1}`}`;
           const itemRate = item.unitPrice ?? 0;
@@ -223,6 +218,16 @@ export function incomingInvoicesToTSV(invoices: (IncomingInvoiceItem | ERPIncomi
   invoices.forEach((invoice, invoiceIndex) => {
     if (erpMode) {
         const erpInvoice = invoice as ERPIncomingInvoiceItem;
+        const invoiceLevelData = [
+            "", // ID - Leave blank
+            "", // Series - Leave blank
+            erpInvoice.lieferantName,
+            erpInvoice.datum,
+            erpInvoice.kontenrahmen,
+            erpInvoice.rechnungsnummer,
+            erpInvoice.datum,
+        ].map(f => escapeTSVField(f));
+
         const itemsToProcess = (erpInvoice.rechnungspositionen && erpInvoice.rechnungspositionen.length > 0)
             ? erpInvoice.rechnungspositionen
             : [{ 
@@ -233,23 +238,6 @@ export function incomingInvoicesToTSV(invoices: (IncomingInvoiceItem | ERPIncomi
             }];
         
         itemsToProcess.forEach((item, itemIndex) => {
-            let invoiceLevelData;
-            if (itemIndex === 0) {
-                // First row gets details
-                invoiceLevelData = [
-                    "", // ID - Leave blank
-                    "", // Series - Leave blank
-                    erpInvoice.lieferantName,
-                    erpInvoice.datum,
-                    erpInvoice.kontenrahmen,
-                    erpInvoice.rechnungsnummer,
-                    erpInvoice.datum,
-                ].map(f => escapeTSVField(f));
-            } else {
-                // Subsequent rows are blank
-                invoiceLevelData = ['', '', '', '', '', '', ''];
-            }
-
             const itemCodeValue = item.productCode || item.productName || `FALLBACK_ITEM_INV${invoiceIndex + 1}_ITEM${itemIndex + 1}`;
             const itemNameValue = item.productName || item.productCode || `Item for Invoice ${erpInvoice.rechnungsnummer || `INV${invoiceIndex + 1}`}`;
             const itemRate = item.unitPrice ?? 0;
