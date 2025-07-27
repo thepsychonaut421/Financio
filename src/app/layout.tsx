@@ -24,7 +24,6 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${inter.variable} ${inter.className}`}>
       <head>
-        <link rel="icon" href="/favicon.ico" type="image/x-icon" sizes="any" />
       </head>
       <body className="antialiased min-h-screen flex flex-col">
         <AuthProvider> {/* Wrapped with AuthProvider */}
