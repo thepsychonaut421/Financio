@@ -1,11 +1,6 @@
-import type {NextConfig} from 'next';
-
-const withBundleAnalyzer = require('@next/bundle-analyzer')({
-  enabled: process.env.ANALYZE === 'true',
-});
+import type { NextConfig } from 'next'
 
 const nextConfig: NextConfig = {
-  swcMinify: true,
   typescript: {
     ignoreBuildErrors: true,
   },
@@ -16,24 +11,12 @@ const nextConfig: NextConfig = {
     remotePatterns: [
       {
         protocol: 'https',
-        hostname: 'placehold.co',
-        port: '',
-        pathname: '/**',
-      },
-      {
-        protocol: 'https',
-        hostname: 'i.ebayimg.com',
-        port: '',
-        pathname: '/**',
-      },
-      {
-        protocol: 'https',
-        hostname: 'images.unsplash.com',
+        hostname: 'placeholder.co',
         port: '',
         pathname: '/**',
       },
     ],
   },
-};
+}
 
-export default withBundleAnalyzer(nextConfig);
+module.exports = nextConfig
