@@ -1,4 +1,3 @@
-// src/app/page.tsx (NEW - for Landing)
 'use client';
 
 import dynamic from 'next/dynamic';
@@ -32,7 +31,7 @@ const LandingPageContent = dynamic(
         </footer>
       </div>
     ),
-    ssr: false, // Landing page can have animations or client-side elements
+    ssr: false, 
   }
 );
 

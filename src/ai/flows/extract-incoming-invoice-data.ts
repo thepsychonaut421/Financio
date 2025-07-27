@@ -1,4 +1,3 @@
-
 'use server';
 /**
  * @fileOverview Extracts detailed data from incoming invoices (Eingangsrechnungen).
@@ -63,7 +62,7 @@ export type ExtractIncomingInvoiceDataOutput = {
 // Helper function for product code normalization
 function normalizeProductCode(code: any): string {
   let strCode = String(code || '').trim().replace(/\n/g, ' ');
-  if (/^[-+]?[0-9]*.?[0-9]+([eE][-+]?[0-9]+)$/.test(strCode)) {
+  if (/^[-+]?[0-9]*\.?[0-9]+([eE][-+]?[0-9]+)?$/.test(strCode)) {
     const num = Number(strCode);
     if (!isNaN(num) && isFinite(num)) {
       return num.toString();
@@ -266,5 +265,3 @@ const extractIncomingInvoiceDataFlow = ai.defineFlow(
     }
   }
 );
-
-    
