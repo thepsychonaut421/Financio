@@ -53,13 +53,13 @@ function validateAndCompleteTotals(data: { nettoBetrag?: number | null, mwstBetr
   const grossIsNum = typeof gross === 'number';
 
   // Attempt to calculate a missing field if exactly two are present
-  if (!netIsNum && vatIsNum && grossIsNum) {
-    net = parseFloat((gross - vat).toFixed(2));
-  } else if (netIsNum && !vatIsNum && grossIsNum) {
-    vat = parseFloat((gross - net).toFixed(2));
-  } else if (netIsNum && vatIsNum && !grossIsNum) {
-    gross = parseFloat((net + vat).toFixed(2));
-  }
+    if (!netIsNum && vatIsNum && grossIsNum) {
+      net = parseFloat(((gross as number) - (vat as number)).toFixed(2));
+    } else if (netIsNum && !vatIsNum && grossIsNum) {
+      vat = parseFloat(((gross as number) - (net as number)).toFixed(2));
+    } else if (netIsNum && vatIsNum && !grossIsNum) {
+      gross = parseFloat(((net as number) + (vat as number)).toFixed(2));
+    }
 
   // After potential calculation, check again if all are numbers
   if (typeof net !== 'number' || typeof vat !== 'number' || typeof gross !== 'number') {
@@ -457,8 +457,8 @@ export function IncomingInvoicesPageContent() {
           istBezahlt: istBezahltStatus, 
           kontenrahmen: sanitizeText(kontenrahmen), 
           remarks: sanitizeText(remarks),
-          nettoBetrag: net,
-          mwstBetrag: vat,
+            nettoBetrag: net ?? undefined,
+            mwstBetrag: vat ?? undefined,
         };
         allProcessedForMatcher.push(erpCompatibleInvoice);
 
@@ -479,8 +479,8 @@ export function IncomingInvoicesPageContent() {
               kundenNummer: "",
               bestellNummer: "",
               isPaidByAI: false,
-              nettoBetrag: net,
-              mwstBetrag: vat,
+                nettoBetrag: net ?? undefined,
+                mwstBetrag: vat ?? undefined,
               wahrung: normalizedCurrency,
           });
         }

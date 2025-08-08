@@ -59,12 +59,14 @@ export async function extractInvoiceData(input: ExtractInvoiceDataInput): Promis
   }
 
   // Normalize the output
-  const normalizedInvoiceDetails: AppLineItem[] = (rawOutput.invoiceDetails || []).map(item => ({
-    productCode: normalizeProductCode(item.productCode),
-    productName: String(item.productName || '').trim().replace(/\n/g, ' '),
-    quantity: item.quantity === undefined ? 0 : item.quantity, // Default to 0 if undefined
-    unitPrice: item.unitPrice === undefined ? 0.0 : item.unitPrice, // Default to 0.0 if undefined
-  }));
+    const normalizedInvoiceDetails: AppLineItem[] = (rawOutput.invoiceDetails || []).map(
+      (item) => ({
+        productCode: normalizeProductCode(item.productCode),
+        productName: String(item.productName || '').trim().replace(/\n/g, ' '),
+        quantity: item.quantity ?? 0, // Default to 0 if undefined or null
+        unitPrice: item.unitPrice ?? 0.0, // Default to 0.0 if undefined or null
+      }),
+    );
   
   return { invoiceDetails: normalizedInvoiceDetails };
 }
