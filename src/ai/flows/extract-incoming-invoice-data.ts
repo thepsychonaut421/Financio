@@ -82,21 +82,41 @@ export async function extractIncomingInvoiceData(input: ExtractIncomingInvoiceDa
   // Post-parse validation and normalization
   let { netAmount, vatAmount, grossAmount } = rawOutput;
 
-  // Stricter validation and fallback calculation
-  const netIsNum = typeof netAmount === 'number';
-  const vatIsNum = typeof vatAmount === 'number';
-  const grossIsNum = typeof grossAmount === 'number';
-
-  if (!netIsNum && vatIsNum && grossIsNum) {
-    netAmount = grossAmount - vatAmount;
-    console.warn(`[Fallback Calculation] netAmount was calculated for invoice ${rawOutput.invoiceNumber || 'N/A'}`);
-  } else if (netIsNum && !vatIsNum && grossIsNum) {
-    vatAmount = grossAmount - netAmount;
-    console.warn(`[Fallback Calculation] vatAmount was calculated for invoice ${rawOutput.invoiceNumber || 'N/A'}`);
-  } else if (netIsNum && vatIsNum && !grossIsNum) {
-    grossAmount = netAmount + vatAmount;
-     console.warn(`[Fallback Calculation] grossAmount was calculated for invoice ${rawOutput.invoiceNumber || 'N/A'}`);
-  }
+    // Stricter validation and fallback calculation
+    if (
+      typeof vatAmount === 'number' &&
+      typeof grossAmount === 'number' &&
+      typeof netAmount !== 'number'
+    ) {
+      netAmount = (grossAmount as number) - (vatAmount as number);
+      console.warn(
+        `[Fallback Calculation] netAmount was calculated for invoice ${
+          rawOutput.invoiceNumber || 'N/A'
+        }`,
+      );
+    } else if (
+      typeof netAmount === 'number' &&
+      typeof grossAmount === 'number' &&
+      typeof vatAmount !== 'number'
+    ) {
+      vatAmount = (grossAmount as number) - (netAmount as number);
+      console.warn(
+        `[Fallback Calculation] vatAmount was calculated for invoice ${
+          rawOutput.invoiceNumber || 'N/A'
+        }`,
+      );
+    } else if (
+      typeof netAmount === 'number' &&
+      typeof vatAmount === 'number' &&
+      typeof grossAmount !== 'number'
+    ) {
+      grossAmount = (netAmount as number) + (vatAmount as number);
+      console.warn(
+        `[Fallback Calculation] grossAmount was calculated for invoice ${
+          rawOutput.invoiceNumber || 'N/A'
+        }`,
+      );
+    }
 
   // Final validation check after computation
   if (typeof netAmount !== 'number' || typeof vatAmount !== 'number' || typeof grossAmount !== 'number') {
@@ -114,12 +134,12 @@ export async function extractIncomingInvoiceData(input: ExtractIncomingInvoiceDa
       };
   }
 
-  const normalizedLineItems: AppLineItem[] = (rawOutput.items || []).map((item: any) => ({
-    productCode: normalizeProductCode(item.productCode),
-    productName: String(item.productName || item.description || '').trim().replace(/\n/g, ' '),
-    quantity: typeof item.quantity === 'number' ? item.quantity : 0,
-    unitPrice: typeof item.unitPrice === 'number' ? item.unitPrice : 0.0,
-  }));
+    const normalizedLineItems: AppLineItem[] = (rawOutput.items || []).map((item: any) => ({
+      productCode: normalizeProductCode(item.productCode),
+      productName: String(item.productName || item.description || '').trim().replace(/\n/g, ' '),
+      quantity: item.quantity ?? 0,
+      unitPrice: item.unitPrice ?? 0.0,
+    }));
 
   // Simplified VAT rate calculation for display
   let mainVatRate = "";
