@@ -2,12 +2,16 @@
   "name": "nextn",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=18.18.0 <23"
+  },
   "scripts": {
     "dev": "next dev",
+    "dev:studio": "next dev -p $PORT -H 0.0.0.0",
     "genkit:dev": "genkit start -- tsx src/ai/dev.ts",
     "genkit:watch": "genkit start -- tsx --watch src/ai/dev.ts",
     "build": "next build",
-    "start": "next start",
+    "start": "next start -p $PORT -H 0.0.0.0",
     "export": "next export",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
