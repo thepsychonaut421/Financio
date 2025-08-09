@@ -1,4 +1,3 @@
-
 'use server';
 
 /**
@@ -18,7 +17,7 @@ const ExtractInvoiceDataInputSchema = z.object({
   invoiceDataUri: z
     .string()
     .describe(
-      "An invoice PDF, as a data URI that must include a MIME type and use Base64 encoding. Expected format: 'data:<mimetype>;base64,<encoded_data>'."
+      "An invoice PDF, as a data URI that must include a MIME type and use Base64 encoding. Expected format: 'data:<mimetype>;base64,<encoded_data>'"
     ),
 });
 export type ExtractInvoiceDataInput = z.infer<typeof ExtractInvoiceDataInputSchema>;
@@ -42,7 +41,7 @@ export type ExtractInvoiceDataOutput = {
 function normalizeProductCode(code: any): string {
   let strCode = String(code || '').trim().replace(/\n/g, ' ');
   // Check if it's in scientific notation (e.g., "1.23e+5", "1.23E-5", "4.335747e+11")
-  if (/^[-+]?[0-9]*\.?[0-9]+([eE][-+]?[0-9]+)$/.test(strCode)) {
+  if (/^[-+]?[0-9]*\.?[0-9]+([eE][-+]?[0-9]+)?$/.test(strCode)) {
     const num = Number(strCode);
     if (!isNaN(num) && isFinite(num)) {
       return num.toString();
@@ -60,12 +59,14 @@ export async function extractInvoiceData(input: ExtractInvoiceDataInput): Promis
   }
 
   // Normalize the output
-  const normalizedInvoiceDetails: AppLineItem[] = (rawOutput.invoiceDetails || []).map(item => ({
-    productCode: normalizeProductCode(item.productCode),
-    productName: String(item.productName || '').trim().replace(/\n/g, ' '),
-    quantity: item.quantity === undefined ? 0 : item.quantity, // Default to 0 if undefined
-    unitPrice: item.unitPrice === undefined ? 0.0 : item.unitPrice, // Default to 0.0 if undefined
-  }));
+    const normalizedInvoiceDetails: AppLineItem[] = (rawOutput.invoiceDetails || []).map(
+      (item) => ({
+        productCode: normalizeProductCode(item.productCode),
+        productName: String(item.productName || '').trim().replace(/\n/g, ' '),
+        quantity: item.quantity ?? 0, // Default to 0 if undefined or null
+        unitPrice: item.unitPrice ?? 0.0, // Default to 0.0 if undefined or null
+      }),
+    );
   
   return { invoiceDetails: normalizedInvoiceDetails };
 }
