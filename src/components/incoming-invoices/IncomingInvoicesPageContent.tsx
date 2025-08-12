@@ -15,7 +15,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { readFileAsDataURL } from '@/lib/file-helpers';
-import { extractIncomingInvoiceData } from '@/ai/flows/extract-incoming-invoice-data';
+import { extractIncomingInvoiceData, type ExtractIncomingInvoiceDataOutput } from '@/ai/flows/extract-incoming-invoice-data';
 import type { IncomingInvoiceItem, ERPIncomingInvoiceItem, IncomingProcessingStatus, ERPSortKey, SortOrder } from '@/types/incoming-invoice';
 import { addDays, parseISO, isValid, format as formatDateFns } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
@@ -32,39 +32,51 @@ interface DiscrepancyError {
     reason: string;
 }
 
-interface AIInvoice {
-  supplier: string | null;
-  invoiceNumber: string | null;
-  invoiceDate: string | null;
-  dueDate: string | null;
-  nettoBetrag: number | null;
-  mwstBetrag: number | null;
-  bruttoBetrag: number | null;
-  currency: string | null;
-  items: Array<{
-    productCode: string | null;
-    productName: string | null;
-    quantity: number | null;
-    unitPrice: number | null;
-    totalPrice: number | null;
-  }>;
-  error?: string;
+// This is the output from the AI flow after normalization in that file.
+// We receive this shape in the component.
+interface AIInvoice extends ExtractIncomingInvoiceDataOutput {
+  // It already contains all the necessary fields, but we redefine for clarity
+  // nettoBetrag, mwstBetrag, gesamtbetrag can be number or null
 }
 
-function validateTotals(data: AIInvoice) {
-  const { nettoBetrag, mwstBetrag, bruttoBetrag } = data;
-  if (nettoBetrag === null || mwstBetrag === null || bruttoBetrag === null) {
-    return { valid: false, reason: 'One or more total amounts (net, vat, gross) are missing from the extraction.' };
+function validateAndCompleteTotals(data: { nettoBetrag?: number | null, mwstBetrag?: number | null, gesamtbetrag?: number | null }): {
+  valid: boolean;
+  reason: string;
+  net: number | null;
+  vat: number | null;
+  gross: number | null;
+} {
+  let { nettoBetrag: net, mwstBetrag: vat, gesamtbetrag: gross } = data;
+
+  const netIsNum = typeof net === 'number';
+  const vatIsNum = typeof vat === 'number';
+  const grossIsNum = typeof gross === 'number';
+
+  // Attempt to calculate a missing field if exactly two are present
+    if (!netIsNum && vatIsNum && grossIsNum) {
+      net = parseFloat(((gross as number) - (vat as number)).toFixed(2));
+    } else if (netIsNum && !vatIsNum && grossIsNum) {
+      vat = parseFloat(((gross as number) - (net as number)).toFixed(2));
+    } else if (netIsNum && vatIsNum && !grossIsNum) {
+      gross = parseFloat(((net as number) + (vat as number)).toFixed(2));
+    }
+
+  // After potential calculation, check again if all are numbers
+  if (typeof net !== 'number' || typeof vat !== 'number' || typeof gross !== 'number') {
+    return { valid: false, reason: 'One or more amounts are missing and could not be calculated.', net: null, vat: null, gross: null };
   }
   
-  const sum = parseFloat((nettoBetrag + mwstBetrag).toFixed(2));
-  if (Math.abs(sum - bruttoBetrag) > 0.015) { // Allow a small tolerance for rounding
+  // Final check for consistency
+  const sum = parseFloat((net + vat).toFixed(2));
+  if (Math.abs(sum - gross) > 0.015) { // Allow a small tolerance for rounding
     return {
       valid: false,
-      reason: `Totals do not add up. Net (${nettoBetrag}) + VAT (${mwstBetrag}) = ${sum}, but Gross is ${bruttoBetrag}.`
+      reason: `Totals do not add up. Net (${net}) + VAT (${vat}) = ${sum}, but Gross is ${gross}.`,
+      net, vat, gross
     };
   }
-  return { valid: true, reason: '' };
+
+  return { valid: true, reason: '', net, vat, gross };
 }
 
 
@@ -346,7 +358,7 @@ export function IncomingInvoicesPageContent() {
     
     const yearCounters: Record<string, number> = {};
     const localDiscrepancyErrors: DiscrepancyError[] = [];
-    const filesWithErrors: string[] = [];
+    let filesWithErrors: string[] = [];
     const processedInvoiceNumbers = new Set<string>(); // For duplicate detection
 
     try {
@@ -355,44 +367,53 @@ export function IncomingInvoicesPageContent() {
         setCurrentFileProgress(`Processing file ${i + 1} of ${selectedFiles.length}: ${file.name}`);
         
         const dataUri = await readFileAsDataURL(file);
-        const aiResult = (await extractIncomingInvoiceData({ invoiceDataUri: dataUri })) as AIInvoice;
+        const aiResult = (await extractIncomingInvoiceData({ invoiceDataUri: dataUri }));
         
+        if (!aiResult) {
+            filesWithErrors.push(`${file.name}: The AI flow returned null.`);
+            setProgressValue(Math.round(((i + 1) / selectedFiles.length) * 100));
+            continue;
+        }
+
         if (aiResult.error) {
           filesWithErrors.push(`${file.name}: ${aiResult.error}`);
           setProgressValue(Math.round(((i + 1) / selectedFiles.length) * 100));
           continue;
         }
         
-        if (aiResult.invoiceNumber && processedInvoiceNumbers.has(aiResult.invoiceNumber)) {
+        if (aiResult.rechnungsnummer && processedInvoiceNumbers.has(aiResult.rechnungsnummer)) {
             continue; // Skip duplicate invoice number
         }
-        if (aiResult.invoiceNumber) {
-            processedInvoiceNumbers.add(aiResult.invoiceNumber);
+        if (aiResult.rechnungsnummer) {
+            processedInvoiceNumbers.add(aiResult.rechnungsnummer);
         }
-
-        const validation = validateTotals(aiResult);
-        if (!validation.valid) {
-            localDiscrepancyErrors.push({ filename: file.name, reason: validation.reason || 'Unknown discrepancy' });
-        }
-
-
-        const finalLieferantName = getERPNextSupplierName(aiResult.supplier || 'UNBEKANNT');
         
-        const postingDateERP = formatDateForERP(aiResult.invoiceDate);
+        // NEW VALIDATION AND COMPLETION LOGIC
+        const { valid, reason, net, vat, gross } = validateAndCompleteTotals({
+          nettoBetrag: aiResult.nettoBetrag,
+          mwstBetrag: aiResult.mwstBetrag,
+          gesamtbetrag: aiResult.gesamtbetrag
+        });
+
+        if (!valid) {
+            localDiscrepancyErrors.push({ filename: file.name, reason: reason || 'Unknown discrepancy' });
+        }
+        
+        const finalLieferantName = getERPNextSupplierName(aiResult.lieferantName || 'UNBEKANNT');
+        const postingDateERP = formatDateForERP(aiResult.datum);
         const billDateERP = postingDateERP; 
         const dueDateERP = calculateDueDate(postingDateERP, ""); // paymentTerm is not in AI result
         
         let remarks = '';
-        
         let istBezahltStatus: 0 | 1 = 0;
 
         let yearToUse = new Date().getFullYear().toString();
         if (postingDateERP) {
             const parsedYear = postingDateERP.substring(0,4);
             if (!isNaN(parseInt(parsedYear))) yearToUse = parsedYear;
-        } else if (aiResult.invoiceDate) { 
+        } else if (aiResult.datum) { 
             try {
-              const parsedFallbackDate = new Date(aiResult.invoiceDate); 
+              const parsedFallbackDate = new Date(aiResult.datum); 
               if(isValid(parsedFallbackDate)) yearToUse = parsedFallbackDate.getFullYear().toString();
             } catch (e) { /* ignore */ }
         }
@@ -400,17 +421,17 @@ export function IncomingInvoicesPageContent() {
         if (!yearCounters[yearToUse]) { yearCounters[yearToUse] = 0; }
         yearCounters[yearToUse]++;
         const internalRefId = `INTERNAL-${yearToUse}-${String(yearCounters[yearToUse]).padStart(5, '0')}`;
-        const rechnungsnummerToUse = aiResult.invoiceNumber || internalRefId;
+        const rechnungsnummerToUse = aiResult.rechnungsnummer || internalRefId;
 
-        // Currency Normalization
-        let normalizedCurrency = 'EUR'; // Default
-        if (aiResult.currency) {
-            if (aiResult.currency.includes('€') || aiResult.currency.toUpperCase() === 'EURO') {
+        let normalizedCurrency = 'EUR';
+        if (aiResult.waehrung) {
+            const currencyUpper = aiResult.waehrung.toUpperCase();
+            if (currencyUpper.includes('€') || currencyUpper === 'EURO') {
                 normalizedCurrency = 'EUR';
-            } else if (aiResult.currency.toUpperCase() === 'RON' || aiResult.currency.toUpperCase() === 'LEI') {
+            } else if (currencyUpper === 'RON' || currencyUpper === 'LEI') {
                 normalizedCurrency = 'RON';
-            } else if (aiResult.currency.length === 3) {
-                normalizedCurrency = aiResult.currency.toUpperCase();
+            } else if (currencyUpper.length === 3) {
+                normalizedCurrency = currencyUpper;
             }
         }
 
@@ -420,20 +441,15 @@ export function IncomingInvoicesPageContent() {
           rechnungsnummer: sanitizeText(rechnungsnummerToUse),
           datum: postingDateERP, 
           lieferantName: sanitizeText(finalLieferantName),
-          lieferantAdresse: "", // Not available in new schema
-          zahlungsziel: "", // Not available in new schema
-          zahlungsart: "", // Not available in new schema
-          gesamtbetrag: aiResult.bruttoBetrag,
-          mwstSatz: "", // To be derived or removed
-          rechnungspositionen: (aiResult.items || []).map(item => ({
-              productCode: sanitizeText(item.productCode),
-              productName: sanitizeText(item.productName),
-              quantity: item.quantity ?? 0,
-              unitPrice: item.unitPrice ?? 0,
-          })),
-          kundenNummer: "", // Not available in new schema
-          bestellNummer: "", // Not available in new schema
-          isPaidByAI: false, // Not available in new schema
+          lieferantAdresse: "", // Not available
+          zahlungsziel: "", // Not available
+          zahlungsart: "", // Not available
+          gesamtbetrag: gross ?? undefined,
+          mwstSatz: aiResult.mwstSatz,
+          rechnungspositionen: aiResult.rechnungspositionen,
+          kundenNummer: "", // Not available
+          bestellNummer: "", // Not available
+          isPaidByAI: false, // Not available
           erpNextInvoiceName: sanitizeText(internalRefId), 
           billDate: billDateERP, 
           dueDate: dueDateERP,   
@@ -441,8 +457,8 @@ export function IncomingInvoicesPageContent() {
           istBezahlt: istBezahltStatus, 
           kontenrahmen: sanitizeText(kontenrahmen), 
           remarks: sanitizeText(remarks),
-          nettoBetrag: aiResult.nettoBetrag,
-          mwstBetrag: aiResult.mwstBetrag,
+            nettoBetrag: net ?? undefined,
+            mwstBetrag: vat ?? undefined,
         };
         allProcessedForMatcher.push(erpCompatibleInvoice);
 
@@ -452,24 +468,19 @@ export function IncomingInvoicesPageContent() {
           regularResultsDisplay.push({
               pdfFileName: file.name,
               rechnungsnummer: sanitizeText(rechnungsnummerToUse),
-              datum: sanitizeText(aiResult.invoiceDate), 
+              datum: sanitizeText(aiResult.datum), 
               lieferantName: sanitizeText(finalLieferantName),
               lieferantAdresse: "",
               zahlungsziel: "",
               zahlungsart: "",
-              gesamtbetrag: aiResult.bruttoBetrag,
-              mwstSatz: "",
-              rechnungspositionen: (aiResult.items || []).map(item => ({
-                  productCode: sanitizeText(item.productCode),
-                  productName: sanitizeText(item.productName),
-                  quantity: item.quantity ?? 0,
-                  unitPrice: item.unitPrice ?? 0,
-              })),
+              gesamtbetrag: gross ?? undefined,
+              mwstSatz: aiResult.mwstSatz,
+              rechnungspositionen: aiResult.rechnungspositionen,
               kundenNummer: "",
               bestellNummer: "",
               isPaidByAI: false,
-              nettoBetrag: aiResult.nettoBetrag,
-              mwstBetrag: aiResult.mwstBetrag,
+                nettoBetrag: net ?? undefined,
+                mwstBetrag: vat ?? undefined,
               wahrung: normalizedCurrency,
           });
         }
@@ -481,9 +492,10 @@ export function IncomingInvoicesPageContent() {
       setDiscrepancyErrors(localDiscrepancyErrors);
       localStorage.setItem(LOCAL_STORAGE_MATCHER_DATA_KEY, JSON.stringify(allProcessedForMatcher));
       
+      const successfulCount = selectedFiles.length - filesWithErrors.length;
       if (filesWithErrors.length > 0) {
-        setErrorMessage(`Processing summary: ${selectedFiles.length - filesWithErrors.length} of ${selectedFiles.length} files succeeded. Errors occurred on: ${filesWithErrors.join('; ')}`);
-        setStatus(regularResultsDisplay.length > 0 || erpResultsDisplay.length > 0 ? 'success' : 'error');
+        setErrorMessage(`Processing summary: ${successfulCount} of ${selectedFiles.length} files succeeded. Errors occurred on: ${filesWithErrors.join('; ')}`);
+        setStatus(successfulCount > 0 ? 'success' : 'error');
       } else {
         setStatus('success'); 
       }
@@ -954,3 +966,5 @@ export function IncomingInvoicesPageContent() {
     </div>
   );
 }
+
+    

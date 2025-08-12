@@ -1,3 +1,4 @@
+
 'use server';
 /**
  * @fileOverview Normalizes and deduplicates extracted data from PDFs.
@@ -21,7 +22,7 @@ export type NormalizeAndDeduplicateOutput = z.infer<typeof NormalizeAndDeduplica
 function normalizeProductCode(code: any): string {
   let strCode = String(code || '').trim().replace(/\n/g, ' ');
   // Check if it's in scientific notation (e.g., "1.23e+5", "1.23E-5", "4.335747e+11")
-  if (/^[-+]?[0-9]*\.?[0-9]+([eE][-+]?[0-9]+)?$/.test(strCode)) {
+  if (/^[-+]?[0-9]*\.?[0-9]+([eE][-+]?[0-9]+)$/.test(strCode)) {
     const num = Number(strCode);
     if (!isNaN(num) && isFinite(num)) {
       return num.toString();

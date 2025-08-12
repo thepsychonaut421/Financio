@@ -1,3 +1,4 @@
+
 'use server';
 /**
  * @fileOverview Extracts detailed data from incoming invoices (Eingangsrechnungen).
@@ -62,7 +63,7 @@ export type ExtractIncomingInvoiceDataOutput = {
 // Helper function for product code normalization
 function normalizeProductCode(code: any): string {
   let strCode = String(code || '').trim().replace(/\n/g, ' ');
-  if (/^[-+]?[0-9]*\.?[0-9]+([eE][-+]?[0-9]+)?$/.test(strCode)) {
+  if (/^[-+]?[0-9]*.?[0-9]+([eE][-+]?[0-9]+)$/.test(strCode)) {
     const num = Number(strCode);
     if (!isNaN(num) && isFinite(num)) {
       return num.toString();
@@ -84,39 +85,39 @@ export async function extractIncomingInvoiceData(input: ExtractIncomingInvoiceDa
 
     // Stricter validation and fallback calculation
     if (
-      typeof vatAmount === 'number' &&
-      typeof grossAmount === 'number' &&
-      typeof netAmount !== 'number'
-    ) {
-      netAmount = (grossAmount as number) - (vatAmount as number);
-      console.warn(
-        `[Fallback Calculation] netAmount was calculated for invoice ${
-          rawOutput.invoiceNumber || 'N/A'
-        }`,
-      );
-    } else if (
-      typeof netAmount === 'number' &&
-      typeof grossAmount === 'number' &&
-      typeof vatAmount !== 'number'
-    ) {
-      vatAmount = (grossAmount as number) - (netAmount as number);
-      console.warn(
-        `[Fallback Calculation] vatAmount was calculated for invoice ${
-          rawOutput.invoiceNumber || 'N/A'
-        }`,
-      );
-    } else if (
-      typeof netAmount === 'number' &&
-      typeof vatAmount === 'number' &&
-      typeof grossAmount !== 'number'
-    ) {
-      grossAmount = (netAmount as number) + (vatAmount as number);
-      console.warn(
-        `[Fallback Calculation] grossAmount was calculated for invoice ${
-          rawOutput.invoiceNumber || 'N/A'
-        }`,
-      );
-    }
+    typeof vatAmount === 'number' &&
+    typeof grossAmount === 'number' &&
+    typeof netAmount !== 'number'
+  ) {
+    netAmount = (grossAmount as number) - (vatAmount as number);
+    console.warn(
+      `[Fallback Calculation] netAmount was calculated for invoice ${
+        rawOutput.invoiceNumber || 'N/A'
+      }`,
+    );
+  } else if (
+    typeof netAmount === 'number' &&
+    typeof grossAmount === 'number' &&
+    typeof vatAmount !== 'number'
+  ) {
+    vatAmount = (grossAmount as number) - (netAmount as number);
+    console.warn(
+      `[Fallback Calculation] vatAmount was calculated for invoice ${
+        rawOutput.invoiceNumber || 'N/A'
+      }`,
+    );
+  } else if (
+    typeof netAmount === 'number' &&
+    typeof vatAmount === 'number' &&
+    typeof grossAmount !== 'number'
+  ) {
+    grossAmount = (netAmount as number) + (vatAmount as number);
+    console.warn(
+      `[Fallback Calculation] grossAmount was calculated for invoice ${
+        rawOutput.invoiceNumber || 'N/A'
+      }`,
+    );
+  }
 
   // Final validation check after computation
   if (typeof netAmount !== 'number' || typeof vatAmount !== 'number' || typeof grossAmount !== 'number') {
@@ -134,12 +135,12 @@ export async function extractIncomingInvoiceData(input: ExtractIncomingInvoiceDa
       };
   }
 
-    const normalizedLineItems: AppLineItem[] = (rawOutput.items || []).map((item: any) => ({
-      productCode: normalizeProductCode(item.productCode),
-      productName: String(item.productName || item.description || '').trim().replace(/\n/g, ' '),
-      quantity: item.quantity ?? 0,
-      unitPrice: item.unitPrice ?? 0.0,
-    }));
+  const normalizedLineItems: AppLineItem[] = (rawOutput.items || []).map((item: any) => ({
+    productCode: normalizeProductCode(item.productCode),
+    productName: String(item.productName || item.description || '').trim().replace(/\n/g, ' '),
+    quantity: typeof item.quantity === 'number' ? item.quantity : 0,
+    unitPrice: typeof item.unitPrice === 'number' ? item.unitPrice : 0.0,
+  }));
 
   // Simplified VAT rate calculation for display
   let mainVatRate = "";
@@ -285,3 +286,5 @@ const extractIncomingInvoiceDataFlow = ai.defineFlow(
     }
   }
 );
+
+    
