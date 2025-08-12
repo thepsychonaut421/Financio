@@ -103,9 +103,10 @@ const enrichProductDataFlow = ai.defineFlow(
       let parsedJson;
       try {
         parsedJson = JSON.parse(jsonString);
-      } catch(e: any) {
-          console.error("Failed to parse JSON from AI output. JSON string:", jsonString, "Error:", e.message);
-          return { error: `Fehler beim Parsen der AI-Antwort: ${e.message}` };
+      } catch(e: unknown) {
+          const message = e instanceof Error ? e.message : String(e);
+          console.error("Failed to parse JSON from AI output. JSON string:", jsonString, "Error:", message);
+          return { error: `Fehler beim Parsen der AI-Antwort: ${message}` };
       }
 
       const validationResult = EnrichedProductSchema.safeParse(parsedJson);
@@ -117,9 +118,9 @@ const enrichProductDataFlow = ai.defineFlow(
 
       return { product: validationResult.data };
 
-    } catch (e: any) {
+    } catch (e: unknown) {
         console.error("Critical error in enrichProductDataFlow:", e);
-        if (e.message && (e.message.includes('503') || e.message.includes('overloaded'))) {
+        if (e instanceof Error && e.message && (e.message.includes('503') || e.message.includes('overloaded'))) {
             return { error: "Der KI-Dienst ist derzeit ausgelastet oder nicht verfügbar. Bitte versuchen Sie es in ein paar Augenblicken erneut." };
         }
         return { error: "Beim Anreichern der Produktdaten ist ein unerwarteter kritischer Fehler aufgetreten." };

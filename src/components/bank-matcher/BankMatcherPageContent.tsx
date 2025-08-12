@@ -50,7 +50,7 @@ const sortOptions: { key: BankMatcherSortKey; label: string }[] = [
   { key: 'transaction.description', label: 'Tx Description' },
 ];
 
-function compareValues(valA: any, valB: any, order: SortOrder): number {
+function compareValues(valA: unknown, valB: unknown, order: SortOrder): number {
   const aIsNil = valA === null || valA === undefined || valA === '';
   const bIsNil = valB === null || valB === undefined || valB === '';
 

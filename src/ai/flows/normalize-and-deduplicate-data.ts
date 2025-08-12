@@ -19,8 +19,8 @@ const NormalizeAndDeduplicateOutputSchema = z.array(ProcessedLineItemSchema);
 export type NormalizeAndDeduplicateOutput = z.infer<typeof NormalizeAndDeduplicateOutputSchema>;
 
 // Helper function for product code normalization (can be shared or defined locally)
-function normalizeProductCode(code: any): string {
-  let strCode = String(code || '').trim().replace(/\n/g, ' ');
+function normalizeProductCode(code: unknown): string {
+  let strCode = String(code ?? '').trim().replace(/\n/g, ' ');
   // Check if it's in scientific notation (e.g., "1.23e+5", "1.23E-5", "4.335747e+11")
   if (/^[-+]?[0-9]*\.?[0-9]+([eE][-+]?[0-9]+)$/.test(strCode)) {
     const num = Number(strCode);

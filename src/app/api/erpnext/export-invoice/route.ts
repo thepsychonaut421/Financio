@@ -90,11 +90,15 @@ export async function POST(request: Request) {
 
         successCount++;
 
-      } catch (e: any) {
+      } catch (e: unknown) {
         errorCount++;
-        const errorMessage = e.message || "Unknown error during individual invoice export";
+        const errorMessage = e instanceof Error ? e.message : "Unknown error during individual invoice export";
         errors.push({ invoiceNumber: invoice.rechnungsnummer || invoice.pdfFileName, error: errorMessage });
-        console.error(`[ExportERP API] Failed to export invoice ${invoice.rechnungsnummer} to ERPNext:`, errorMessage, e.stack);
+        console.error(
+          `[ExportERP API] Failed to export invoice ${invoice.rechnungsnummer} to ERPNext:`,
+          errorMessage,
+          e instanceof Error ? e.stack : e
+        );
       }
     }
 
@@ -112,8 +116,15 @@ export async function POST(request: Request) {
     console.log(`[ExportERP API] ${successCount} invoice(s) successfully SIMULATED for ERPNext.`);
     return NextResponse.json({ message: `${successCount} invoice(s) successfully submitted to ERPNext (SIMULATED).` });
 
-  } catch (error: any) {
-    console.error('[ExportERP API] Critical Error in /api/erpnext/export-invoice:', error.message, error.stack);
-    return NextResponse.json({ error: error.message || 'An unexpected critical error occurred on the server.' }, { status: 500 });
+  } catch (error: unknown) {
+    console.error(
+      '[ExportERP API] Critical Error in /api/erpnext/export-invoice:',
+      error instanceof Error ? error.message : error,
+      error instanceof Error ? error.stack : undefined
+    );
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'An unexpected critical error occurred on the server.' },
+      { status: 500 }
+    );
   }
 }

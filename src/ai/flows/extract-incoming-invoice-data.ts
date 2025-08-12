@@ -63,8 +63,8 @@ export type ExtractIncomingInvoiceDataOutput = {
 }
 
 // Helper function for product code normalization
-function normalizeProductCode(code: any): string {
-  let strCode = String(code || '').trim().replace(/\n/g, ' ');
+function normalizeProductCode(code: unknown): string {
+  let strCode = String(code ?? '').trim().replace(/\n/g, ' ');
   if (/^[-+]?[0-9]*\.?[0-9]+([eE][-+]?[0-9]+)$/.test(strCode)) {
     const num = Number(strCode);
     if (!isNaN(num) && isFinite(num)) {
@@ -98,19 +98,19 @@ export async function extractIncomingInvoiceData(input: ExtractIncomingInvoiceDa
 
 
   const normalizedOutput: ExtractIncomingInvoiceDataOutput = {
-    rechnungsnummer: rawOutput.invoiceNumber,
-    datum: rawOutput.invoiceDate,
-    lieferdatum: rawOutput.dueDate, // using dueDate as lieferdatum
+    rechnungsnummer: rawOutput.invoiceNumber ?? undefined,
+    datum: rawOutput.invoiceDate ?? undefined,
+    lieferdatum: rawOutput.dueDate ?? undefined, // using dueDate as lieferdatum
     lieferantName: String(rawOutput.supplier || '').trim().replace(/\n/g, ' '),
     lieferantAdresse: "", // Not in new prompt
     kundenName: "", // Not in new prompt
     kundenAdresse: "", // Not in new prompt
     zahlungsziel: "", // Not in new prompt
     zahlungsart: "", // Not in new prompt
-    nettoBetrag: rawOutput.nettoBetrag,
-    mwstBetrag: rawOutput.mwstBetrag,
-    gesamtbetrag: rawOutput.bruttoBetrag,
-    waehrung: rawOutput.currency,
+    nettoBetrag: rawOutput.nettoBetrag ?? undefined,
+    mwstBetrag: rawOutput.mwstBetrag ?? undefined,
+    gesamtbetrag: rawOutput.bruttoBetrag ?? undefined,
+    waehrung: rawOutput.currency ?? undefined,
     steuersaetze: [], // Not in new prompt
     mwstSatz: mainVatRate,
     kundenNummer: "", // Not in new prompt
@@ -200,18 +200,18 @@ const extractIncomingInvoiceDataFlow = ai.defineFlow(
            };
         }
         return output;
-    } catch (e: any) {
+    } catch (e: unknown) {
         console.error("Critical error in extractIncomingInvoiceDataFlow:", e);
-        if (e.message && (e.message.includes('503') || e.message.includes('overloaded'))) {
-            return { 
+        if (e instanceof Error && e.message && (e.message.includes('503') || e.message.includes('overloaded'))) {
+            return {
                 supplier: null, invoiceNumber: null, invoiceDate: null, dueDate: null,
                 nettoBetrag: null, mwstBetrag: null, bruttoBetrag: null, currency: null,
                 items: [], error: "The AI service is currently busy or unavailable. Please try again in a few moments." };
         }
-        return { 
+        return {
             supplier: null, invoiceNumber: null, invoiceDate: null, dueDate: null,
             nettoBetrag: null, mwstBetrag: null, bruttoBetrag: null, currency: null,
-            items: [], error: `An unexpected error occurred during invoice extraction: ${e.message}` };
+            items: [], error: `An unexpected error occurred during invoice extraction: ${e instanceof Error ? e.message : String(e)}` };
     }
   }
 );

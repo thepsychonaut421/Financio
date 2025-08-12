@@ -111,8 +111,8 @@ const suggestPdfFilenameFlow = ai.defineFlow(
     try {
       const { output } = await prompt(input, {model: 'googleai/gemini-1.5-flash-latest'});
       return output || { suggestedFilename: `Processed_${input.originalFilename}` };
-    } catch (e: any) {
-        if (e.message && (e.message.includes('503') || e.message.includes('overloaded'))) {
+    } catch (e: unknown) {
+        if (e instanceof Error && e.message && (e.message.includes('503') || e.message.includes('overloaded'))) {
             return { suggestedFilename: `Error_${input.originalFilename}`, error: "The AI service is currently busy or unavailable. Please try again in a few moments." };
         }
         return { suggestedFilename: `Error_${input.originalFilename}`, error: "An unexpected error occurred while suggesting a filename." };
