@@ -6,7 +6,6 @@ const withBundleAnalyzer = require('@next/bundle-analyzer')({
 
 const nextConfig: NextConfig = {
   // output: 'export', // This can cause issues with Firebase frameworks backend
-  swcMinify: true,
   typescript: {
     ignoreBuildErrors: true,
   },
