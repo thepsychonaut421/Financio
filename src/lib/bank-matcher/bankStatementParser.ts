@@ -58,25 +58,27 @@ export async function parseBankStatementCSV(file: File): Promise<BankTransaction
           // Potentially reject only on critical errors or provide partial data
         }
         
-        const transactions: BankTransaction[] = results.data.map((row, index) => {
-          const date = parseDate(row['Datum'] || row['Date']);
-          const amount = parseGermanNumber(row['Betrag'] || row['Amount']);
-          const description = row['Buchungstext'] || row['Description'] || row['Verwendungszweck'] || '';
-          
-          if (!date || amount === null) {
-            console.warn(`Skipping row ${index + 2} due to missing/invalid date or amount:`, row);
-            return null; 
-          }
+        const transactions = results.data
+          .map((row, index): BankTransaction | null => {
+            const date = parseDate(row['Datum'] || row['Date']);
+            const amount = parseGermanNumber(row['Betrag'] || row['Amount']);
+            const description = row['Buchungstext'] || row['Description'] || row['Verwendungszweck'] || '';
 
-          return {
-            id: uuidv4(), // Generate a unique ID
-            date: date,
-            description: description,
-            amount: amount,
-            currency: row['Währung'] || row['Currency'] || 'EUR',
-            recipientOrPayer: row['Empfänger/Zahlungspflichtiger'] || row['Auftraggeber/Empfänger'] || row['Name'] || '',
-          };
-        }).filter((t): t is BankTransaction => t !== null); // Filter out nulls
+            if (!date || amount === null) {
+              console.warn(`Skipping row ${index + 2} due to missing/invalid date or amount:`, row);
+              return null;
+            }
+
+            return {
+              id: uuidv4(), // Generate a unique ID
+              date: date,
+              description: description,
+              amount: amount,
+              currency: row['Währung'] || row['Currency'] || 'EUR',
+              recipientOrPayer: row['Empfänger/Zahlungspflichtiger'] || row['Auftraggeber/Empfänger'] || row['Name'] || '',
+            };
+          })
+          .filter((t): t is BankTransaction => t !== null); // Filter out nulls
 
         resolve(transactions);
       },

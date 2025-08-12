@@ -51,7 +51,7 @@ const ExtractBankStatementDataOutputSchema = z.object({
 export type ExtractBankStatementDataOutput = z.infer<typeof ExtractBankStatementDataOutputSchema>;
 
 // Helper to parse German numbers from string if AI returns string amount
-function parseGermanNumberFromString(numStr: any): number | null {
+function parseGermanNumberFromString(numStr: unknown): number | null {
   if (typeof numStr === 'number') return numStr;
   if (typeof numStr !== 'string' || !numStr) return null;
   const cleanedStr = numStr.replace(/\./g, '').replace(/,/g, '.');
@@ -196,8 +196,8 @@ const extractBankStatementDataFlow = ai.defineFlow(
     try {
         const {output} = await prompt(input, {model: 'googleai/gemini-1.5-flash-latest'});
         return output || { transactions: [] };
-    } catch (e: any) {
-        if (e.message && (e.message.includes('503') || e.message.includes('overloaded'))) {
+    } catch (e: unknown) {
+        if (e instanceof Error && e.message && (e.message.includes('503') || e.message.includes('overloaded'))) {
             return { transactions: [], error: "The AI service is currently busy or unavailable. Please try again in a few moments." };
         }
         return { transactions: [], error: "An unexpected error occurred during bank statement extraction." };

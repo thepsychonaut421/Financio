@@ -39,8 +39,8 @@ export type ExtractInvoiceDataOutput = {
 
 
 // Helper function for product code normalization
-function normalizeProductCode(code: any): string {
-  let strCode = String(code || '').trim().replace(/\n/g, ' ');
+function normalizeProductCode(code: unknown): string {
+  let strCode = String(code ?? '').trim().replace(/\n/g, ' ');
   // Check if it's in scientific notation (e.g., "1.23e+5", "1.23E-5", "4.335747e+11")
   if (/^[-+]?[0-9]*\.?[0-9]+([eE][-+]?[0-9]+)$/.test(strCode)) {
     const num = Number(strCode);
@@ -63,8 +63,8 @@ export async function extractInvoiceData(input: ExtractInvoiceDataInput): Promis
   const normalizedInvoiceDetails: AppLineItem[] = (rawOutput.invoiceDetails || []).map(item => ({
     productCode: normalizeProductCode(item.productCode),
     productName: String(item.productName || '').trim().replace(/\n/g, ' '),
-    quantity: item.quantity === undefined ? 0 : item.quantity, // Default to 0 if undefined
-    unitPrice: item.unitPrice === undefined ? 0.0 : item.unitPrice, // Default to 0.0 if undefined
+    quantity: item.quantity == null ? 0 : item.quantity,
+    unitPrice: item.unitPrice == null ? 0.0 : item.unitPrice,
   }));
   
   return { invoiceDetails: normalizedInvoiceDetails };
@@ -98,8 +98,8 @@ const extractInvoiceDataFlow = ai.defineFlow(
     try {
         const {output} = await prompt(input, {model: 'googleai/gemini-1.5-flash-latest'});
         return output || { invoiceDetails: [] };
-    } catch (e: any) {
-        if (e.message && (e.message.includes('503') || e.message.includes('overloaded'))) {
+    } catch (e: unknown) {
+        if (e instanceof Error && e.message && (e.message.includes('503') || e.message.includes('overloaded'))) {
             return { invoiceDetails: [], error: "The AI service is currently busy or unavailable. Please try again in a few moments." };
         }
         return { invoiceDetails: [], error: "An unexpected error occurred during invoice data extraction." };

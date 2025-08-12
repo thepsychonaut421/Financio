@@ -87,7 +87,7 @@ const erpTableSortOptions: { key: ERPSortKey; label: string }[] = [
   { key: 'pdfFileName', label: 'PDF Name' },
 ];
 
-function compareERPValues(valA: any, valB: any, order: SortOrder): number {
+function compareERPValues(valA: unknown, valB: unknown, order: SortOrder): number {
   const aIsNil = valA === null || valA === undefined || valA === '';
   const bIsNil = valB === null || valB === undefined || valB === '';
 
@@ -355,7 +355,7 @@ export function IncomingInvoicesPageContent() {
         setCurrentFileProgress(`Processing file ${i + 1} of ${selectedFiles.length}: ${file.name}`);
         
         const dataUri = await readFileAsDataURL(file);
-        const aiResult = (await extractIncomingInvoiceData({ invoiceDataUri: dataUri })) as AIInvoice;
+        const aiResult = (await extractIncomingInvoiceData({ invoiceDataUri: dataUri })) as unknown as AIInvoice;
         
         if (aiResult.error) {
           filesWithErrors.push(`${file.name}: ${aiResult.error}`);
@@ -423,7 +423,7 @@ export function IncomingInvoicesPageContent() {
           lieferantAdresse: "", // Not available in new schema
           zahlungsziel: "", // Not available in new schema
           zahlungsart: "", // Not available in new schema
-          gesamtbetrag: aiResult.bruttoBetrag,
+          gesamtbetrag: aiResult.bruttoBetrag ?? undefined,
           mwstSatz: "", // To be derived or removed
           rechnungspositionen: (aiResult.items || []).map(item => ({
               productCode: sanitizeText(item.productCode),
@@ -441,8 +441,8 @@ export function IncomingInvoicesPageContent() {
           istBezahlt: istBezahltStatus, 
           kontenrahmen: sanitizeText(kontenrahmen), 
           remarks: sanitizeText(remarks),
-          nettoBetrag: aiResult.nettoBetrag,
-          mwstBetrag: aiResult.mwstBetrag,
+          nettoBetrag: aiResult.nettoBetrag ?? undefined,
+          mwstBetrag: aiResult.mwstBetrag ?? undefined,
         };
         allProcessedForMatcher.push(erpCompatibleInvoice);
 
@@ -457,7 +457,7 @@ export function IncomingInvoicesPageContent() {
               lieferantAdresse: "",
               zahlungsziel: "",
               zahlungsart: "",
-              gesamtbetrag: aiResult.bruttoBetrag,
+              gesamtbetrag: aiResult.bruttoBetrag ?? undefined,
               mwstSatz: "",
               rechnungspositionen: (aiResult.items || []).map(item => ({
                   productCode: sanitizeText(item.productCode),
@@ -468,8 +468,8 @@ export function IncomingInvoicesPageContent() {
               kundenNummer: "",
               bestellNummer: "",
               isPaidByAI: false,
-              nettoBetrag: aiResult.nettoBetrag,
-              mwstBetrag: aiResult.mwstBetrag,
+              nettoBetrag: aiResult.nettoBetrag ?? undefined,
+              mwstBetrag: aiResult.mwstBetrag ?? undefined,
               wahrung: normalizedCurrency,
           });
         }
@@ -536,7 +536,7 @@ export function IncomingInvoicesPageContent() {
            toast({ title: "Export Submitted", description: "Invoices submitted to ERPNext." });
         }
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       const message = error instanceof Error ? error.message : "Unknown client-side error during ERPNext export.";
       toast({ title: "ERPNext Export Failed", description: message, variant: "destructive" });
     } finally {
@@ -604,11 +604,11 @@ export function IncomingInvoicesPageContent() {
           variant: "destructive",
         });
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Error creating ZIP file:", error);
       toast({
         title: "ZIP Export Failed",
-        description: error.message || "Could not create ZIP file.",
+        description: error instanceof Error ? error.message : "Could not create ZIP file.",
         variant: "destructive",
       });
     } finally {
@@ -633,10 +633,10 @@ export function IncomingInvoicesPageContent() {
     setIsCheckingDuplicates(true);
     setErrorMessage(null);
 
-    Papa.parse(erpExportFile, {
+    Papa.parse<Record<string, string>>(erpExportFile, {
       header: true,
       skipEmptyLines: true,
-      complete: (results) => {
+      complete: (results: Papa.ParseResult<Record<string, string>>) => {
         const newKeys = new Set<string>();
         const headers = (results.meta.fields || []).map(h => h.toLowerCase().trim());
         
@@ -667,7 +667,7 @@ export function IncomingInvoicesPageContent() {
         const dateHeader = originalHeaders[headers.indexOf(actualDateCol)];
 
 
-        results.data.forEach((row: any) => {
+        results.data.forEach((row: Record<string, string>) => {
           const rawSupplierNameFromErp = (row[supplierHeader] || '').trim();
           let normalizedSupplierNameForErpKey = getERPNextSupplierName(rawSupplierNameFromErp).toLowerCase();
           
