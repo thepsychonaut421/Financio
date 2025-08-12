@@ -2,32 +2,11 @@
 import { NextResponse } from 'next/server';
 import { adminDb, adminStorage } from '@/lib/firebase';
 import { v4 as uuidv4 } from 'uuid';
-import { Writable } from 'stream';
+import * as admin from 'firebase-admin';
+import { extractIncomingInvoiceData } from '@/ai/flows/extract-incoming-invoice-data';
 
-// This forces Node.js runtime instead of Edge runtime
+// This forces Node.js runtime instead of Edge runtime, which is needed for Buffer operations
 export const runtime = 'nodejs';
-
-// Helper to buffer a stream
-const streamToBuffer = (stream: ReadableStream<Uint8Array>): Promise<Buffer> => {
-  return new Promise((resolve, reject) => {
-    const reader = stream.getReader();
-    const chunks: Uint8Array[] = [];
-
-    const pump = () => {
-      reader.read().then(({ done, value }) => {
-        if (done) {
-          resolve(Buffer.concat(chunks));
-          return;
-        }
-        if (value) {
-          chunks.push(value);
-        }
-        pump();
-      }).catch(reject);
-    };
-    pump();
-  });
-};
 
 export async function POST(request: Request) {
   try {
@@ -45,12 +24,12 @@ export async function POST(request: Request) {
     const fileBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(fileBuffer);
     
-    // For now, we use UUID. In a full implementation, we'd use SHA256.
+    // In a production system, a SHA256 hash of the file content would be a better ID
     const fileId = uuidv4();
     const year = new Date().getFullYear();
     const storagePath = `invoices/${year}/${fileId}.pdf`;
 
-    // Upload to Firebase Storage
+    // 1. Upload to Firebase Storage
     const bucket = adminStorage.bucket();
     const storageFile = bucket.file(storagePath);
     
@@ -60,10 +39,10 @@ export async function POST(request: Request) {
         },
     });
 
-    // Create document in Firestore
+    // 2. Create initial document in Firestore
     const docRef = adminDb.collection('invoices').doc(fileId);
-    await docRef.set({
-      id: fileId, // Storing the ID in the doc as well
+    const initialDocData = {
+      id: fileId,
       status: 'uploaded',
       originalFilename: file.name,
       files: {
@@ -71,20 +50,47 @@ export async function POST(request: Request) {
       },
       size: file.size,
       mimeType: file.type,
-      // In a real app, you would get the authenticated user's ID
-      // uploaderId: 'some-user-id', 
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-    });
+    };
+    await docRef.set(initialDocData);
+
+    // 3. Trigger AI Extraction immediately after upload
+    const dataUri = `data:${file.type};base64,${buffer.toString('base64')}`;
+    const extractionResult = await extractIncomingInvoiceData({ invoiceDataUri: dataUri });
+
+    // 4. Update Firestore document with extracted data
+    const updateData = {
+      status: extractionResult.error ? 'error' : 'extracted',
+      ai: {
+        extracted: extractionResult,
+        model: 'googleai/gemini-1.5-flash-latest', // Assuming this model, can be made dynamic
+        error: extractionResult.error || null,
+      },
+      // Map top-level fields for easier querying
+      extractedData: {
+        rechnungsnummer: extractionResult.rechnungsnummer || null,
+        datum: extractionResult.datum || null,
+        lieferantName: extractionResult.lieferantName || null,
+        gesamtbetrag: extractionResult.gesamtbetrag || null,
+        wahrung: extractionResult.waehrung || null,
+      },
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    };
+
+    await docRef.update(updateData);
 
     return NextResponse.json({ 
-        message: 'File uploaded successfully', 
+        message: 'File uploaded and processed successfully.', 
         docId: fileId,
-        path: storagePath 
+        path: storagePath,
+        extractionStatus: updateData.status
     }, { status: 201 });
 
   } catch (error: any) {
-    console.error('Error during file upload:', error);
+    console.error('Error during file upload and processing:', error);
+    // If the error happens after doc creation, we could try to update its status to 'error'
+    // For now, returning a generic server error is sufficient.
     return NextResponse.json({ error: 'Internal Server Error', details: error.message }, { status: 500 });
   }
 }
