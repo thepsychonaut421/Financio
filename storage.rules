@@ -1,10 +1,32 @@
 rules_version = '2';
 
-// Craft rules based on data in your Firestore database
-// allow write: if firestore.get(
-//    /databases/(default)/documents/users/$(request.auth.uid)).data.isAdmin;
 service firebase.storage {
   match /b/{bucket}/o {
+    
+    // Helper function to check for authenticated users
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    // Helper function to check file size
+    function isWithinSizeLimit(maxSizeInMB) {
+      return request.resource.size < maxSizeInMB * 1024 * 1024;
+    }
+
+    // Invoices can be written by any authenticated user, up to 20MB
+    match /invoices/{year}/{sha256}.pdf {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && isWithinSizeLimit(20);
+    }
+
+    // Processed text files can be read by authenticated users
+    match /invoices/{year}/{sha256}.txt {
+      allow read: if isAuthenticated();
+      // Generally, write access for text files should be server-side only
+      allow write: if false;
+    }
+    
+    // Deny access to all other paths by default
     match /{allPaths=**} {
       allow read, write: if false;
     }
