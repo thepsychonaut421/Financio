@@ -20,7 +20,10 @@ export function IncomingInvoiceUploadForm({ onFilesSelected, onProcess, isProces
 
   const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
     if (event.target.files) {
-      const newFiles = Array.from(event.target.files);
+      const newFiles = Array.from(event.target.files).filter(file => file.type === 'application/pdf');
+      if (newFiles.length !== event.target.files.length) {
+        // Silently filter, or add a toast notification if you prefer
+      }
       setCurrentFiles(newFiles);
       onFilesSelected(newFiles);
     }
@@ -48,15 +51,10 @@ export function IncomingInvoiceUploadForm({ onFilesSelected, onProcess, isProces
             id={inputId}
             type="file"
             multiple
-            accept=".pdf"
+            accept="application/pdf"
             onChange={handleFileChange}
             disabled={isProcessing}
-            className="block w-full text-sm text-slate-500
-              file:mr-4 file:py-2 file:px-4
-              file:rounded-full file:border-0
-              file:text-sm file:font-semibold
-              file:bg-primary/10 file:text-primary
-              hover:file:bg-primary/20"
+            className="block w-full text-sm file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20"
           />
         </div>
 
@@ -65,7 +63,7 @@ export function IncomingInvoiceUploadForm({ onFilesSelected, onProcess, isProces
             <h3 className="text-sm font-medium text-foreground">Selected Files:</h3>
             <ul className="max-h-40 overflow-y-auto space-y-1 rounded-md border p-2">
               {currentFiles.map((file) => (
-                <li key={file.name} className="flex items-center justify-between text-sm p-1.5 bg-secondary/50 rounded-md">
+                <li key={file.name + file.lastModified} className="flex items-center justify-between text-sm p-1.5 bg-secondary/50 rounded-md">
                   <div className="flex items-center gap-2">
                     <FileText className="w-4 h-4 text-primary" />
                     <span className="truncate max-w-xs" title={file.name}>{file.name}</span>
@@ -93,3 +91,5 @@ export function IncomingInvoiceUploadForm({ onFilesSelected, onProcess, isProces
     </Card>
   );
 }
+
+    
