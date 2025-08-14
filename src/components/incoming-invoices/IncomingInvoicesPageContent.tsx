@@ -19,8 +19,7 @@ import { erpInvoicesToSupplierCSV, downloadFile, incomingInvoicesToERPNextCSVCom
 import JSZip from 'jszip';
 import Papa from 'papaparse';
 import type { IncomingInvoiceItem, ERPIncomingInvoiceItem, IncomingProcessingStatus, ERPSortKey, SortOrder } from '@/types/incoming-invoice';
-import { getAuth } from 'firebase/auth'; // Import Firebase Auth
-import { auth } from '@/lib/firebase-client'; // Import client auth instance
+import { auth } from '@/lib/firebase-client'; 
 
 const LOCAL_STORAGE_PAGE_CACHE_KEY = 'incomingInvoicesPageCache';
 const LOCAL_STORAGE_MATCHER_DATA_KEY = 'processedIncomingInvoicesForMatcher';
@@ -67,7 +66,6 @@ function compareERPValues(valA: any, valB: any, order: SortOrder): number {
   return order === 'asc' ? comparison : -comparison;
 }
 
-// Helper to sanitize text fields for UI and ERP export
 const sanitizeText = (text: string | undefined | null): string => {
     if (!text) return '';
     return text.replace(/[\uFFFD]/g, '').trim();
@@ -143,7 +141,7 @@ export function IncomingInvoicesPageContent() {
   }, []);
 
   useEffect(() => {
-    if (status !== 'processing' && status !== 'idle') { // Avoid saving during processing or if truly idle
+    if (status !== 'processing' && status !== 'idle') { 
       try {
         const cacheToSave: IncomingInvoicesPageCache = {
           extractedInvoices,
@@ -168,13 +166,12 @@ export function IncomingInvoicesPageContent() {
     if (files.length > 0) {
       setExtractedInvoices([]); 
       setErpProcessedInvoices([]);
-      setStatus('idle'); // Ready to process new files
+      setStatus('idle'); 
       setErrorMessage(null);
       setDiscrepancyErrors([]);
       setProgressValue(0);
       setCurrentFileProgress('');
     } else {
-      // If no files are selected, keep existing data unless cleared by "Clear All"
       setStatus(extractedInvoices.length > 0 || erpProcessedInvoices.length > 0 ? 'success' : 'idle');
     }
   }, [extractedInvoices.length, erpProcessedInvoices.length]);
@@ -196,33 +193,31 @@ export function IncomingInvoicesPageContent() {
 
   const handleProcessFiles = async () => {
     if (selectedFiles.length === 0) {
-      setErrorMessage("No files selected. Please select PDF files to process.");
-      setStatus('error');
-      return;
+        setErrorMessage("No files selected. Please select PDF files to process.");
+        setStatus('error');
+        return;
     }
 
     const currentUser = auth.currentUser;
     if (!currentUser) {
-        setErrorMessage("Authentication error. Please log in again.");
-        setStatus('error');
         toast({ title: "Not Authenticated", description: "You must be logged in to upload files.", variant: "destructive" });
+        setStatus('error');
         return;
     }
-    const token = await currentUser.getIdToken();
 
     setStatus('processing');
     setErrorMessage(null);
-    setDiscrepancyErrors([]);
     setProgressValue(0);
-
     const tempRegularResults: IncomingInvoiceItem[] = [];
     const tempErpResults: ERPIncomingInvoiceItem[] = [];
 
-    try {
-        for (let i = 0; i < selectedFiles.length; i++) {
-            const file = selectedFiles[i];
-            setCurrentFileProgress(`Uploading and processing file ${i + 1} of ${selectedFiles.length}: ${file.name}`);
+    const token = await currentUser.getIdToken();
 
+    for (let i = 0; i < selectedFiles.length; i++) {
+        const file = selectedFiles[i];
+        setCurrentFileProgress(`Uploading and processing file ${i + 1} of ${selectedFiles.length}: ${file.name}`);
+
+        try {
             const formData = new FormData();
             formData.append('file', file);
 
@@ -233,93 +228,94 @@ export function IncomingInvoicesPageContent() {
                 },
                 body: formData,
             });
-            
-            setProgressValue(Math.round(((i + 1) / selectedFiles.length) * 100));
 
             if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(`Failed to upload ${file.name}: ${errorData.error || response.statusText}`);
+                const errorData = await response.json().catch(() => ({ error: response.statusText }));
+                throw new Error(`Upload failed for ${file.name}: ${errorData.error || `HTTP ${response.status}`}`);
             }
-
+            
             const result = await response.json();
             
-            // Assuming the API returns the parsed data in a format we can use
-            if (result.ok && result.invoiceId && result.status === 'extracted') {
-                // Here we would ideally fetch the full document from Firestore,
-                // but for now, we'll use the data returned from the API if it's sufficient
-                // This part needs to be adapted based on the actual API response shape
-                const invoiceData = { // This is a placeholder for the actual data
-                  pdfFileName: file.name,
-                  rechnungsnummer: result.invoiceId, // Example
-                  // ... other fields from a potential API response payload
+            if (result.ok) {
+                const invoiceData = {
+                  pdfFileName: result.parse?.raw?.pdfFileName || file.name,
+                  rechnungsnummer: result.parse?.header?.supplier_invoice_no,
+                  datum: result.parse?.header?.invoice_date,
+                  lieferantName: result.parse?.header?.supplier,
+                  gesamtbetrag: result.parse?.header?.grand_total,
+                  rechnungspositionen: result.parse?.items || [],
                 };
 
-                 if (erpMode) {
-                    tempErpResults.push(invoiceData as ERPIncomingInvoiceItem);
-                 } else {
-                    tempRegularResults.push(invoiceData as IncomingInvoiceItem);
-                 }
-            } else if (result.status === 'queued') {
-                toast({ title: "File Queued", description: `${file.name} has been queued for processing.`});
-            } else if (result.status === 'extracted' && result.note?.includes('deduplicated')) {
-                 toast({ title: "File Existed", description: `${file.name} was already processed.`});
+                if (erpMode) {
+                  tempErpResults.push(invoiceData as ERPIncomingInvoiceItem);
+                } else {
+                  tempRegularResults.push(invoiceData as IncomingInvoiceItem);
+                }
+            } else {
+               throw new Error(result.error || `Processing failed for ${file.name}`);
             }
-        }
 
-        setExtractedInvoices(prev => [...prev, ...tempRegularResults]);
-        setErpProcessedInvoices(prev => [...prev, ...tempErpResults]);
+        } catch (error: any) {
+            setErrorMessage(prev => (prev ? `${prev}\n${error.message}` : error.message));
+            setStatus('error');
+        } finally {
+            setProgressValue(Math.round(((i + 1) / selectedFiles.length) * 100));
+        }
+    }
+
+    setExtractedInvoices(prev => [...prev, ...tempRegularResults]);
+    setErpProcessedInvoices(prev => [...prev, ...tempErpResults]);
+    if (status !== 'error') {
         setStatus('success');
         setCurrentFileProgress('Processing complete!');
-
-    } catch (error) {
-        console.error("Error processing files:", error);
-        const message = error instanceof Error ? error.message : 'An unexpected error occurred during processing.';
-        setErrorMessage(message);
-        setStatus('error');
-        setCurrentFileProgress('Processing failed.');
     }
-};
-
+  };
+  
   const handleExportToERPNext = async () => {
-    const invoicesToExport = erpMode ? sortedErpProcessedInvoices : erpProcessedInvoices;
-    if (invoicesToExport.length === 0) {
-      toast({
-        title: "No ERP Data",
-        description: "No data available in ERP Vorlage Mode to export to ERPNext.",
-        variant: "destructive",
-      });
+    const list = erpMode ? sortedErpProcessedInvoices : erpProcessedInvoices;
+    if (!list.length) {
+      toast({ title: "No ERP Data", description: "No invoices in ERP Vorlage Mode to export.", variant: "destructive" });
       return;
     }
+
+    const currentUser = auth.currentUser;
+    if (!currentUser) {
+      toast({ title: "Not Authenticated", description: "You must be logged in to sync.", variant: "destructive" });
+      return;
+    }
+    const token = await currentUser.getIdToken();
+
     setIsExportingToERPNext(true);
     try {
-      const response = await fetch('/api/erp/sync', { // Using the real sync endpoint
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ invoices: invoicesToExport }), // Adjust payload as needed by sync endpoint
-      });
-      if (!response.ok) {
-        let detailedErrorMessage = `Server Error: ${response.status} ${response.statusText || ''}`.trim();
-        try {
-          const errorResult = await response.json();
-          if (errorResult.error) detailedErrorMessage = errorResult.error;
-          else if (errorResult.message) detailedErrorMessage = errorResult.message;
-        } catch (jsonError) { /* ignore */ }
-        toast({ title: `Export Error (${response.status})`, description: detailedErrorMessage, variant: "destructive" });
-        return;
-      }
-      if (response.status === 204) { 
-        toast({ title: "Export Submitted", description: "Invoices submitted to ERPNext (server returned no content, assuming success)." });
-      } else {
-        const result = await response.json();
-        if (result.message) {
-          toast({ title: "Export Status", description: result.message, variant: response.status === 207 ? "default" : "default" }); 
-        } else {
-           toast({ title: "Export Submitted", description: "Invoices submitted to ERPNext." });
+      const results = [];
+      for (const inv of list) {
+        // Assuming orgId is stored on the invoice object, or you get it from user claims
+        const orgId = "test-org-id"; // Placeholder
+        const invoiceId = inv.id; // Assuming `id` is the sha256
+        
+        if (!invoiceId) {
+            results.push({ status: 400, error: `Missing invoice ID for ${inv.pdfFileName}` });
+            continue;
         }
+
+        const res = await fetch('/api/erp/sync', {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({ orgId: orgId, invoiceId: invoiceId })
+        });
+        const j = await res.json().catch(() => ({}));
+        results.push({ status: res.status, ...j });
       }
-    } catch (error: any) {
-      const message = error instanceof Error ? error.message : "Unknown client-side error during ERPNext export.";
-      toast({ title: "ERPNext Export Failed", description: message, variant: "destructive" });
+
+      const okCount = results.filter(r => r.status === 200 || r.status === 201).length;
+      const failCount = results.length - okCount;
+      toast({ title: 'ERP Sync Finished', description: `${okCount} successful, ${failCount} failed.` });
+
+    } catch (e:any) {
+      toast({ title: 'ERP Sync Error', description: e?.message ?? 'Unknown client-side error', variant: 'destructive' });
     } finally {
       setIsExportingToERPNext(false);
     }
@@ -419,7 +415,6 @@ export function IncomingInvoicesPageContent() {
       skipEmptyLines: true,
       complete: (results) => {
         const newKeys = new Set<string>();
-        // ... (rest of the logic remains the same)
         setExistingErpInvoiceKeys(newKeys);
         toast({
           title: "ERPNext Data Processed",
@@ -675,6 +670,5 @@ export function IncomingInvoicesPageContent() {
     </div>
   );
 }
-
 
     

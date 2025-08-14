@@ -49,12 +49,10 @@ export async function POST(request: Request) {
     const ab = await file.arrayBuffer();
     const buffer = Buffer.from(ab);
 
-    // Tolerant magic bytes check to ensure it's a real PDF
-    const header = buffer.subarray(0, 32).toString();
-    if (!/\s*%PDF-/.test(header)) {
+    const headerPdf = buffer.subarray(0, 32).toString();
+    if (!/\s*%PDF-/.test(headerPdf)) {
         return NextResponse.json({ error: 'Invalid file format. Not a valid PDF.' }, { status: 400 });
     }
-
 
     const digest = sha256(buffer);
     const now = new Date();
@@ -67,8 +65,8 @@ export async function POST(request: Request) {
 
     await storageFile.save(buffer, {
       metadata: {
-        contentType: 'application/pdf', // Enforce correct content type
-        cacheControl: 'private, max-age=0, no-transform', // Harden cache control
+        contentType: 'application/pdf',
+        cacheControl: 'private, max-age=0, no-transform',
         metadata: {
           sha256: digest,
           originalFilename: file.name,
@@ -86,7 +84,6 @@ export async function POST(request: Request) {
       .collection('invoices')
       .doc(digest);
 
-    // Idempotent Firestore write using a transaction
     await adminDb.runTransaction(async (tx) => {
         const snap = await tx.get(docRef);
         if (!snap.exists) {
@@ -109,7 +106,6 @@ export async function POST(request: Request) {
         tx.update(docRef, { status: 'extracting', updatedAt: admin.firestore.FieldValue.serverTimestamp() });
     });
     
-    // Deduplication check: if file already existed and was processed, exit gracefully.
     const currentSnap = await docRef.get();
     const existingData = currentSnap.data();
     if (existingData?.status === 'extracted') {
@@ -117,12 +113,13 @@ export async function POST(request: Request) {
             ok: true,
             orgId,
             invoiceId: digest,
-            path: existingData.fileRef, // Use existing path for consistency
-            status: 'extracted',
+            docPath: docRef.path,
+            status: 'deduplicated',
+            parse: existingData.parse,
+            erpSync: existingData.erpSync,
             note: 'Already processed (deduplicated by sha256).',
         }, { status: 200 });
     }
-
 
     let extractedOk = false;
     let extractionError: string | null = null;
@@ -202,13 +199,18 @@ export async function POST(request: Request) {
       });
     }
 
+    const finalSnap = await docRef.get();
+    const finalData = finalSnap.data()!;
+    
     return NextResponse.json(
       {
         ok: true,
+        status: finalData.status,
         orgId,
         invoiceId: digest,
-        path: storagePath,
-        status: extractedOk ? 'extracted' : 'queued',
+        docPath: docRef.path,
+        parse: finalData.parse,
+        erpSync: finalData.erpSync,
         note: extractedOk ? 'Sync extraction completed.' : `Queued for async extraction. Reason: ${extractionError}`,
       },
       { status: 201 },
@@ -222,3 +224,5 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Internal Server Error', details: error?.message ?? String(error) }, { status: 500 });
   }
 }
+
+    

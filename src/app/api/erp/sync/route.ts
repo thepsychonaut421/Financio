@@ -82,6 +82,11 @@ export async function POST(req: Request) {
     const inv = snap.data()!;
     const attempts = (inv.erpSync?.attempts ?? 0) + 1;
 
+    const lastAttemptAt = inv.erpSync?.lastAttemptAt?.toDate?.();
+    if (lastAttemptAt && Date.now() - lastAttemptAt.getTime() < 15000) {
+        return NextResponse.json({ error: 'Too many requests. Please wait a moment.' }, { status: 429 });
+    }
+
     if (inv.erpSync?.status === 'done' && inv.erpSync?.docName) {
       return NextResponse.json({ ok: true, status: 'done', docName: inv.erpSync.docName }, { status: 200 });
     }
@@ -177,3 +182,5 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: e?.message ?? 'sync-failed' }, { status });
   }
 }
+
+    
