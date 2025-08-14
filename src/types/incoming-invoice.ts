@@ -55,6 +55,14 @@ export interface ERPIncomingInvoiceItem extends IncomingInvoiceItem {
   billDate?: string; 
   dueDate?: string; 
   remarks?: string;
+  erpSync?: {
+    status: 'pending' | 'done' | 'failed' | 'retry';
+    mode: 'PI:update_stock';
+    attempts: number;
+    lastAttemptAt: any | null;
+    docName?: string; // Added docName
+    error?: string;
+  }
 }
 
 export type IncomingProcessingStatus = 'idle' | 'processing' | 'success' | 'error';
