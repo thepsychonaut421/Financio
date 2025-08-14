@@ -48,8 +48,9 @@ export async function POST(request: Request) {
     const ab = await file.arrayBuffer();
     const buffer = Buffer.from(ab);
 
-    // Magic bytes check to ensure it's a real PDF
-    if (buffer.slice(0, 5).toString() !== '%PDF-') {
+    // Tolerant magic bytes check to ensure it's a real PDF
+    const header = buffer.subarray(0, 32).toString();
+    if (!/\s*%PDF-/.test(header)) {
         return NextResponse.json({ error: 'Invalid file format. Not a valid PDF.' }, { status: 400 });
     }
 
@@ -65,7 +66,7 @@ export async function POST(request: Request) {
 
     await storageFile.save(buffer, {
       metadata: {
-        contentType: file.type,
+        contentType: 'application/pdf', // Enforce correct content type
         metadata: {
           sha256: digest,
           originalFilename: file.name,
@@ -83,27 +84,29 @@ export async function POST(request: Request) {
       .collection('invoices')
       .doc(digest);
 
-    const baseDoc = {
-      id: digest,
-      status: 'uploaded' as const,
-      originalFilename: file.name,
-      mimeType: file.type,
-      size: file.size,
-      fileRef: storagePath,
-      sha256: digest,
-      uploadedBy: uid,
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      parse: null as any,
-      erpSync: { status: 'pending', mode: 'PI:update_stock', attempts: 0, lastAttemptAt: null as any },
-    };
-
-    await docRef.set(baseDoc, { merge: true });
-
-    await docRef.update({
-      status: 'extracting',
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    // Idempotent Firestore write using a transaction
+    await adminDb.runTransaction(async (tx) => {
+        const snap = await tx.get(docRef);
+        if (!snap.exists) {
+            const baseDoc = {
+              id: digest,
+              status: 'uploaded' as const,
+              originalFilename: file.name,
+              mimeType: file.type,
+              size: file.size,
+              fileRef: storagePath,
+              sha256: digest,
+              uploadedBy: uid,
+              createdAt: admin.firestore.FieldValue.serverTimestamp(),
+              updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+              parse: null as any,
+              erpSync: { status: 'pending', mode: 'PI:update_stock', attempts: 0, lastAttemptAt: null as any },
+            };
+            tx.set(docRef, baseDoc);
+        }
+        tx.update(docRef, { status: 'extracting', updatedAt: admin.firestore.FieldValue.serverTimestamp() });
     });
+
 
     let extractedOk = false;
     let extractionError: string | null = null;
@@ -119,16 +122,36 @@ export async function POST(request: Request) {
       if (extractionResult?.error) {
         extractionError = extractionResult.error;
       } else {
+          const toNum = (v: any) => (v == null ? null : Number(String(v).replace(',', '.')));
+          const toISO = (d: any) => {
+              try {
+                  return d ? new Date(d).toISOString().slice(0, 10) : null;
+              } catch (e) {
+                  return null;
+              }
+          };
+
           const header = {
             supplier: extractionResult?.lieferantName ?? null,
             supplier_invoice_no: extractionResult?.rechnungsnummer ?? null,
-            invoice_date: extractionResult?.datum ?? null,
-            currency: extractionResult?.waehrung ?? null,
-            net_total: extractionResult?.nettoBetrag ?? null,
-            tax_total: extractionResult?.mwstBetrag ?? null,
-            grand_total: extractionResult?.gesamtbetrag ?? null,
+            invoice_date: toISO(extractionResult?.datum),
+            currency: extractionResult?.waehrung ?? 'EUR',
+            net_total: toNum(extractionResult?.nettoBetrag),
+            tax_total: toNum(extractionResult?.mwstBetrag),
+            grand_total: toNum(extractionResult?.gesamtbetrag),
           };
-          const items = extractionResult?.rechnungspositionen ?? [];
+
+          const items = (extractionResult?.rechnungspositionen ?? []).map((it: any, idx: number) => ({
+            row: idx + 1,
+            item_code: it.productCode ?? null,
+            name: it.productName ?? '',
+            qty: toNum(it.quantity) ?? 1,
+            uom: it.uom ?? 'Stk',
+            rate: toNum(it.unitPrice) ?? null,
+            amount: toNum(it.totalPrice) ?? null,
+            pos: it.pos ?? it.SKU ?? null,
+            expense_account: it.expense_account ?? null,
+          }));
 
           firestoreUpdatePayload = {
             status: 'extracted',

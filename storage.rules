@@ -1,16 +1,17 @@
+
 rules_version = '2';
 
 service firebase.storage {
   match /b/{bucket}/o {
-    
     // Helper function to check if the user belongs to the organization
     function isMember(orgId) {
       return request.auth != null && request.auth.token.orgId == orgId;
     }
 
-    // Secure PDF files based on the organization ID in the path
-    // Path example: /invoices/{orgId}/{yyyy}/{mm}/{sha256}.pdf
+    // Rule for invoice files, structured by org, year, and month.
+    // gs://.../invoices/{orgId}/{yyyy}/{mm}/{file}
     match /invoices/{orgId}/{yyyy}/{mm}/{file} {
+      // Only authenticated members of the organization can read or write files.
       allow read, write: if isMember(orgId);
     }
   }

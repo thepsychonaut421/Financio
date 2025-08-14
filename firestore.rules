@@ -1,3 +1,4 @@
+
 rules_version = '2';
 
 service cloud.firestore {
@@ -7,9 +8,16 @@ service cloud.firestore {
       return request.auth != null && request.auth.token.orgId == orgId;
     }
 
-    // Secure the invoices subcollection under each organization
     match /orgs/{orgId}/invoices/{invoiceId} {
-      allow read, write: if isMember(orgId);
+      allow read: if isMember(orgId);
+      // Allow create if the user is a member of the organization
+      allow create: if isMember(orgId);
+      // Allow update only if the user is a member and they are not trying
+      // to change immutable fields like the sha256 checksum.
+      allow update: if isMember(orgId) && request.resource.data.sha256 == resource.data.sha256;
+      // Disallow direct deletion from the client for data integrity.
+      // Deletions should be handled by a backend process (e.g., an archive function).
+      allow delete: if false;
     }
   }
 }
