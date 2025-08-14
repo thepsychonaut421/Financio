@@ -5,13 +5,10 @@ export const runtime = 'nodejs';
 import * as admin from 'firebase-admin';
 import { createHash } from 'crypto';
 
-// Asigură-te că ai inițializat o singură dată firebase-admin în lib/firebase.ts
-import { adminDb, adminStorage } from '@/lib/firebase';
+import { adminDb, adminStorage } from '@/lib/firebase-admin';
 
-// Genkit/AI flow
 import { extractIncomingInvoiceData } from '@/ai/flows/extract-incoming-invoice-data';
 
-// client către un Cloud Function/Run care creează un task în Cloud Tasks
 import { enqueueExtractionJob } from '@/lib/extraction-queue';
 
 type Claims = {
@@ -19,22 +16,10 @@ type Claims = {
   role?: 'Owner' | 'Admin' | 'Accountant' | 'Viewer';
 };
 
-const MAX_FILE_BYTES = 25 * 1024 * 1024; // 25MB
+const MAX_FILE_BYTES = 25 * 1024 * 1024;
 const ALLOWED_MIME = new Set(['application/pdf']);
 
 async function requireUserAndOrg(req: Request): Promise<{ uid: string; orgId: string; role: Claims['role'] }> {
-  // Simplified for prototype: In a real app, this would verify a JWT.
-  // const authHeader = req.headers.get('Authorization') || '';
-  // const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
-  // if (!token) throw new Error('UNAUTHENTICATED');
-  // const decoded = await getAuth().verifyIdToken(token);
-  // const claims = (decoded as any) as Claims;
-  // if (!claims.orgId) throw new Error('NO_ORG');
-  // if (!claims.role || !['Owner', 'Admin', 'Accountant'].includes(claims.role)) {
-  //   throw new Error('FORBIDDEN');
-  // }
-  // return { uid: decoded.uid, orgId: claims.orgId, role: claims.role };
-  
   // Hardcoded for prototyping environment
   return { uid: 'test-user-id', orgId: 'test-org-id', role: 'Admin' };
 }
@@ -114,26 +99,21 @@ export async function POST(request: Request) {
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
 
-    // ===== SYNC EXTRACT (încercare rapidă) =====
     let extractedOk = false;
     let extractionError: string | null = null;
+    let firestoreUpdatePayload: Record<string, any> = {};
+
     try {
       const dataUri = `data:${file.type};base64,${buffer.toString('base64')}`;
       const extractionResult = await Promise.race([
         extractIncomingInvoiceData({ invoiceDataUri: dataUri }),
         new Promise((_, rej) => setTimeout(() => rej(new Error('EXTRACTION_TIMEOUT')), 28_000)),
-      ]) as any; // Cast to any to handle potential promise rejection type
+      ]) as any;
 
-      const firestoreUpdatePayload: Record<string, any> = {
-          status: extractionResult?.error ? 'error' : 'extracted',
-          'parse.model': 'googleai/gemini-1.5-flash-latest', // Hardcoding model for now
-          'parse.raw': extractionResult ?? null,
-          'parse.error': extractionResult?.error ?? null,
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      };
-      
-      if(!extractionResult?.error && extractionResult) {
-         firestoreUpdatePayload['parse.header'] = {
+      if (extractionResult?.error) {
+        extractionError = extractionResult.error;
+      } else {
+        const header = {
             supplier: extractionResult?.lieferantName ?? null,
             supplier_invoice_no: extractionResult?.rechnungsnummer ?? null,
             invoice_date: extractionResult?.datum ?? null,
@@ -142,21 +122,22 @@ export async function POST(request: Request) {
             tax_total: extractionResult?.mwstBetrag ?? null,
             grand_total: extractionResult?.gesamtbetrag ?? null,
           };
-          firestoreUpdatePayload['parse.items'] = extractionResult?.rechnungspositionen ?? [];
+          const items = extractionResult?.rechnungspositionen ?? [];
+
+        firestoreUpdatePayload = {
+            status: 'extracted',
+            'parse.model': 'googleai/gemini-1.5-flash-latest', 
+            'parse.raw': extractionResult ?? null,
+            'parse.error': null,
+            'parse.header': header,
+            'parse.items': items,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        };
+        await docRef.update(firestoreUpdatePayload);
+        extractedOk = true;
       }
-
-      await docRef.update(firestoreUpdatePayload);
-
-      extractedOk = !extractionResult?.error;
-      extractionError = extractionResult?.error ?? null;
-
     } catch (err: any) {
       extractionError = err?.message || 'EXTRACTION_FAILED';
-      await docRef.update({
-          status: 'error',
-          'parse.error': extractionError,
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      });
     }
 
     if (!extractedOk) {
@@ -166,8 +147,11 @@ export async function POST(request: Request) {
         storagePath,
       }).catch(() => {/* swallow queue errors, endpoint rămâne success pe upload */});
 
-      // Don't revert status to 'uploaded', keep it as 'error' from the sync attempt.
-      // The worker can pick it up if it's in an 'error' or 'uploaded' state.
+      await docRef.update({
+          status: 'uploaded',
+          'parse.error': extractionError,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
     }
 
     return NextResponse.json(
@@ -176,8 +160,8 @@ export async function POST(request: Request) {
         orgId,
         invoiceId: digest,
         path: storagePath,
-        status: extractedOk ? 'extracted' : 'error',
-        note: extractedOk ? 'Sync extraction completed.' : `Sync extraction failed: ${extractionError}`,
+        status: extractedOk ? 'extracted' : 'queued',
+        note: extractedOk ? 'Sync extraction completed.' : `Queued for async extraction. Reason: ${extractionError}`,
       },
       { status: 201 },
     );
