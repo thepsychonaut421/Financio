@@ -3,6 +3,7 @@
 import { NextResponse } from 'next/server';
 export const runtime = 'nodejs';
 
+import * as admin from 'firebase-admin';
 import { adminDb } from '@/lib/firebase-admin';
 
 // ---- ENV necesare (set in .env/.env.local) ----
@@ -25,13 +26,26 @@ function erpHeaders() {
   return { 'Content-Type': 'application/json', Authorization: `token ${ERP_API_KEY}:${ERP_API_SECRET}` };
 }
 
+function withTimeout(ms: number) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), ms);
+    return { signal: controller.signal, cancel: () => clearTimeout(timeoutId) };
+}
+
+
 async function erpGetByUid(uid: string) {
   const base = process.env.ERP_BASE_URL!;
+   if (!base || !/^https:\/\//i.test(base)) throw new Error('ERP_BASE_URL must be a valid HTTPS URL');
   const url = `${base}/api/resource/Purchase%20Invoice?fields=["name"]&filters=[["Purchase Invoice","custom_financio_uid","=","${uid}"]]`;
-  const res = await fetch(url, { headers: erpHeaders(), cache: 'no-store' });
-  if (!res.ok) throw new Error(`ERP lookup failed ${res.status}`);
-  const j = await res.json();
-  return (j.data && j.data[0]?.name) || null;
+  const { signal, cancel } = withTimeout(30000);
+  try {
+    const res = await fetch(url, { headers: erpHeaders(), cache: 'no-store', signal });
+    if (!res.ok) throw new Error(`ERP lookup failed ${res.status}`);
+    const j = await res.json();
+    return (j.data && j.data[0]?.name) || null;
+  } finally {
+      cancel();
+  }
 }
 
 function buildPiPayload(header: ParsedHeader, items: ParsedItem[], invoiceId: string) {
@@ -67,46 +81,79 @@ export async function POST(req: Request) {
     if (!snap.exists) return NextResponse.json({ error: 'Invoice not found' }, { status: 404 });
 
     const inv = snap.data()!;
+    const attempts = (inv.erpSync?.attempts ?? 0) + 1;
+
     if (inv.erpSync?.status === 'done' && inv.erpSync?.docName) {
       return NextResponse.json({ ok: true, status: 'done', docName: inv.erpSync.docName }, { status: 200 });
     }
 
     const header = inv.parse?.header as ParsedHeader;
     const items = inv.parse?.items as ParsedItem[];
+
+    // --- Business Validation ---
     if (!header || !items?.length) {
-      return NextResponse.json({ error: 'Parsed data missing' }, { status: 409 });
+      return NextResponse.json({ error: 'Parsed data (header or items) missing from invoice document.' }, { status: 409 });
+    }
+    if (!header.supplier || !header.supplier_invoice_no || !header.invoice_date) {
+        await docRef.update({
+            'erpSync.status': 'failed',
+            'erpSync.error': 'Missing supplier, invoice number, or invoice date.',
+            'erpSync.lastAttemptAt': admin.firestore.FieldValue.serverTimestamp(),
+            'erpSync.attempts': attempts,
+        });
+        return NextResponse.json({ error: 'supplier, supplier_invoice_no, and invoice_date are required fields.' }, { status: 422 });
     }
 
-    // 1) idempotency check in ERP
+
+    // 1) Idempotency check in ERP
     const existingName = await erpGetByUid(invoiceId);
     if (existingName) {
-      await docRef.update({ erpSync: { status: 'done', docType: 'Purchase Invoice', docName: existingName, lastAttemptAt: new Date(), attempts: (inv.erpSync?.attempts ?? 0) + 1 } });
+      await docRef.update({ erpSync: { status: 'done', docType: 'Purchase Invoice', docName: existingName, lastAttemptAt: new Date(), attempts } });
       return NextResponse.json({ ok: true, status: 'done', docName: existingName }, { status: 200 });
     }
 
-    // 2) create PI
+    // 2) Create PI
     const payload = buildPiPayload(header, items, invoiceId);
-    const res = await fetch(`${process.env.ERP_BASE_URL}/api/resource/Purchase%20Invoice`, {
-      method: 'POST',
-      headers: erpHeaders(),
-      body: JSON.stringify(payload),
-    });
-
+    const { signal, cancel } = withTimeout(30000);
+    let res: Response;
+    try {
+        res = await fetch(`${process.env.ERP_BASE_URL}/api/resource/Purchase%20Invoice`, {
+            method: 'POST',
+            headers: erpHeaders(),
+            body: JSON.stringify(payload),
+            signal,
+        });
+    } finally {
+        cancel();
+    }
+    
     if (!res.ok) {
-      const txt = await res.text();
-      await docRef.update({ erpSync: { status: 'failed', error: txt, lastAttemptAt: new Date(), attempts: (inv.erpSync?.attempts ?? 0) + 1 } });
-      return NextResponse.json({ error: 'ERP create failed', details: txt }, { status: res.status });
+      let errorDetails = await res.text();
+      try {
+        const jsonError = JSON.parse(errorDetails);
+        errorDetails = jsonError?.exception || jsonError?._server_messages || errorDetails;
+      } catch {}
+      
+      const isRetriable = res.status === 429 || res.status >= 500;
+      await docRef.update({ 
+        'erpSync.status': isRetriable ? 'retry' : 'failed', 
+        'erpSync.error': String(errorDetails), 
+        'erpSync.lastAttemptAt': admin.firestore.FieldValue.serverTimestamp(),
+        'erpSync.attempts': attempts,
+      });
+      return NextResponse.json({ error: 'ERP create failed', details: String(errorDetails) }, { status: res.status });
     }
 
     const data = await res.json();
     const name = data?.data?.name ?? data?.data?.docname ?? 'UNKNOWN';
 
     await docRef.update({
-      erpSync: { status: 'done', docType: 'Purchase Invoice', docName: name, lastAttemptAt: new Date(), attempts: (inv.erpSync?.attempts ?? 0) + 1 },
+      erpSync: { status: 'done', docType: 'Purchase Invoice', docName: name, lastAttemptAt: new Date(), attempts },
     });
 
     return NextResponse.json({ ok: true, status: 'done', docName: name }, { status: 201 });
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message ?? 'sync-failed' }, { status: 500 });
+    const status = e.name === 'AbortError' ? 408 : 500;
+    return NextResponse.json({ error: e?.message ?? 'sync-failed' }, { status });
   }
 }
