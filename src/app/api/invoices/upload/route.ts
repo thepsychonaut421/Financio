@@ -107,6 +107,20 @@ export async function POST(request: Request) {
         }
         tx.update(docRef, { status: 'extracting', updatedAt: admin.firestore.FieldValue.serverTimestamp() });
     });
+    
+    // Deduplication check: if file already existed and was processed, exit gracefully.
+    const currentSnap = await docRef.get();
+    const existingData = currentSnap.data();
+    if (existingData?.status === 'extracted' && existingData.createdAt.toDate() < now) {
+         return NextResponse.json({
+            ok: true,
+            orgId,
+            invoiceId: digest,
+            path: storagePath,
+            status: 'extracted',
+            note: 'Already processed (deduplicated by sha256).',
+        }, { status: 200 });
+    }
 
 
     let extractedOk = false;

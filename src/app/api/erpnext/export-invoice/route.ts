@@ -37,7 +37,7 @@ export async function POST(request: Request) {
         due_date: invoice.dueDate,   // Assumes YYYY-MM-DD
         currency: invoice.wahrung || "EUR",
         set_posting_time: 1,
-        update_stock: 1,
+        update_stock: 1, // Set to 1 as per decision
         // The 'items' array would be transformed from rechnungspositionen
         items: (invoice.rechnungspositionen || []).map(item => ({
           item_code: item.productCode,
