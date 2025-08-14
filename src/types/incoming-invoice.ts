@@ -62,7 +62,14 @@ export interface ERPIncomingInvoiceItem extends IncomingInvoiceItem {
     lastAttemptAt: any | null;
     docName?: string; // Added docName
     error?: string;
-  }
+  },
+  syncLog?: Array<{
+      at: any; // Firestore.Timestamp
+      phase: string;
+      status: string;
+      http?: number;
+      message?: string;
+  }>
 }
 
 export type IncomingProcessingStatus = 'idle' | 'processing' | 'success' | 'error';

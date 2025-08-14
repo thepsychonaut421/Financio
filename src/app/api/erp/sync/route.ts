@@ -148,6 +148,12 @@ export async function POST(req: Request) {
         'erpSync.error': String(errorDetails), 
         'erpSync.lastAttemptAt': admin.firestore.FieldValue.serverTimestamp(),
         'erpSync.attempts': attempts,
+        syncLog: admin.firestore.FieldValue.arrayUnion({
+            at: admin.firestore.FieldValue.serverTimestamp(),
+            phase: 'erp.create',
+            status: isRetriable ? 'retry' : 'failed',
+            http: res.status
+        })
       });
       return NextResponse.json({ error: 'ERP create failed', details: String(errorDetails) }, { status: res.status });
     }
@@ -157,6 +163,12 @@ export async function POST(req: Request) {
 
     await docRef.update({
       erpSync: { status: 'done', docType: 'Purchase Invoice', docName: name, lastAttemptAt: admin.firestore.FieldValue.serverTimestamp(), attempts },
+      syncLog: admin.firestore.FieldValue.arrayUnion({
+          at: admin.firestore.FieldValue.serverTimestamp(),
+          phase: 'erp.create',
+          status: 'done',
+          http: res.status
+      })
     });
 
     return NextResponse.json({ ok: true, status: 'done', docName: name }, { status: 201 });
