@@ -2,10 +2,9 @@
 import { NextResponse } from 'next/server';
 export const runtime = 'nodejs';
 
-import * as admin from 'firebase-admin';
 import { createHash } from 'crypto';
 
-import { adminDb, adminStorage } from '@/lib/firebase-admin';
+import { adminDb, adminStorage, admin } from '@/lib/firebase-admin';
 
 import { extractIncomingInvoiceData } from '@/ai/flows/extract-incoming-invoice-data';
 
@@ -58,8 +57,6 @@ export async function POST(request: Request) {
     const now = new Date();
     const yyyy = now.getFullYear();
     const mm = String(now.getMonth() + 1).padStart(2, '0');
-
-    const storagePath = `invoices/${orgId}/${yyyy}/${mm}/${digest}.pdf`;
     
     const docRef = adminDb
       .collection('orgs')
@@ -80,8 +77,15 @@ export async function POST(request: Request) {
             note: 'Already processed (deduplicated by sha256).',
         }, { status: 200 });
     }
+
+    const storagePath = `invoices/${orgId}/${yyyy}/${mm}/${digest}.pdf`;
     
     const bucket = adminStorage.bucket();
+    if (!bucket.name) {
+      console.error('Storage bucket missing. Set NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET in your environment variables.');
+      return NextResponse.json({ error: 'Storage bucket not configured.' }, { status: 500 });
+    }
+    
     const storageFile = bucket.file(storagePath);
 
     await storageFile.save(buffer, {
