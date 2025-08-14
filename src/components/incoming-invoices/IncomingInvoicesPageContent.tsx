@@ -229,21 +229,23 @@ export function IncomingInvoicesPageContent() {
                 body: formData,
             });
 
-            if (!response.ok) {
-                const errorData = await response.json().catch(() => ({ error: response.statusText }));
-                throw new Error(`Upload failed for ${file.name}: ${errorData.error || `HTTP ${response.status}`}`);
-            }
-            
             const result = await response.json();
+
+            if (!response.ok) {
+                throw new Error(result.error || `Upload failed for ${file.name}: HTTP ${response.status}`);
+            }
             
             if (result.ok) {
                 const invoiceData = {
+                  id: result.invoiceId,
+                  orgId: result.orgId,
                   pdfFileName: result.parse?.raw?.pdfFileName || file.name,
                   rechnungsnummer: result.parse?.header?.supplier_invoice_no,
                   datum: result.parse?.header?.invoice_date,
                   lieferantName: result.parse?.header?.supplier,
                   gesamtbetrag: result.parse?.header?.grand_total,
                   rechnungspositionen: result.parse?.items || [],
+                  erpSync: result.erpSync,
                 };
 
                 if (erpMode) {
@@ -289,12 +291,11 @@ export function IncomingInvoicesPageContent() {
     try {
       const results = [];
       for (const inv of list) {
-        // Assuming orgId is stored on the invoice object, or you get it from user claims
-        const orgId = "test-org-id"; // Placeholder
-        const invoiceId = inv.id; // Assuming `id` is the sha256
+        const orgId = inv.orgId; 
+        const invoiceId = inv.id; 
         
-        if (!invoiceId) {
-            results.push({ status: 400, error: `Missing invoice ID for ${inv.pdfFileName}` });
+        if (!invoiceId || !orgId) {
+            results.push({ status: 400, error: `Missing invoice ID or Org ID for ${inv.pdfFileName}` });
             continue;
         }
 
@@ -670,5 +671,3 @@ export function IncomingInvoicesPageContent() {
     </div>
   );
 }
-
-    

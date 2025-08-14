@@ -24,6 +24,8 @@ export type ParsedItem = {
 };
 
 export interface IncomingInvoiceData {
+  id?: string; // SHA256 digest
+  orgId?: string;
   rechnungsnummer?: string;
   datum?: string; // Should be YYYY-MM-DD after processing for ERP mode
   lieferantName?: string;

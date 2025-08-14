@@ -60,6 +60,27 @@ export async function POST(request: Request) {
     const mm = String(now.getMonth() + 1).padStart(2, '0');
 
     const storagePath = `invoices/${orgId}/${yyyy}/${mm}/${digest}.pdf`;
+    
+    const docRef = adminDb
+      .collection('orgs')
+      .doc(orgId)
+      .collection('invoices')
+      .doc(digest);
+
+    const existingSnap = await docRef.get();
+    if (existingSnap.exists && existingSnap.data()?.status === 'extracted') {
+        return NextResponse.json({
+            ok: true,
+            orgId,
+            invoiceId: digest,
+            docPath: docRef.path,
+            status: 'deduplicated',
+            parse: existingSnap.data()?.parse ?? null,
+            erpSync: existingSnap.data()?.erpSync ?? { status: 'pending' },
+            note: 'Already processed (deduplicated by sha256).',
+        }, { status: 200 });
+    }
+    
     const bucket = adminStorage.bucket();
     const storageFile = bucket.file(storagePath);
 
@@ -77,12 +98,6 @@ export async function POST(request: Request) {
       resumable: false,
       validation: false, 
     });
-
-    const docRef = adminDb
-      .collection('orgs')
-      .doc(orgId)
-      .collection('invoices')
-      .doc(digest);
 
     await adminDb.runTransaction(async (tx) => {
         const snap = await tx.get(docRef);
@@ -105,21 +120,6 @@ export async function POST(request: Request) {
         }
         tx.update(docRef, { status: 'extracting', updatedAt: admin.firestore.FieldValue.serverTimestamp() });
     });
-    
-    const currentSnap = await docRef.get();
-    const existingData = currentSnap.data();
-    if (existingData?.status === 'extracted') {
-         return NextResponse.json({
-            ok: true,
-            orgId,
-            invoiceId: digest,
-            docPath: docRef.path,
-            status: 'deduplicated',
-            parse: existingData.parse,
-            erpSync: existingData.erpSync,
-            note: 'Already processed (deduplicated by sha256).',
-        }, { status: 200 });
-    }
 
     let extractedOk = false;
     let extractionError: string | null = null;
@@ -224,5 +224,3 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Internal Server Error', details: error?.message ?? String(error) }, { status: 500 });
   }
 }
-
-    
