@@ -19,7 +19,7 @@ import { erpInvoicesToSupplierCSV, downloadFile, incomingInvoicesToERPNextCSVCom
 import JSZip from 'jszip';
 import Papa from 'papaparse';
 import type { IncomingInvoiceItem, ERPIncomingInvoiceItem, IncomingProcessingStatus, ERPSortKey, SortOrder } from '@/types/incoming-invoice';
-import { auth } from '@/lib/firebase-client'; 
+import { useAuth } from '@/contexts/AuthContext'; // Use the context for auth
 
 const LOCAL_STORAGE_PAGE_CACHE_KEY = 'incomingInvoicesPageCache';
 const LOCAL_STORAGE_MATCHER_DATA_KEY = 'processedIncomingInvoicesForMatcher';
@@ -88,6 +88,7 @@ export function IncomingInvoicesPageContent() {
   const { toast } = useToast();
   const [currentYear, setCurrentYear] = useState<string>('');
   const [kontenrahmen, setKontenrahmen] = useState('20000 - Verbindlichkeiten Lief Inland');
+  const { user, getIdToken, isLoading: isAuthLoading } = useAuth(); // Get auth state from context
 
 
   const [erpExportFile, setErpExportFile] = useState<File | null>(null);
@@ -197,9 +198,13 @@ export function IncomingInvoicesPageContent() {
         setStatus('error');
         return;
     }
+    
+    if (isAuthLoading) {
+      toast({ title: "Authenticating...", description: "Please wait a moment for authentication to complete.", variant: "default" });
+      return;
+    }
 
-    const currentUser = auth.currentUser;
-    if (!currentUser) {
+    if (!user) {
         toast({ title: "Not Authenticated", description: "You must be logged in to upload files.", variant: "destructive" });
         setStatus('error');
         return;
@@ -211,7 +216,12 @@ export function IncomingInvoicesPageContent() {
     const tempRegularResults: IncomingInvoiceItem[] = [];
     const tempErpResults: ERPIncomingInvoiceItem[] = [];
 
-    const token = await currentUser.getIdToken();
+    const token = await getIdToken();
+    if (!token) {
+       toast({ title: "Authentication Failed", description: "Could not retrieve auth token. Please try logging in again.", variant: "destructive" });
+       setStatus('error');
+       return;
+    }
 
     for (let i = 0; i < selectedFiles.length; i++) {
         const file = selectedFiles[i];
@@ -280,12 +290,11 @@ export function IncomingInvoicesPageContent() {
       return;
     }
 
-    const currentUser = auth.currentUser;
-    if (!currentUser) {
-      toast({ title: "Not Authenticated", description: "You must be logged in to sync.", variant: "destructive" });
-      return;
+    const token = await getIdToken();
+    if (!token) {
+        toast({ title: "Not Authenticated", description: "You must be logged in to sync.", variant: "destructive" });
+        return;
     }
-    const token = await currentUser.getIdToken();
 
     setIsExportingToERPNext(true);
     try {
