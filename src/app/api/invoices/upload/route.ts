@@ -10,6 +10,7 @@ import { adminDb, adminStorage } from '@/lib/firebase-admin';
 import { extractIncomingInvoiceData } from '@/ai/flows/extract-incoming-invoice-data';
 
 import { enqueueExtractionJob } from '@/lib/extraction-queue';
+import type { ParsedHeader, ParsedItem } from '@/types/incoming-invoice';
 
 type Claims = {
   orgId?: string;
@@ -122,16 +123,19 @@ export async function POST(request: Request) {
       if (extractionResult?.error) {
         extractionError = extractionResult.error;
       } else {
-          const toNum = (v: any) => (v == null ? null : Number(String(v).replace(',', '.')));
+          const toNum = (v: any) => (v == null || v === '' ? null : Number(String(v).replace(',', '.')));
           const toISO = (d: any) => {
+              if (!d) return null;
               try {
-                  return d ? new Date(d).toISOString().slice(0, 10) : null;
+                  const date = new Date(d);
+                  if(isNaN(date.getTime())) return null;
+                  return date.toISOString().slice(0, 10);
               } catch (e) {
                   return null;
               }
           };
 
-          const header = {
+          const header: ParsedHeader = {
             supplier: extractionResult?.lieferantName ?? null,
             supplier_invoice_no: extractionResult?.rechnungsnummer ?? null,
             invoice_date: toISO(extractionResult?.datum),
@@ -141,7 +145,7 @@ export async function POST(request: Request) {
             grand_total: toNum(extractionResult?.gesamtbetrag),
           };
 
-          const items = (extractionResult?.rechnungspositionen ?? []).map((it: any, idx: number) => ({
+          const items: ParsedItem[] = (extractionResult?.rechnungspositionen ?? []).map((it: any, idx: number) => ({
             row: idx + 1,
             item_code: it.productCode ?? null,
             name: it.productName ?? '',

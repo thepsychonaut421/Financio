@@ -1,6 +1,28 @@
 
 import type { AppLineItem as LineItem } from '@/ai/schemas/invoice-item-schema';
 
+export type ParsedHeader = {
+  supplier: string|null;
+  supplier_invoice_no: string|null;
+  invoice_date: string|null; // YYYY-MM-DD
+  currency: string|null;
+  net_total: number|null;
+  tax_total: number|null;
+  grand_total: number|null;
+};
+
+export type ParsedItem = {
+  row: number;
+  item_code: string|null;
+  name: string;
+  qty: number|null;
+  uom: string|null;
+  rate: number|null;
+  amount: number|null;
+  pos?: string|null;
+  expense_account?: string|null;
+};
+
 export interface IncomingInvoiceData {
   rechnungsnummer?: string;
   datum?: string; // Should be YYYY-MM-DD after processing for ERP mode

@@ -37,6 +37,7 @@ export async function POST(request: Request) {
         due_date: invoice.dueDate,   // Assumes YYYY-MM-DD
         currency: invoice.wahrung || "EUR",
         set_posting_time: 1,
+        update_stock: 1,
         // The 'items' array would be transformed from rechnungspositionen
         items: (invoice.rechnungspositionen || []).map(item => ({
           item_code: item.productCode,
@@ -44,6 +45,8 @@ export async function POST(request: Request) {
           description: item.productName,
           qty: item.quantity,
           rate: item.unitPrice,
+          uom: "Stk",
+          expense_account: invoice.kontenrahmen || "6000 - Warenaufwand - BRUG"
           // You would also map expense accounts, cost centers, etc. here
         })),
         // Additional financial details
@@ -59,14 +62,14 @@ export async function POST(request: Request) {
         // *******************************************************************
 
         // SIMULATED SUCCESS:
-        console.log(`[ExportERP API] SIMULATING successful export for invoice ${invoice.rechnungsnummer || invoice.pdfFileName}`);
+        console.log(`[ExportERP API] SIMULATING successful export for invoice ${invoice.rechnungsnummer || invoice.pdfFileName}. Payload:`, JSON.stringify(erpNextPayload, null, 2));
         successCount++;
 
       } catch (e: any) {
         errorCount++;
         const errorMessage = e.message || "Unknown error during individual invoice export";
         errors.push({ invoiceNumber: invoice.rechnungsnummer || invoice.pdfFileName, error: errorMessage });
-        console.error(`[ExportERP API] Failed to export invoice ${invoice.rechnungsnummer} to ERPNext:`, errorMessage, e.stack);
+        console.error(`[ExportERP API] Failed to export invoice ${invoice.rechnungsnummer}:`, errorMessage, e.stack);
       }
     }
 
