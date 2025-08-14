@@ -2,28 +2,14 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-
-    // Helper function to check if user is authenticated
-    function isAuthenticated() {
-      return request.auth != null;
+    // Helper function to check if the user belongs to the organization
+    function isMember(orgId) {
+      return request.auth != null && request.auth.token.orgId == orgId;
     }
 
-    // Rules for 'invoices' collection
-    match /invoices/{invoiceId} {
-      allow read, write: if isAuthenticated();
-      // Further restrictions can be added, e.g., only owner can write
-      // allow write: if isAuthenticated() && request.auth.uid == resource.data.uploaderId;
-    }
-
-    // Rules for 'vendors' collection (if used)
-    match /vendors/{vendorId} {
-       allow read: if isAuthenticated();
-       allow create, update: if isAuthenticated(); // Or restrict to specific roles
-    }
-    
-    // Default deny all other collections
-    match /{document=**} {
-      allow read, write: if false;
+    // Secure the invoices subcollection under each organization
+    match /orgs/{orgId}/invoices/{invoiceId} {
+      allow read, write: if isMember(orgId);
     }
   }
 }

@@ -7,11 +7,6 @@
 import { NextResponse } from 'next/server';
 import type { ERPIncomingInvoiceItem } from '@/types/incoming-invoice';
 
-// These console.logs can remain for debugging if needed, but the check is removed.
-// console.log('[ExportERP API] ERNEXT_API_URL:', process.env.ERNEXT_API_URL);
-// console.log('[ExportERP API] ERNEXT_API_KEY:', process.env.ERNEXT_API_KEY);
-// console.log('[ExportERP API] ERNEXT_API_SECRET:', process.env.ERNEXT_API_SECRET);
-
 export async function POST(request: Request) {
   console.log('[ExportERP API] Route /api/erpnext/export-invoice called.');
 
@@ -32,62 +27,39 @@ export async function POST(request: Request) {
     console.log(`[ExportERP API] Simulating export for ${invoices.length} invoice(s).`);
 
     for (const invoice of invoices) {
+      // This payload mirrors what a real ERPNext 'Purchase Invoice' would expect.
       const erpNextPayload = {
         doctype: "Purchase Invoice",
         supplier: invoice.lieferantName,
         bill_no: invoice.rechnungsnummer,
-        bill_date: invoice.billDate,
-        posting_date: invoice.datum,
-        due_date: invoice.dueDate,
+        bill_date: invoice.billDate, // Assumes YYYY-MM-DD
+        posting_date: invoice.datum, // Assumes YYYY-MM-DD
+        due_date: invoice.dueDate,   // Assumes YYYY-MM-DD
         currency: invoice.wahrung || "EUR",
-        grand_total: invoice.gesamtbetrag,
-        is_paid: invoice.istBezahlt,
-        items: invoice.rechnungspositionen.map(item => ({
+        set_posting_time: 1,
+        // The 'items' array would be transformed from rechnungspositionen
+        items: (invoice.rechnungspositionen || []).map(item => ({
           item_code: item.productCode,
           item_name: item.productName,
           description: item.productName,
           qty: item.quantity,
           rate: item.unitPrice,
+          // You would also map expense accounts, cost centers, etc. here
         })),
-        set_posting_time: 1,
+        // Additional financial details
+        net_total: invoice.nettoBetrag,
+        grand_total: invoice.gesamtbetrag,
+        // Taxes would be handled in a dedicated 'taxes' array in a real implementation
       };
 
       try {
         // *******************************************************************
         // ACTUAL API call to ERPNext - REMAINS COMMENTED OUT FOR SIMULATION
-        /*
-        console.log('[ExportERP API] Attempting to fetch ERPNext API with payload:', JSON.stringify(erpNextPayload, null, 2));
-        const response = await fetch(process.env.ERNEXT_API_URL!, {
-          method: 'POST',
-          headers: {
-            'Authorization': `token ${process.env.ERNEXT_API_KEY}:${process.env.ERNEXT_API_SECRET}`,
-            'Content-Type': 'application/json',
-            'Accept': 'application/json',
-          },
-          body: JSON.stringify(erpNextPayload),
-        });
-        console.log('[ExportERP API] ERPNext API response status:', response.status);
-
-
-        if (!response.ok) {
-          let errorData;
-          try {
-            errorData = await response.json();
-            console.log('[ExportERP API] ERPNext API error response (JSON):', errorData);
-          } catch (e) {
-            const errorText = await response.text();
-            console.log('[ExportERP API] ERPNext API error response (text):', errorText);
-            errorData = { message: errorText || `ERPNext API Error: ${response.status} ${response.statusText}` };
-          }
-          throw new Error(errorData.message || `ERPNext API Error: ${response.status} ${response.statusText}`);
-        }
-        const responseData = await response.json();
-        console.log('[ExportERP API] Successfully created Purchase Invoice in ERPNext:', responseData.data.name);
-        */
-        // SIMULATED SUCCESS FOR NOW:
-        console.log(`[ExportERP API] SIMULATING successful export for invoice ${invoice.rechnungsnummer || invoice.pdfFileName}`);
+        // The fetch call would be here, using process.env for credentials.
         // *******************************************************************
 
+        // SIMULATED SUCCESS:
+        console.log(`[ExportERP API] SIMULATING successful export for invoice ${invoice.rechnungsnummer || invoice.pdfFileName}`);
         successCount++;
 
       } catch (e: any) {

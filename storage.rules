@@ -3,32 +3,15 @@ rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
     
-    // Helper function to check for authenticated users
-    function isAuthenticated() {
-      return request.auth != null;
-    }
-    
-    // Helper function to check file size
-    function isWithinSizeLimit(maxSizeInMB) {
-      return request.resource.size < maxSizeInMB * 1024 * 1024;
+    // Helper function to check if the user belongs to the organization
+    function isMember(orgId) {
+      return request.auth != null && request.auth.token.orgId == orgId;
     }
 
-    // Invoices can be written by any authenticated user, up to 20MB
-    match /invoices/{year}/{sha256}.pdf {
-      allow read: if isAuthenticated();
-      allow write: if isAuthenticated() && isWithinSizeLimit(20);
-    }
-
-    // Processed text files can be read by authenticated users
-    match /invoices/{year}/{sha256}.txt {
-      allow read: if isAuthenticated();
-      // Generally, write access for text files should be server-side only
-      allow write: if false;
-    }
-    
-    // Deny access to all other paths by default
-    match /{allPaths=**} {
-      allow read, write: if false;
+    // Secure PDF files based on the organization ID in the path
+    // Path example: /invoices/{orgId}/{yyyy}/{mm}/{sha256}.pdf
+    match /invoices/{orgId}/{yyyy}/{mm}/{file} {
+      allow read, write: if isMember(orgId);
     }
   }
 }

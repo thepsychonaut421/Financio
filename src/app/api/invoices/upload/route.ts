@@ -20,7 +20,7 @@ const MAX_FILE_BYTES = 25 * 1024 * 1024;
 const ALLOWED_MIME = new Set(['application/pdf']);
 
 async function requireUserAndOrg(req: Request): Promise<{ uid: string; orgId: string; role: Claims['role'] }> {
-  // Hardcoded for prototyping environment
+  // Hardcoded for prototyping environment. In a real app, this would verify a JWT.
   return { uid: 'test-user-id', orgId: 'test-org-id', role: 'Admin' };
 }
 
@@ -47,6 +47,12 @@ export async function POST(request: Request) {
 
     const ab = await file.arrayBuffer();
     const buffer = Buffer.from(ab);
+
+    // Magic bytes check to ensure it's a real PDF
+    if (buffer.slice(0, 5).toString() !== '%PDF-') {
+        return NextResponse.json({ error: 'Invalid file format. Not a valid PDF.' }, { status: 400 });
+    }
+
 
     const digest = sha256(buffer);
     const now = new Date();
@@ -113,7 +119,7 @@ export async function POST(request: Request) {
       if (extractionResult?.error) {
         extractionError = extractionResult.error;
       } else {
-        const header = {
+          const header = {
             supplier: extractionResult?.lieferantName ?? null,
             supplier_invoice_no: extractionResult?.rechnungsnummer ?? null,
             invoice_date: extractionResult?.datum ?? null,
@@ -124,7 +130,7 @@ export async function POST(request: Request) {
           };
           const items = extractionResult?.rechnungspositionen ?? [];
 
-        firestoreUpdatePayload = {
+          firestoreUpdatePayload = {
             status: 'extracted',
             'parse.model': 'googleai/gemini-1.5-flash-latest', 
             'parse.raw': extractionResult ?? null,
@@ -132,9 +138,9 @@ export async function POST(request: Request) {
             'parse.header': header,
             'parse.items': items,
             updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        };
-        await docRef.update(firestoreUpdatePayload);
-        extractedOk = true;
+          };
+          await docRef.update(firestoreUpdatePayload);
+          extractedOk = true;
       }
     } catch (err: any) {
       extractionError = err?.message || 'EXTRACTION_FAILED';
@@ -145,7 +151,7 @@ export async function POST(request: Request) {
         orgId,
         invoiceId: digest,
         storagePath,
-      }).catch(() => {/* swallow queue errors, endpoint rămâne success pe upload */});
+      }).catch(() => {});
 
       await docRef.update({
           status: 'uploaded',
