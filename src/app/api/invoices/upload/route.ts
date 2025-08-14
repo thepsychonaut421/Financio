@@ -68,6 +68,7 @@ export async function POST(request: Request) {
     await storageFile.save(buffer, {
       metadata: {
         contentType: 'application/pdf', // Enforce correct content type
+        cacheControl: 'private, max-age=0, no-transform', // Harden cache control
         metadata: {
           sha256: digest,
           originalFilename: file.name,
@@ -111,12 +112,12 @@ export async function POST(request: Request) {
     // Deduplication check: if file already existed and was processed, exit gracefully.
     const currentSnap = await docRef.get();
     const existingData = currentSnap.data();
-    if (existingData?.status === 'extracted' && existingData.createdAt.toDate() < now) {
+    if (existingData?.status === 'extracted') {
          return NextResponse.json({
             ok: true,
             orgId,
             invoiceId: digest,
-            path: storagePath,
+            path: existingData.fileRef, // Use existing path for consistency
             status: 'extracted',
             note: 'Already processed (deduplicated by sha256).',
         }, { status: 200 });
