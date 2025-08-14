@@ -3,8 +3,7 @@
 import { NextResponse } from 'next/server';
 export const runtime = 'nodejs';
 
-import * as admin from 'firebase-admin';
-import { adminDb } from '@/lib/firebase-admin';
+import { adminDb, admin } from '@/lib/firebase-admin';
 
 // ---- ENV necesare (set in .env/.env.local) ----
 // ERP_BASE_URL=https://erp.example.com
@@ -92,6 +91,12 @@ export async function POST(req: Request) {
 
     // --- Business Validation ---
     if (!header || !items?.length) {
+      await docRef.update({
+        'erpSync.status': 'failed',
+        'erpSync.error': 'Parsed data (header or items) missing from invoice document.',
+        'erpSync.lastAttemptAt': admin.firestore.FieldValue.serverTimestamp(),
+        'erpSync.attempts': attempts,
+      });
       return NextResponse.json({ error: 'Parsed data (header or items) missing from invoice document.' }, { status: 409 });
     }
     if (!header.supplier || !header.supplier_invoice_no || !header.invoice_date) {
@@ -108,16 +113,19 @@ export async function POST(req: Request) {
     // 1) Idempotency check in ERP
     const existingName = await erpGetByUid(invoiceId);
     if (existingName) {
-      await docRef.update({ erpSync: { status: 'done', docType: 'Purchase Invoice', docName: existingName, lastAttemptAt: new Date(), attempts } });
+      await docRef.update({ erpSync: { status: 'done', docType: 'Purchase Invoice', docName: existingName, lastAttemptAt: admin.firestore.FieldValue.serverTimestamp(), attempts } });
       return NextResponse.json({ ok: true, status: 'done', docName: existingName }, { status: 200 });
     }
 
     // 2) Create PI
+    const base = process.env.ERP_BASE_URL!;
+    if (!/^https:\/\//i.test(base)) throw new Error('ERP_BASE_URL must be a valid HTTPS URL');
+    
     const payload = buildPiPayload(header, items, invoiceId);
     const { signal, cancel } = withTimeout(30000);
     let res: Response;
     try {
-        res = await fetch(`${process.env.ERP_BASE_URL}/api/resource/Purchase%20Invoice`, {
+        res = await fetch(`${base}/api/resource/Purchase%20Invoice`, {
             method: 'POST',
             headers: erpHeaders(),
             body: JSON.stringify(payload),
@@ -148,7 +156,7 @@ export async function POST(req: Request) {
     const name = data?.data?.name ?? data?.data?.docname ?? 'UNKNOWN';
 
     await docRef.update({
-      erpSync: { status: 'done', docType: 'Purchase Invoice', docName: name, lastAttemptAt: new Date(), attempts },
+      erpSync: { status: 'done', docType: 'Purchase Invoice', docName: name, lastAttemptAt: admin.firestore.FieldValue.serverTimestamp(), attempts },
     });
 
     return NextResponse.json({ ok: true, status: 'done', docName: name }, { status: 201 });
