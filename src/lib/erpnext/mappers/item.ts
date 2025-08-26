@@ -1,4 +1,5 @@
 import type { ItemPayload } from '../types';
+import { findExistingItem } from '../services/dedupe';
 
 export interface InternalItem {
   code: string;
@@ -47,6 +48,14 @@ export async function mapItem(
   ].map(escapeCSVField).join(',');
 
   if (!options.dryRun && options.endpoint) {
+    const existing = await findExistingItem(payload, {
+      endpoint: options.endpoint,
+      headers: options.headers,
+    });
+    if (existing) {
+      return { payload, csv, response: { duplicate: true, existing } };
+    }
+
     const response = await fetch(options.endpoint, {
       method: 'POST',
       headers: {

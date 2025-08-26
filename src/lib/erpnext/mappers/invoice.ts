@@ -1,5 +1,6 @@
 import type { ERPIncomingInvoiceItem } from '@/types/incoming-invoice';
 import type { PurchaseInvoice } from '../types';
+import { findExistingPurchaseInvoice } from '../services/dedupe';
 
 interface MapperOptions {
   /** When true, no network calls are made. */
@@ -71,6 +72,18 @@ export async function mapPurchaseInvoice(
   }
 
   if (!options.dryRun && options.endpoint) {
+    const existing = await findExistingPurchaseInvoice(payload, {
+      endpoint: options.endpoint,
+      headers: options.headers,
+    });
+    if (existing) {
+      return {
+        payload,
+        csv: csvRows.join('\n'),
+        response: { duplicate: true, existing },
+      };
+    }
+
     const response = await fetch(options.endpoint, {
       method: 'POST',
       headers: {

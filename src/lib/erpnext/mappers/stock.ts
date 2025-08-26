@@ -1,4 +1,5 @@
 import type { StockEntry, StockReconciliation } from '../types';
+import { isDuplicateStockEntry, isDuplicateStockReconciliation } from '../services/dedupe';
 
 export interface InternalStockReconciliation {
   postingDate: string;
@@ -68,6 +69,14 @@ export async function mapStockReconciliation(
   ].map(escapeCSVField).join(','));
 
   if (!options.dryRun && options.endpoint) {
+    if (isDuplicateStockReconciliation(payload)) {
+      return {
+        payload,
+        csv: csvRows.join('\n'),
+        response: { duplicate: true },
+      };
+    }
+
     const response = await fetch(options.endpoint, {
       method: 'POST',
       headers: {
@@ -118,6 +127,14 @@ export async function mapStockEntry(
   ].map(escapeCSVField).join(','));
 
   if (!options.dryRun && options.endpoint) {
+    if (isDuplicateStockEntry(payload)) {
+      return {
+        payload,
+        csv: csvRows.join('\n'),
+        response: { duplicate: true },
+      };
+    }
+
     const response = await fetch(options.endpoint, {
       method: 'POST',
       headers: {
