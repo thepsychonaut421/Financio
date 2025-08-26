@@ -1,5 +1,6 @@
 import type { BankTransaction as InternalBankTransaction } from '@/lib/bank-matcher/types';
 import type { BankTransaction } from '../types';
+import { findExistingBankTransaction } from '../services/dedupe';
 
 interface MapperOptions {
   dryRun?: boolean;
@@ -42,6 +43,14 @@ export async function mapBankTransaction(
   ].map(escapeCSVField).join(',');
 
   if (!options.dryRun && options.endpoint) {
+    const existing = await findExistingBankTransaction(payload, {
+      endpoint: options.endpoint,
+      headers: options.headers,
+    });
+    if (existing) {
+      return { payload, csv, response: { duplicate: true, existing } };
+    }
+
     const response = await fetch(options.endpoint, {
       method: 'POST',
       headers: {
