@@ -75,7 +75,7 @@ export async function POST(request: Request) {
             console.log('[ExportERP API] ERPNext API error response (text):', errorText);
             errorData = { message: errorText || `ERPNext API Error: ${response.status} ${response.statusText}` };
           }
-          throw new Error(errorData.message || `ERPNext API Error: ${response.status} ${response.statusText}`);
+          throw new Error(errorData?._server_messages || errorData?.message || `ERPNext API Error: ${response.status} ${response.statusText}`);
         }
         const responseData = await response.json();
         console.log('[ExportERP API] Successfully created Purchase Invoice in ERPNext:', responseData.data.name);
