@@ -7,16 +7,15 @@
 import { NextResponse } from 'next/server';
 import type { ERPIncomingInvoiceItem } from '@/types/incoming-invoice';
 
-// These console.logs can remain for debugging if needed, but the check is removed.
-// console.log('[ExportERP API] ERNEXT_API_URL:', process.env.ERNEXT_API_URL);
-// console.log('[ExportERP API] ERNEXT_API_KEY:', process.env.ERNEXT_API_KEY);
-// console.log('[ExportERP API] ERNEXT_API_SECRET:', process.env.ERNEXT_API_SECRET);
 
 export async function POST(request: Request) {
   console.log('[ExportERP API] Route /api/erpnext/export-invoice called.');
 
-  // The credential check block that previously caused the error has been entirely removed.
-  // The code will now proceed directly to the try...catch block for simulation.
+  if (!process.env.ERNEXT_API_URL || !process.env.ERNEXT_API_KEY || !process.env.ERNEXT_API_SECRET) {
+      console.error('[ExportERP API] ERPNext API credentials are not configured in .env file.');
+      return NextResponse.json({ error: 'Server configuration error: ERPNext credentials not set.' }, { status: 500 });
+  }
+
 
   try {
     const { invoices } = (await request.json()) as { invoices: ERPIncomingInvoiceItem[] };
@@ -29,7 +28,7 @@ export async function POST(request: Request) {
     let errorCount = 0;
     const errors: { invoiceNumber?: string, error: string }[] = [];
 
-    console.log(`[ExportERP API] Simulating export for ${invoices.length} invoice(s).`);
+    console.log(`[ExportERP API] Preparing to export ${invoices.length} invoice(s) to ERPNext.`);
 
     for (const invoice of invoices) {
       const erpNextPayload = {
@@ -53,10 +52,7 @@ export async function POST(request: Request) {
       };
 
       try {
-        // *******************************************************************
-        // ACTUAL API call to ERPNext - REMAINS COMMENTED OUT FOR SIMULATION
-        /*
-        console.log('[ExportERP API] Attempting to fetch ERPNext API with payload:', JSON.stringify(erpNextPayload, null, 2));
+        console.log('[ExportERP API] Attempting to fetch ERPNext API with payload for invoice:', invoice.rechnungsnummer);
         const response = await fetch(process.env.ERNEXT_API_URL!, {
           method: 'POST',
           headers: {
@@ -79,15 +75,11 @@ export async function POST(request: Request) {
             console.log('[ExportERP API] ERPNext API error response (text):', errorText);
             errorData = { message: errorText || `ERPNext API Error: ${response.status} ${response.statusText}` };
           }
-          throw new Error(errorData.message || `ERPNext API Error: ${response.status} ${response.statusText}`);
+          throw new Error(errorData?._server_messages || errorData?.message || `ERPNext API Error: ${response.status} ${response.statusText}`);
         }
         const responseData = await response.json();
         console.log('[ExportERP API] Successfully created Purchase Invoice in ERPNext:', responseData.data.name);
-        */
-        // SIMULATED SUCCESS FOR NOW:
-        console.log(`[ExportERP API] SIMULATING successful export for invoice ${invoice.rechnungsnummer || invoice.pdfFileName}`);
-        // *******************************************************************
-
+        
         successCount++;
 
       } catch (e: any) {
@@ -109,8 +101,8 @@ export async function POST(request: Request) {
       );
     }
 
-    console.log(`[ExportERP API] ${successCount} invoice(s) successfully SIMULATED for ERPNext.`);
-    return NextResponse.json({ message: `${successCount} invoice(s) successfully submitted to ERPNext (SIMULATED).` });
+    console.log(`[ExportERP API] ${successCount} invoice(s) successfully submitted to ERPNext.`);
+    return NextResponse.json({ message: `${successCount} invoice(s) successfully submitted to ERPNext.` });
 
   } catch (error: any) {
     console.error('[ExportERP API] Critical Error in /api/erpnext/export-invoice:', error.message, error.stack);
