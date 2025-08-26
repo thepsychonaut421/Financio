@@ -1,6 +1,7 @@
 import type { ERPIncomingInvoiceItem } from '@/types/incoming-invoice';
 import type { PurchaseInvoice } from '../types';
 import { findExistingPurchaseInvoice } from '../services/dedupe';
+import { resolveOrCreateItem } from '../services/sku-resolver';
 
 interface MapperOptions {
   /** When true, no network calls are made. */
@@ -29,6 +30,16 @@ export async function mapPurchaseInvoice(
   invoice: ERPIncomingInvoiceItem,
   options: MapperOptions = {}
 ): Promise<{ payload: PurchaseInvoice; csv: string; response?: unknown }> {
+  const resolvedItems = await Promise.all(
+    (invoice.rechnungspositionen || []).map(async item => ({
+      ...item,
+      itemCode: await resolveOrCreateItem({
+        supplierCode: item.productCode,
+        name: item.productName,
+      }),
+    })),
+  );
+
   const payload: PurchaseInvoice = {
     doctype: 'Purchase Invoice',
     supplier: invoice.lieferantName || '',
@@ -39,8 +50,8 @@ export async function mapPurchaseInvoice(
     grand_total: invoice.gesamtbetrag,
     is_paid: invoice.istBezahlt,
     set_posting_time: 1,
-    items: (invoice.rechnungspositionen || []).map(item => ({
-      item_code: item.productCode,
+    items: resolvedItems.map(item => ({
+      item_code: item.itemCode,
       item_name: item.productName,
       description: item.productName,
       qty: item.quantity,
@@ -56,11 +67,11 @@ export async function mapPurchaseInvoice(
   ].map(escapeCSVField);
 
   const csvRows: string[] = [];
-  if (invoice.rechnungspositionen && invoice.rechnungspositionen.length > 0) {
-    invoice.rechnungspositionen.forEach(item => {
+  if (resolvedItems.length > 0) {
+    resolvedItems.forEach(item => {
       const row = [
         ...invoiceData,
-        escapeCSVField(item.productCode),
+        escapeCSVField(item.itemCode),
         escapeCSVField(item.productName),
         item.quantity.toString(),
         item.unitPrice.toString(),
