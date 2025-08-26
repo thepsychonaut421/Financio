@@ -1,5 +1,6 @@
 import type { StockEntry, StockReconciliation } from '../types';
 import { isDuplicateStockEntry, isDuplicateStockReconciliation } from '../services/dedupe';
+import { resolveOrCreateItem } from '../services/sku-resolver';
 
 export interface InternalStockReconciliation {
   postingDate: string;
@@ -41,32 +42,42 @@ function escapeCSVField(field: string | number | undefined | null): string {
   return stringField;
 }
 
-export async function mapStockReconciliation(
-  stock: InternalStockReconciliation,
-  options: MapperOptions = {}
-): Promise<{ payload: StockReconciliation; csv: string; response?: unknown }> {
-  const payload: StockReconciliation = {
-    doctype: 'Stock Reconciliation',
-    posting_date: stock.postingDate,
-    company: stock.company,
-    purpose: stock.purpose,
-    items: stock.items.map(it => ({
-      item_code: it.itemCode,
-      warehouse: it.warehouse,
-      qty: it.qty,
-      valuation_rate: it.valuationRate,
-    })),
-  };
+  export async function mapStockReconciliation(
+    stock: InternalStockReconciliation,
+    options: MapperOptions = {}
+  ): Promise<{ payload: StockReconciliation; csv: string; response?: unknown }> {
+    const resolvedItems = await Promise.all(
+      stock.items.map(async it => ({
+        ...it,
+        itemCode: await resolveOrCreateItem({
+          supplierCode: it.itemCode,
+          name: it.itemCode,
+        }),
+      }))
+    );
 
-  const csvRows = stock.items.map(it => [
-    stock.postingDate,
-    stock.company,
-    stock.purpose,
-    it.itemCode,
-    it.warehouse,
-    it.qty,
-    it.valuationRate ?? '',
-  ].map(escapeCSVField).join(','));
+    const payload: StockReconciliation = {
+      doctype: 'Stock Reconciliation',
+      posting_date: stock.postingDate,
+      company: stock.company,
+      purpose: stock.purpose,
+      items: resolvedItems.map(it => ({
+        item_code: it.itemCode,
+        warehouse: it.warehouse,
+        qty: it.qty,
+        valuation_rate: it.valuationRate,
+      })),
+    };
+
+    const csvRows = resolvedItems.map(it => [
+      stock.postingDate,
+      stock.company,
+      stock.purpose,
+      it.itemCode,
+      it.warehouse,
+      it.qty,
+      it.valuationRate ?? '',
+    ].map(escapeCSVField).join(','));
 
   if (!options.dryRun && options.endpoint) {
     if (isDuplicateStockReconciliation(payload)) {
@@ -101,12 +112,22 @@ export async function mapStockEntry(
   entry: InternalStockEntry,
   options: MapperOptions = {}
 ): Promise<{ payload: StockEntry; csv: string; response?: unknown }> {
+  const resolvedItems = await Promise.all(
+    entry.items.map(async it => ({
+      ...it,
+      itemCode: await resolveOrCreateItem({
+        supplierCode: it.itemCode,
+        name: it.itemCode,
+      }),
+    })),
+  );
+
   const payload: StockEntry = {
     doctype: 'Stock Entry',
     posting_date: entry.postingDate,
     purpose: entry.purpose,
     company: entry.company,
-    items: entry.items.map(it => ({
+    items: resolvedItems.map(it => ({
       item_code: it.itemCode,
       s_warehouse: it.sWarehouse,
       t_warehouse: it.tWarehouse,
@@ -115,7 +136,7 @@ export async function mapStockEntry(
     })),
   };
 
-  const csvRows = entry.items.map(it => [
+  const csvRows = resolvedItems.map(it => [
     entry.postingDate,
     entry.purpose,
     entry.company,
