@@ -27,18 +27,13 @@ if (getApps().length === 0) {
 
 const auth = getAuth(app);
 
-// Connect to Auth Emulator if the environment variable is set
-if (process.env.NEXT_PUBLIC_FIREBASE_AUTH_EMULATOR_HOST) {
-  console.log(`Connecting to Firebase Auth Emulator at ${process.env.NEXT_PUBLIC_FIREBASE_AUTH_EMULATOR_HOST}...`);
-  try {
-     connectAuthEmulator(auth, process.env.NEXT_PUBLIC_FIREBASE_AUTH_EMULATOR_HOST, { disableWarnings: true });
-     console.log('Successfully configured Auth Emulator connection.');
-  } catch (error: any) {
-    if (error.code !== 'auth/emulator-config-failed') { // Ignore if already connected
-        console.error('Error connecting to auth emulator:', error);
-    }
-  }
-}
+// Use a mocked user for local development to bypass emulator network issues
+const mockUser = {
+  uid: 'testuser',
+  email: 'test@example.com',
+  displayName: 'Test User',
+  emailVerified: true,
+};
 
 
 interface AuthContextType {
@@ -60,6 +55,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const { toast } = useToast();
 
   useEffect(() => {
+    // If mocking auth, just set the user and stop loading.
+    if (process.env.NEXT_PUBLIC_MOCK_AUTH === 'true') {
+      setUser(mockUser as User);
+      setIsLoading(false);
+      return;
+    }
+
+    // Otherwise, use real Firebase auth
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       setUser(user);
       setIsLoading(false);
@@ -69,8 +72,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const login = async () => {
+    // If mocking, we don't need to do anything as the user is already "logged in"
+    if (process.env.NEXT_PUBLIC_MOCK_AUTH === 'true') {
+       toast({ title: "Logged in (Mock)" });
+       router.push('/incoming-invoices');
+       return;
+    }
+      
     try {
-      // Using a dummy user for this simulation as per requirements
       await signInWithEmailAndPassword(auth, "test@example.com", "password");
       // On successful login, onAuthStateChanged will trigger and handle the redirect
     } catch (error: any) {
@@ -84,6 +93,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const logout = async () => {
+    if (process.env.NEXT_PUBLIC_MOCK_AUTH === 'true') {
+      setUser(null);
+      router.push('/login');
+      return;
+    }
+      
     try {
       await signOut(auth);
       router.push('/login');
@@ -93,6 +108,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const getIdToken = async (): Promise<string | null> => {
+    if (process.env.NEXT_PUBLIC_MOCK_AUTH === 'true') {
+      return 'mock-token';
+    }
     if (!auth.currentUser) return null;
     return auth.currentUser.getIdToken(true);
   };
