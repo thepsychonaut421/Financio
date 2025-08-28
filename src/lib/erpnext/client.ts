@@ -66,7 +66,7 @@ function extractErpErrorDetails(rawText: string): string {
 export async function erpnextFetch(path: string, init: RequestInit = {}): Promise<JsonLike> {
   const url = `${process.env.ERPNEXT_BASE_URL}${path}`;
   const headers = {
-    "Content-Type": "application/json",
+    "Content-Type": "application/json; charset=utf-8",
     Authorization: `token ${process.env.ERPNEXT_API_KEY}:${process.env.ERPNEXT_API_SECRET}`,
     ...(init.headers || {}),
   };

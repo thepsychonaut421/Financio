@@ -46,6 +46,7 @@ export async function ensureSupplierExistsDE(input: {
   // contact primar (opțional)
   contact?: { email?: string; mobile_no?: string; first_name?: string; last_name?: string; };
 }) {
+  logInfo({ workflow: 'erpnext-api', docType: 'Supplier', action: 'ensure-de-start', docId: input.name }, `Processing supplier: ${input.name}`);
   // 0) already by exact name
   try { const ex = await getResource("Supplier", input.name); if (ex) return { status:"exists", supplier: ex as any }; } catch {}
 
@@ -227,3 +228,6 @@ export async function ensureSupplierExists(name: string, extra: any = {}) {
     const created = await createResource("Supplier", payload);
     return { status: "created", doc: created };
 }
+
+// Add findResource export so it can be used in the API route
+export { findResource };

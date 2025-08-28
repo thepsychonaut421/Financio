@@ -95,7 +95,7 @@ export function BankStatementActionButtons({ transactions, isSubmitting, onSubmi
         Export ERPNext Bank Rec.
       </Button>
       <Button
-        variant="secondary"
+        variant="default"
         onClick={onSubmitToERPNext}
         disabled={isSubmitting || transactions.length === 0}
       >
