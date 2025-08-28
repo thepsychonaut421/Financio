@@ -23,10 +23,11 @@ interface ExtractorState {
   files: { name: string; dataUri: string }[];
   transactions: BankTransactionAI[];
   status: ProcessingStatus;
-  erpBankAccountName: string;
 }
 
 const LOCAL_STORAGE_KEY = 'bankStatementExtractorCache';
+const ERP_BANK_ACCOUNT_NAME = 'Bank Bayer Rem UG - Commerzbank AG - Straubing';
+
 
 export function BankStatementExtractorPageContent() {
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
@@ -38,7 +39,6 @@ export function BankStatementExtractorPageContent() {
   const [currentYear, setCurrentYear] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { toast } = useToast();
-  const [erpBankAccountName, setErpBankAccountName] = useState('Bank Bayer Rem UG - Cc');
 
   useEffect(() => {
     setCurrentYear(new Date().getFullYear().toString());
@@ -50,9 +50,6 @@ export function BankStatementExtractorPageContent() {
         if (cachedState.transactions && cachedState.transactions.length > 0) {
             setExtractedTransactions(cachedState.transactions);
             setStatus(cachedState.status);
-        }
-        if (cachedState.erpBankAccountName) {
-            setErpBankAccountName(cachedState.erpBankAccountName);
         }
       }
     } catch (e) {
@@ -67,14 +64,13 @@ export function BankStatementExtractorPageContent() {
             const stateToCache: Partial<ExtractorState> = {
                 transactions: extractedTransactions,
                 status: status,
-                erpBankAccountName: erpBankAccountName,
             };
             localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(stateToCache));
         } catch (e) {
             console.error("Failed to save state to localStorage", e);
         }
     }
-  }, [extractedTransactions, status, erpBankAccountName]);
+  }, [extractedTransactions, status]);
 
 
   const handleFilesSelected = useCallback((files: File[]) => {
@@ -154,10 +150,6 @@ export function BankStatementExtractorPageContent() {
       toast({ title: "No Data", description: "No transactions to submit to ERPNext.", variant: "destructive" });
       return;
     }
-    if (!erpBankAccountName.trim()) {
-      toast({ title: "Missing Bank Account", description: "Please enter the ERPNext Bank Account name before submitting.", variant: "destructive" });
-      return;
-    }
 
     setIsSubmitting(true);
     setProgress(0);
@@ -165,7 +157,7 @@ export function BankStatementExtractorPageContent() {
 
     const transactionsWithAccount = extractedTransactions.map(tx => ({
         ...tx,
-        bank_account: erpBankAccountName,
+        bank_account: ERP_BANK_ACCOUNT_NAME,
     }));
 
     try {
@@ -227,32 +219,6 @@ export function BankStatementExtractorPageContent() {
           selectedFileCount={selectedFiles.length}
         />
 
-        <Card className="w-full max-w-2xl mx-auto shadow-lg">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 font-headline">
-                <FileCog className="w-6 h-6 text-primary" />
-                ERPNext Settings
-              </CardTitle>
-              <CardDescription>
-                Configure the target bank account for ERPNext exports. This is saved for your session.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-2">
-                <Label htmlFor="erp-bank-account-input" className="font-medium">
-                  ERPNext Bank Account Name
-                </Label>
-                <Input
-                  id="erp-bank-account-input"
-                  value={erpBankAccountName}
-                  onChange={(e) => setErpBankAccountName(e.target.value)}
-                  placeholder="e.g., Commerzbank - XXXX"
-                  disabled={status === 'processing' || isSubmitting}
-                />
-              </div>
-            </CardContent>
-        </Card>
-
         {(status === 'processing' || isSubmitting) && (
           <div className="my-6 p-4 border rounded-lg shadow-sm bg-card">
             <Progress value={progress} className="w-full mb-2" />
@@ -283,7 +249,7 @@ export function BankStatementExtractorPageContent() {
             <BankStatementActionButtons 
                 transactions={extractedTransactions} 
                 isSubmitting={isSubmitting}
-                erpBankAccountName={erpBankAccountName}
+                erpBankAccountName={ERP_BANK_ACCOUNT_NAME}
                 onSubmitToERPNext={handleSubmitToERPNext}
                 onClearAllData={handleClearAllData}
              />
