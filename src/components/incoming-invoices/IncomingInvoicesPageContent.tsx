@@ -441,7 +441,6 @@ export function IncomingInvoicesPageContent() {
   };
 
   const handleExportSuppliersERPNext = async () => {
-    const reqId = `sup-${Date.now()}`;
     const invoicesToUse = erpMode ? sortedErpProcessedInvoices : erpProcessedInvoices;
     if (invoicesToUse.length === 0) {
         toast({
@@ -452,27 +451,25 @@ export function IncomingInvoicesPageContent() {
         return;
     }
 
-    const uniqueSuppliers = new Map<string, Partial<any>>();
+    const uniqueSuppliers = new Map<string, ERPIncomingInvoiceItem>();
     invoicesToUse.forEach(invoice => {
         const supplierKey = (invoice.lieferantName || '').trim().toUpperCase();
         if (supplierKey && !uniqueSuppliers.has(supplierKey) && supplierKey !== "UNBEKANNT_SUPPLIER_PLACEHOLDER" && supplierKey !== "UNBEKANNT") {
-            let taxIdValue = "";
-            if (invoice.remarks) {
-                const taxIdMatch = invoice.remarks.match(/Tax ID:\s*([^\s\/,]+)/i) ||
-                                 invoice.remarks.match(/VAT ID:\s*([^\s\/,]+)/i) ||
-                                 invoice.remarks.match(/USt-IdNr.:\s*([^\s\/,]+)/i);
-                if (taxIdMatch && taxIdMatch[1]) {
-                    taxIdValue = taxIdMatch[1];
-                }
-            }
-            uniqueSuppliers.set(supplierKey, {
-                supplier_name: invoice.lieferantName,
-                tax_id: taxIdValue
-            });
+            uniqueSuppliers.set(supplierKey, invoice);
         }
     });
 
-    const supplierPayloads = Array.from(uniqueSuppliers.values());
+    const supplierPayloads = Array.from(uniqueSuppliers.values()).map(invoice => ({
+        name: invoice.lieferantName,
+        type: "Unternehmen", // Setzt Standardwert, kann aber durch AI-Extraktion überschrieben werden
+        group: "Alle Lieferantengruppen", // Standardgruppe
+        country: "Deutschland",
+        tax_id: invoice.remarks?.match(/USt-IdNr.:\s*([^\s]+)/)?.[1],
+        address: {
+            line1: invoice.lieferantAdresse,
+        }
+    }));
+
 
     if (supplierPayloads.length === 0) {
         toast({ title: "No New Suppliers", description: "No unique suppliers found to export." });
@@ -483,11 +480,8 @@ export function IncomingInvoicesPageContent() {
     try {
         const response = await fetch('/api/erpnext/suppliers', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-Req-Id': reqId
-            },
-            body: JSON.stringify(supplierPayloads),
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ suppliers: supplierPayloads }),
         });
 
         const result = await response.json();
@@ -495,14 +489,19 @@ export function IncomingInvoicesPageContent() {
         if (!response.ok) {
             throw new Error(result.error || result.message || "An unknown server error occurred.");
         }
+        
+        const feedbackLines = (result.results || []).map((r:any) => r.ok ? `✅ ${r.name} (${r.status})` : `❌ ${r.name} — ${r.error}`).join("\n");
+        toast({
+            title: `Suppliers API: ${result.succeeded}/${result.total} succeeded`,
+            description: <pre className="mt-2 w-[340px] rounded-md bg-slate-950 p-4"><code className="text-white">{feedbackLines}</code></pre>,
+        });
 
-        toast({ title: "Suppliers Export Status", description: result.message || `${supplierPayloads.length} suppliers processed.` });
     } catch (error: any) {
         toast({ title: "Supplier Export Failed", description: error.message, variant: "destructive" });
     } finally {
         setIsExportingSuppliers(false);
     }
-};
+  };
 
   const handleExportSuppliersCSV = async () => {
     const invoicesToUse = erpMode ? sortedErpProcessedInvoices : erpProcessedInvoices;

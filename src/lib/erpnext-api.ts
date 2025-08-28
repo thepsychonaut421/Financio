@@ -4,28 +4,105 @@
 
 import type { ItemPayload, PurchaseInvoice, Supplier, BankTransaction, JournalEntry, JournalEntryAccount } from "./erpnext/types";
 import { logError, logInfo } from "./logger";
-import { findResource, createResource, getResource, erpnextFetch } from "./erpnext/client";
+import { findResource, createResource, getResource, updateResource } from "./erpnext/client";
 
-/**
- * Ensures a supplier exists in ERPNext. If not, it creates one.
- * Uses findResource for an efficient check.
- * @param name The name of the supplier.
- * @param payload Additional data for creation if the supplier doesn't exist.
- */
-export async function ensureSupplierExists(name: string, payload?: Partial<Supplier>) {
-    const found = await findResource("Supplier", [["supplier_name", "=", name]]);
-    if (found) {
-        logInfo({ workflow: 'erpnext-api', docType: 'Supplier', action: 'ensure-exists', docId: name }, `Supplier "${name}" already exists.`);
-        return found;
-    }
-    logInfo({ workflow: 'erpnext-api', docType: 'Supplier', action: 'ensure-create', docId: name }, `Supplier "${name}" not found, creating.`);
-    return createResource("Supplier", {
-        supplier_name: name,
-        supplier_group: "Alle Lieferantengruppen", // Default group
-        supplier_type: "Company",
-        ...payload
-    });
+
+function mapSupplierTypeDE(t?: string): "Company"|"Individual" {
+  const v = (t || "").toLowerCase();
+  if (["einzelperson", "privatperson", "individual"].includes(v)) return "Individual";
+  // “Unternehmen”, “GbR”, etc. default to Company
+  return "Company";
 }
+
+async function resolveGroup(preferred?: string): Promise<string> {
+  if (preferred) {
+    try {
+      const byName = await findResource("Supplier Group", [["name","=",preferred]]);
+      if (byName && (byName as any).name) return (byName as any).name;
+    } catch (e) {
+      logInfo({ workflow: 'erpnext-api', docType: 'Supplier Group', action: 'resolve-preferred-fail' }, `Could not find preferred supplier group "${preferred}". Falling back. Error: ${e}`);
+    }
+  }
+  try {
+    const leaf = await findResource("Supplier Group", [["is_group","=",0]]);
+    if (leaf && (leaf as any).name) return (leaf as any).name;
+  } catch (e) {
+      logInfo({ workflow: 'erpnext-api', docType: 'Supplier Group', action: 'resolve-leaf-fail' }, `Could not find any leaf supplier group. Error: ${e}`);
+  }
+  return "All Suppliers"; // Fallback to a common default
+}
+
+export async function ensureSupplierExistsDE(input: {
+  name: string;                 // Lieferantenname
+  type?: string;                // Lieferantentyp (DE)
+  group?: string;               // Lieferantengruppe
+  tax_id?: string;              // USt-IdNr.
+  country?: string;             // Land (ex. Deutschland)
+  // adresă primară (opțional)
+  address?: {
+    line1?: string; line2?: string; city?: string; state?: string;
+    pincode?: string; country?: string;
+  };
+  // contact primar (opțional)
+  contact?: { email?: string; mobile_no?: string; first_name?: string; last_name?: string; };
+}) {
+  // 0) already by exact name
+  try { const ex = await getResource("Supplier", input.name); if (ex) return { status:"exists", supplier: ex as any }; } catch {}
+
+  // 1) by supplier_name field
+  const found = await findResource("Supplier", [["supplier_name","=",input.name]]);
+  if (found) return { status: "exists", supplier: found as any };
+
+  // 2) create
+  const payload: any = {
+    supplier_name: input.name,
+    supplier_type: mapSupplierTypeDE(input.type),
+    supplier_group: await resolveGroup(input.group),
+    tax_id: input.tax_id || undefined,
+    country: input.country || undefined,
+  };
+  const created = await createResource("Supplier", payload) as any;
+
+  // 3) (opțional) create Address linked
+  if (input.address && (input.address.line1 || input.address.city)) {
+    const addr = await createResource("Address", {
+      address_title: input.name,
+      address_type: "Billing",
+      address_line1: input.address.line1 || "-",
+      address_line2: input.address.line2 || "",
+      city: input.address.city || "",
+      state: input.address.state || "",
+      pincode: input.address.pincode || "",
+      country: input.address.country || input.country || "Deutschland",
+      links: [{ link_doctype: "Supplier", link_name: created.name }],
+    }) as any;
+    created._primary_address = addr.name;
+  }
+
+  // 4) (opțional) create Contact linked
+  if (input.contact && (input.contact.email || input.contact.mobile_no)) {
+    const first = input.contact.first_name || input.name;
+    const ctc = await createResource("Contact", {
+      first_name: first,
+      last_name: input.contact.last_name || "",
+      email_id: input.contact.email || "",
+      mobile_no: input.contact.mobile_no || "",
+      links: [{ link_doctype: "Supplier", link_name: created.name }],
+    }) as any;
+    created._primary_contact = ctc.name;
+  }
+  
+  if (created._primary_address || created._primary_contact) {
+      // update resource to link address/contact if they were created
+      await updateResource("Supplier", created.name, {
+          primary_address: created._primary_address,
+          primary_contact: created._primary_contact,
+      });
+  }
+
+  return { status: "created", supplier: created };
+}
+
 
 /**
  * Ensures an item exists in ERPNext. If not, it creates one.
