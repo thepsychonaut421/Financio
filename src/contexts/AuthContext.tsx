@@ -3,68 +3,102 @@
 
 import React, { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
+import { getAuth, onAuthStateChanged, type User, signInWithEmailAndPassword, signOut } from 'firebase/auth';
+import { initializeApp, getApps } from 'firebase/app';
+
+// Your web app's Firebase configuration
+const firebaseConfig = {
+  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
+  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
+  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
+};
+
+// Initialize Firebase
+const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
 
 interface AuthContextType {
+  user: User | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  login: () => void;
+  login: () => Promise<void>;
   logout: () => void;
+  getIdToken: () => Promise<string | null>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const AUTH_TOKEN_KEY = 'financio_auth_token';
-
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+  const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const router = useRouter();
   const pathname = usePathname();
+  const auth = getAuth(app);
 
   useEffect(() => {
-    try {
-      const token = localStorage.getItem(AUTH_TOKEN_KEY);
-      if (token) {
-        setIsAuthenticated(true);
-      }
-    } catch (error) {
-      console.error("Failed to access localStorage:", error);
-    } finally {
+    // Check if Firebase is configured
+    if (!firebaseConfig.apiKey) {
+      console.error("Firebase API Key is missing. Please check your .env.local file.");
       setIsLoading(false);
+      return;
     }
-  }, []);
 
-  const login = () => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setUser(user);
+      setIsLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, [auth]);
+
+  const login = async () => {
     try {
-      localStorage.setItem(AUTH_TOKEN_KEY, 'dummy_token_simulated_login');
-      setIsAuthenticated(true);
-      router.push('/incoming-invoices'); // Default redirect after login
-    } catch (error) {
-      console.error("Failed to set auth token in localStorage:", error);
-      // Handle error, maybe show a toast
+      // Using a dummy user for this simulation as per requirements
+      await signInWithEmailAndPassword(auth, "test@example.com", "password");
+      // On successful login, onAuthStateChanged will trigger and handle the redirect
+    } catch (error: any) {
+        console.error("Login failed:", error.message);
+        // In a real app, you'd use the toast hook here
+        alert("Login Failed: " + error.message);
     }
   };
 
-  const logout = () => {
+  const logout = async () => {
     try {
-      localStorage.removeItem(AUTH_TOKEN_KEY);
-      setIsAuthenticated(false);
+      await signOut(auth);
       router.push('/login');
     } catch (error) {
-      console.error("Failed to remove auth token from localStorage:", error);
-      // Handle error
+      console.error("Logout failed:", error);
     }
   };
+
+  const getIdToken = async (): Promise<string | null> => {
+    if (!auth.currentUser) return null;
+    return auth.currentUser.getIdToken(true);
+  };
   
-  // Effect to handle redirection if user is authenticated and tries to access /login
+  // Effect to handle redirection if user is authenticated and tries to access auth pages
   useEffect(() => {
-    if (!isLoading && isAuthenticated && pathname === '/login') {
+    if (!isLoading && user && (pathname === '/login' || pathname === '/signup')) {
       router.push('/incoming-invoices');
     }
-  }, [isLoading, isAuthenticated, pathname, router]);
+  }, [isLoading, user, pathname, router]);
+
+  if (!firebaseConfig.apiKey) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-red-100 text-red-800">
+        <div className="p-8 text-center">
+          <h1 className="text-2xl font-bold">Firebase Configuration Error</h1>
+          <p className="mt-2">The Firebase API Key is missing. Please check your <code>.env.local</code> file and ensure all Firebase variables are set correctly.</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <AuthContext.Provider value={{ isAuthenticated, isLoading, login, logout }}>
+    <AuthContext.Provider value={{ user, isAuthenticated: !!user, isLoading, login, logout, getIdToken }}>
       {children}
     </AuthContext.Provider>
   );
