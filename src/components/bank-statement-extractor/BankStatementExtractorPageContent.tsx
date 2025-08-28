@@ -149,6 +149,7 @@ export function BankStatementExtractorPageContent() {
     }
     setIsSubmitting(true);
     setProgress(0);
+    setCurrentFileProgress(`Submitting ${extractedTransactions.length} transactions...`);
 
     try {
         const response = await fetch('/api/erpnext/bank', {
@@ -160,7 +161,11 @@ export function BankStatementExtractorPageContent() {
         const contentType = response.headers.get("content-type");
         if (!response.ok || !contentType || !contentType.includes("application/json")) {
             const errorText = await response.text();
-            throw new Error(`Server responded with an error: ${response.status} ${response.statusText}. Response: ${errorText.substring(0, 500)}`);
+            let errorMessage = `Server responded with an error: ${response.status} ${response.statusText}.`;
+            if (errorText) {
+                errorMessage += ` Response: ${errorText.substring(0, 500)}`;
+            }
+            throw new Error(errorMessage);
         }
 
         const result = await response.json();
@@ -236,6 +241,7 @@ export function BankStatementExtractorPageContent() {
                 transactions={extractedTransactions} 
                 isSubmitting={isSubmitting}
                 onSubmitToERPNext={handleSubmitToERPNext}
+                onClearAllData={handleClearAllData}
              />
             <BankStatementDataTable transactions={extractedTransactions} />
           </div>
@@ -250,16 +256,6 @@ export function BankStatementExtractorPageContent() {
             </AlertDescription>
           </Alert>
         )}
-
-        {(selectedFiles.length > 0 || extractedTransactions.length > 0) && !isSubmitting && status !== 'processing' &&(
-          <div className="flex justify-center mt-6">
-            <Button variant="outline" onClick={handleClearAllData}>
-              <Trash2 className="mr-2 h-4 w-4" />
-              Clear All Data
-            </Button>
-          </div>
-        )}
-
       </main>
       <footer className="text-center mt-12 py-4 border-t">
         <p className="text-sm text-muted-foreground">&copy; {currentYear} PDF Suite. Powered by AI.</p>
