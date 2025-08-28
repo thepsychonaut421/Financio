@@ -75,6 +75,7 @@ export function IncomingInvoicesPageContent() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [erpMode, setErpMode] = useState(false);
   const [isExportingToERPNext, setIsExportingToERPNext] = useState(false);
+  const [isExportingSuppliers, setIsExportingSuppliers] = useState(false);
   const [isExportingZip, setIsExportingZip] = useState(false);
   const { toast } = useToast();
   const [currentYear, setCurrentYear] = useState<string>('');
@@ -441,76 +442,67 @@ export function IncomingInvoicesPageContent() {
 
   const handleExportSuppliersERPNext = async () => {
     const reqId = `sup-${Date.now()}`;
-    console.log('[UI] start', reqId);
-
     const invoicesToUse = erpMode ? sortedErpProcessedInvoices : erpProcessedInvoices;
-     if (invoicesToUse.length === 0) {
-      toast({
-        title: "No Data for Suppliers",
-        description: "No processed invoice data in ERP Mode to extract suppliers from.",
-        variant: "destructive",
-      });
-      return;
+    if (invoicesToUse.length === 0) {
+        toast({
+            title: "No Data for Suppliers",
+            description: "No processed invoice data in ERP Mode to extract suppliers from.",
+            variant: "destructive",
+        });
+        return;
     }
 
-    const uniqueSuppliers = new Map<string, ERPIncomingInvoiceItem>();
+    const uniqueSuppliers = new Map<string, Partial<any>>();
     invoicesToUse.forEach(invoice => {
         const supplierKey = (invoice.lieferantName || '').trim().toUpperCase();
         if (supplierKey && !uniqueSuppliers.has(supplierKey) && supplierKey !== "UNBEKANNT_SUPPLIER_PLACEHOLDER" && supplierKey !== "UNBEKANNT") {
-        uniqueSuppliers.set(supplierKey, invoice);
+            let taxIdValue = "";
+            if (invoice.remarks) {
+                const taxIdMatch = invoice.remarks.match(/Tax ID:\s*([^\s\/,]+)/i) ||
+                                 invoice.remarks.match(/VAT ID:\s*([^\s\/,]+)/i) ||
+                                 invoice.remarks.match(/USt-IdNr.:\s*([^\s\/,]+)/i);
+                if (taxIdMatch && taxIdMatch[1]) {
+                    taxIdValue = taxIdMatch[1];
+                }
+            }
+            uniqueSuppliers.set(supplierKey, {
+                supplier_name: invoice.lieferantName,
+                tax_id: taxIdValue
+            });
         }
     });
 
-    const supplierPayloads = Array.from(uniqueSuppliers.values()).map(invoice => {
-        let taxIdValue = "";
-         if (invoice.remarks) { 
-            const taxIdMatch = invoice.remarks.match(/Tax ID:\s*([^\s\/,]+)/i) ||
-                            invoice.remarks.match(/VAT ID:\s*([^\s\/,]+)/i) ||
-                            invoice.remarks.match(/USt-IdNr.:\s*([^\s\/,]+)/i);
-            if (taxIdMatch && taxIdMatch[1]) {
-                taxIdValue = taxIdMatch[1];
-            }
-        }
-        return {
-            doctype: 'Supplier',
-            supplier_name: invoice.lieferantName,
-            supplier_group: "Alle Lieferantengruppen", // Default or from config
-            supplier_type: "Company",
-            tax_id: taxIdValue,
-        };
-    });
+    const supplierPayloads = Array.from(uniqueSuppliers.values());
 
     if (supplierPayloads.length === 0) {
         toast({ title: "No New Suppliers", description: "No unique suppliers found to export." });
         return;
     }
 
+    setIsExportingSuppliers(true);
     try {
-        console.log('[UI] sending request', reqId, { count: supplierPayloads.length });
         const response = await fetch('/api/erpnext/suppliers', {
             method: 'POST',
-            headers: { 
+            headers: {
                 'Content-Type': 'application/json',
-                'X-Req-Id': reqId 
+                'X-Req-Id': reqId
             },
             body: JSON.stringify(supplierPayloads),
         });
-        console.log('[UI] response', reqId, response.status);
 
         const result = await response.json();
-        console.log('[UI] payload', reqId, result);
 
         if (!response.ok) {
             throw new Error(result.error || result.message || "An unknown server error occurred.");
         }
 
-        toast({ title: "Suppliers Exported", description: result.message || `${supplierPayloads.length} suppliers processed.` });
-
+        toast({ title: "Suppliers Export Status", description: result.message || `${supplierPayloads.length} suppliers processed.` });
     } catch (error: any) {
-        console.error('[UI] error', reqId, error.message);
         toast({ title: "Supplier Export Failed", description: error.message, variant: "destructive" });
+    } finally {
+        setIsExportingSuppliers(false);
     }
-  };
+};
 
   const handleExportSuppliersCSV = async () => {
     const invoicesToUse = erpMode ? sortedErpProcessedInvoices : erpProcessedInvoices;
@@ -748,6 +740,10 @@ export function IncomingInvoicesPageContent() {
           Upload German PDF invoices (Eingangsrechnungen) to extract comprehensive details. Switch to ERP Vorlage Mode for ERPNext-compatible data.
         </p>
       </header>
+      
+      <div className="bg-red-500 text-white p-4 my-4 rounded-md font-bold">
+          BUILD: {process.env.NEXT_PUBLIC_BUILD_ID || 'no-id'} - TEST BANNER
+      </div>
 
       <main className="space-y-8">
         <IncomingInvoiceUploadForm
@@ -881,6 +877,7 @@ export function IncomingInvoicesPageContent() {
               onExportToERPNext={handleExportToERPNext}
               isExportingToERPNext={isExportingToERPNext}
               onExportSuppliersERPNext={handleExportSuppliersERPNext}
+              isExportingSuppliers={isExportingSuppliers}
               onExportInvoicesAsZip={handleExportInvoicesAsZip} 
               isExportingZip={isExportingZip} 
               onClearAllInvoices={handleClearAllInvoices}

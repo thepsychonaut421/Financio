@@ -1,3 +1,4 @@
+
 // src/lib/erpnext-api.ts
 'use server';
 
@@ -14,10 +15,10 @@ import { findResource, createResource, getResource, erpnextFetch } from "./erpne
 export async function ensureSupplierExists(name: string, payload?: Partial<Supplier>) {
     const found = await findResource("Supplier", [["supplier_name", "=", name]]);
     if (found) {
-        logInfo({ workflow: 'erpnext-api', docType: 'Supplier', action: 'ensure-exists' }, `Supplier "${name}" already exists.`);
+        logInfo({ workflow: 'erpnext-api', docType: 'Supplier', action: 'ensure-exists', docId: name }, `Supplier "${name}" already exists.`);
         return found;
     }
-    logInfo({ workflow: 'erpnext-api', docType: 'Supplier', action: 'ensure-create' }, `Supplier "${name}" not found, creating.`);
+    logInfo({ workflow: 'erpnext-api', docType: 'Supplier', action: 'ensure-create', docId: name }, `Supplier "${name}" not found, creating.`);
     return createResource("Supplier", {
         supplier_name: name,
         supplier_group: "Alle Lieferantengruppen", // Default group
