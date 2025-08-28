@@ -23,6 +23,7 @@ interface IncomingInvoiceActionButtonsProps {
   onExportInvoicesAsZip: () => void; 
   isExportingZip: boolean; 
   onClearAllInvoices: () => void; // New prop for clearing invoices
+  onExportSuppliersCSV: () => void; // CSV Export for Suppliers
 }
 
 export function IncomingInvoiceActionButtons({ 
@@ -33,7 +34,8 @@ export function IncomingInvoiceActionButtons({
   onExportSuppliersERPNext,
   onExportInvoicesAsZip, 
   isExportingZip,
-  onClearAllInvoices // Consuming new prop
+  onClearAllInvoices, // Consuming new prop
+  onExportSuppliersCSV
 }: IncomingInvoiceActionButtonsProps) {
   const { toast } = useToast();
 
@@ -104,6 +106,15 @@ export function IncomingInvoiceActionButtons({
       {erpMode && (
         <>
           <Button 
+            onClick={onExportSuppliersCSV}
+            variant="secondary"
+            className="w-full sm:w-auto"
+            disabled={invoices.length === 0}
+          >
+             <Users className="mr-2 h-4 w-4" />
+             Export Suppliers (CSV)
+          </Button>
+          <Button 
             onClick={onExportInvoicesAsZip}
             variant="secondary"
             className="w-full sm:w-auto"
@@ -111,15 +122,6 @@ export function IncomingInvoiceActionButtons({
           >
             <FileArchive className="mr-2 h-4 w-4" />
             {isExportingZip ? 'Zipping...' : 'Export Invoices (ZIP)'}
-          </Button>
-          <Button 
-            onClick={onExportSuppliersERPNext}
-            variant="secondary"
-            className="w-full sm:w-auto"
-            disabled={isExportingToERPNext || invoices.length === 0} 
-          >
-            <Users className="mr-2 h-4 w-4" />
-            Export Suppliers (ERP)
           </Button>
           <Button 
             onClick={onExportToERPNext} 

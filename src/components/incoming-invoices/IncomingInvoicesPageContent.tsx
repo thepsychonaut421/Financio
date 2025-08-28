@@ -512,6 +512,39 @@ export function IncomingInvoicesPageContent() {
     }
   };
 
+  const handleExportSuppliersCSV = async () => {
+    const invoicesToUse = erpMode ? sortedErpProcessedInvoices : erpProcessedInvoices;
+    if (invoicesToUse.length === 0) {
+      toast({ title: "No Data", description: "No processed ERP data to export suppliers from.", variant: "destructive" });
+      return;
+    }
+    
+    try {
+      const response = await fetch('/api/csv/export', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          doctype: 'Supplier',
+          payload: invoicesToUse,
+          filename: 'erpnext_suppliers.csv'
+        }),
+      });
+
+      if (!response.ok) {
+        const result = await response.json();
+        throw new Error(result.error || 'Failed to generate CSV on server.');
+      }
+      
+      const blob = await response.blob();
+      downloadFile(blob, 'erpnext_suppliers.csv', 'text/csv;charset=utf-8');
+      toast({ title: "Suppliers Exported", description: "Supplier data has been exported to CSV." });
+
+    } catch (error: any) {
+       toast({ title: "Export Failed", description: error.message, variant: "destructive" });
+    }
+  };
+
+
   const handleExportInvoicesAsZip = async () => {
     const invoicesToZip = erpMode ? sortedErpProcessedInvoices : erpProcessedInvoices;
     if (invoicesToZip.length === 0) {
@@ -709,9 +742,6 @@ export function IncomingInvoicesPageContent() {
 
   return (
     <div className="container mx-auto px-4 py-8 md:px-8 md:py-12">
-      <div style={{backgroundColor:'red', color:'white', padding:10, marginBottom: '1rem', textAlign: 'center', fontWeight: 'bold', borderRadius: '0.25rem'}}>
-          BUILD: {process.env.NEXT_PUBLIC_BUILD_ID || 'no-id'} - ENV: {process.env.NODE_ENV}
-      </div>
       <header className="mb-8 text-center">
         <h1 className="text-3xl md:text-4xl font-headline font-bold text-primary">Incoming Invoice Details</h1>
         <p className="text-muted-foreground mt-2">
@@ -854,6 +884,7 @@ export function IncomingInvoicesPageContent() {
               onExportInvoicesAsZip={handleExportInvoicesAsZip} 
               isExportingZip={isExportingZip} 
               onClearAllInvoices={handleClearAllInvoices}
+              onExportSuppliersCSV={handleExportSuppliersCSV}
             />
             {erpMode ? (
               <ERPInvoiceTable 
@@ -892,5 +923,3 @@ export function IncomingInvoicesPageContent() {
     </div>
   );
 }
-
-    
