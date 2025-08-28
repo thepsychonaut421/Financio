@@ -10,7 +10,39 @@
 
 import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
-import { AILineItemSchema, type AppLineItem } from '@/ai/schemas/invoice-item-schema';
+import { AILineItemSchema, type AppLineItem, PurchaseInvoiceSchema, type PurchaseInvoice } from '@/ai/schemas/invoice-item-schema';
+
+
+function extractJsonFromString(text: string): string | null {
+    const match = text.match(/```json\s*([\s\S]*?)\s*```/);
+    if (match && match[1]) {
+        return match[1];
+    }
+    if (text.trim().startsWith('{') && text.trim().endsWith('}')) {
+        return text.trim();
+    }
+    // Fallback for finding the first balanced JSON object
+    let depth = 0;
+    let start = -1;
+    for (let i = 0; i < text.length; i++) {
+        if (text[i] === '{') {
+            if (depth === 0) start = i;
+            depth++;
+        } else if (text[i] === '}') {
+            depth--;
+            if (depth === 0 && start !== -1) {
+                const slice = text.slice(start, i + 1);
+                try {
+                    JSON.parse(slice);
+                    return slice; 
+                } catch {
+                    start = -1; 
+                }
+            }
+        }
+    }
+    return null;
+}
 
 const ExtractIncomingInvoiceDataInputSchema = z.object({
   invoiceDataUri: z
@@ -20,37 +52,6 @@ const ExtractIncomingInvoiceDataInputSchema = z.object({
     ),
 });
 export type ExtractIncomingInvoiceDataInput = z.infer<typeof ExtractIncomingInvoiceDataInputSchema>;
-
-// Schema for AI model output (uses AILineItemSchema for flexibility)
-const AIOutputSchema = z.object({
-  doctype: z.literal('Purchase Invoice'),
-  supplier: z.string().optional(),
-  posting_date: z.string().optional().describe("Invoice date in YYYY-MM-DD format."),
-  due_date: z.string().optional().describe("Due date in YYYY-MM-DD format."),
-  bill_no: z.string().optional().describe("Invoice number."),
-  bill_date: z.string().optional().describe("Same as posting_date, in YYYY-MM-DD format."),
-  currency: z.string().optional().default('EUR'),
-  buying_price_list: z.string().optional().default('Standard Buying'),
-  items: z.array(AILineItemSchema).optional().describe('An array of line items.'),
-  taxes: z.array(z.object({
-    charge_type: z.string().optional(),
-    account_head: z.string().optional(),
-    rate: z.number().optional(),
-    tax_amount: z.number().optional(),
-  })).optional(),
-  supplier_address: z.string().optional(),
-  contact_person: z.string().optional(),
-  remarks: z.string().optional().describe("Any additional text from the invoice."),
-  custom_fields: z.object({
-    order_reference: z.string().optional(),
-    payment_method: z.string().optional(),
-    delivery_method: z.string().optional(),
-    iban: z.string().optional(),
-    swift: z.string().optional(),
-  }).optional(),
-  is_return: z.number().optional().describe("1 if it's a credit note (Gutschrift), otherwise 0 or undefined."),
-  error: z.string().optional().describe('An error message if the operation failed.'),
-});
 
 
 // Type for the exported function's return value
@@ -89,17 +90,25 @@ function normalizeProductCode(code: any): string {
 
 
 export async function extractIncomingInvoiceData(input: ExtractIncomingInvoiceDataInput): Promise<ExtractIncomingInvoiceDataOutput> {
-  const rawOutput = await extractIncomingInvoiceDataFlow(input);
+  let rawOutput: PurchaseInvoice & { error?: string};
+
+  try {
+    rawOutput = await extractIncomingInvoiceDataFlow(input);
+  } catch(e: any) {
+    console.error("[extractIncomingInvoiceData] Flow failed:", e);
+    return { rechnungspositionen: [], error: e.message || "The AI flow encountered a critical error." };
+  }
+
 
   if (rawOutput.error) {
     return { rechnungspositionen: [], error: rawOutput.error };
   }
 
   const normalizedLineItems: AppLineItem[] = (rawOutput.items || []).map(item => ({
-    productCode: normalizeProductCode(item.productCode),
-    productName: String(item.productName || '').trim().replace(/\n/g, ' '),
-    quantity: item.quantity === undefined ? 0 : item.quantity,
-    unitPrice: item.unitPrice === undefined ? 0.0 : item.unitPrice,
+    productCode: normalizeProductCode(item.item_code),
+    productName: String(item.item_name || '').trim().replace(/\n/g, ' '),
+    quantity: item.qty ?? 0,
+    unitPrice: item.rate ?? 0.0,
   }));
 
   const totalAmountFromItems = normalizedLineItems.reduce((acc, item) => acc + (item.quantity * item.unitPrice), 0);
@@ -123,7 +132,7 @@ export async function extractIncomingInvoiceData(input: ExtractIncomingInvoiceDa
     dueDate: rawOutput.due_date,
     taxes: rawOutput.taxes,
     remarks: rawOutput.remarks,
-    isReturn: rawOutput.is_return === 1,
+    isReturn: !!rawOutput.is_return,
   };
   
   return normalizedOutput;
@@ -132,76 +141,100 @@ export async function extractIncomingInvoiceData(input: ExtractIncomingInvoiceDa
 const prompt = ai.definePrompt({
   name: 'extractIncomingInvoiceDataPrompt',
   input: {schema: ExtractIncomingInvoiceDataInputSchema},
-  output: {schema: AIOutputSchema}, // AI tries to fill this schema
-  prompt: `Extrage din PDF-ul atașat toate informațiile relevante pentru contabilitate și ERPNext și structurează-le într-un obiect JSON gata de inserat ca Purchase Invoice în ERPNext.
+  prompt: `You are a strict data extractor for accounting. Output ONLY valid JSON, no prose.
+Your response MUST be a valid JSON object enclosed in a markdown code block (\`\`\`json ... \`\`\`).
+Target schema is ERPNext Purchase Invoice (see fields).
 
-Respectă următoarea structură:
+Rules:
+- Use ISO dates (YYYY-MM-DD).
+- Numbers as floats with dot decimal.
+- Sum check: net + VAT = gross; per-line amount = qty*rate.
+- If document is a Gutschrift/Credit Note set is_return true.
+- If due date absent, set null.
 
+Fields:
+\`\`\`json
 {
   "doctype": "Purchase Invoice",
   "supplier": "string",
   "posting_date": "YYYY-MM-DD",
-  "due_date": "YYYY-MM-DD",
+  "due_date": "YYYY-MM-DD|null",
   "bill_no": "string",
   "bill_date": "YYYY-MM-DD",
   "currency": "EUR",
-  "buying_price_list": "Standard Buying",
-  "items": [
-    {
-      "productCode": "string (ArtikelNr.)",
-      "productName": "string (descriere produs)",
-      "quantity": 1,
-      "unitPrice": 0.00
-    }
-  ],
-  "taxes": [
-    {
-      "charge_type": "On Net Total",
-      "account_head": "Input Tax 19%",
-      "rate": 19,
-      "tax_amount": 0.00
-    }
-  ],
+  "items": [{ "item_code": "string|null", "item_name": "string", "qty": 1, "uom": "string", "rate": 0, "amount": 0, "tax_rate": 19, "tax_amount": 0 }],
+  "taxes": [{ "charge_type": "On Net Total", "account_head": "Input Tax 19%", "rate": 19, "tax_amount": 0 }],
   "supplier_address": "string",
-  "contact_person": "string",
-  "remarks": "Orice text adițional de pe factură (ex: Klarna, DHL, AGB, retur etc.)",
-  "custom_fields": {
-    "order_reference": "string",
-    "payment_method": "string (Klarna, PayPal etc.)",
-    "delivery_method": "string (DHL, Spedition etc.)",
-    "iban": "string dacă apare",
-    "swift": "string dacă apare"
-  },
-  "is_return": 1
+  "contact_person": "string|null",
+  "remarks": "string",
+  "custom_fields": { "order_reference": "string|null", "payment_method": "string|null", "delivery_method": "string|null", "iban": "string|null", "swift": "string|null" },
+  "is_return": true
 }
+\`\`\`
 
-Instrucțiuni:
-	1.	Completează câmpurile lipsă (ex: due_date) pe baza contextului sau lasă null dacă nu există.
-	2.	Normalizează datele (format ISO pentru date, numere în float).
-	3.	Asigură-te că toate sumele se potrivesc: net + TVA = brut.
-	4.	Dacă factura e Gutschrift, marchează în JSON is_return: 1.
-	5.	Pune toate notele adiționale (Klarna, „Bitte nicht auf unser Konto zahlen”, WEEE, etc.) în remarks.
-
-Output-ul final trebuie să fie un JSON valid, fără explicații suplimentare.
-
-Invoice: {{media url=invoiceDataUri}}`,
+Source text between <DOC> tags. Ignore noise, footers, bank ads, page numbers.
+<DOC>
+{{media url=invoiceDataUri}}
+</DOC>
+`,
 });
 
 const extractIncomingInvoiceDataFlow = ai.defineFlow(
   {
     name: 'extractIncomingInvoiceDataFlow',
     inputSchema: ExtractIncomingInvoiceDataInputSchema,
-    outputSchema: AIOutputSchema, // Flow's direct output matches AI's schema
+    outputSchema: PurchaseInvoiceSchema.extend({ error: z.string().optional() }),
   },
   async (input) => {
+    let rawResponseText: string | undefined;
     try {
-        const {output} = await prompt(input, {model: 'googleai/gemini-1.5-flash-latest'});
-        return output || { doctype: 'Purchase Invoice' };
+        const { output } = await prompt(input, {model: 'googleai/gemini-1.5-flash-latest'});
+        rawResponseText = output;
+        
+        if (!rawResponseText) {
+            return { error: 'The AI model returned an empty response.' };
+        }
+
+        const jsonString = extractJsonFromString(rawResponseText);
+        
+        if (!jsonString) {
+            console.error("AI output did not contain a valid JSON block. Raw output:", rawResponseText);
+            return { error: 'The AI model returned a non-JSON response.' };
+        }
+        
+        let parsedJson;
+        try {
+            parsedJson = JSON.parse(jsonString);
+        } catch (e: any) {
+            console.error("Failed to parse JSON from AI output. JSON string:", jsonString, "Error:", e.message);
+            return { error: `Failed to parse the AI's JSON response: ${e.message}` };
+        }
+
+        const validationResult = PurchaseInvoiceSchema.safeParse(parsedJson);
+
+        if (!validationResult.success) {
+            console.error("AI output failed Zod validation:", validationResult.error.flatten());
+            return { error: `AI data has an unexpected format: ${validationResult.error.flatten().formErrors.join(', ')}` };
+        }
+        
+        // Final sanity check on item amounts
+        const doc = validationResult.data;
+        doc.items = doc.items.map(it => ({
+            ...it,
+            amount: Number((it.qty * it.rate).toFixed(2)),
+            tax_amount: it.tax_rate ? Number(((it.qty * it.rate) * it.tax_rate / 100).toFixed(2)) : (it.tax_amount ?? 0),
+        }));
+
+        return doc;
+
     } catch (e: any) {
         if (e.message && (e.message.includes('503') || e.message.includes('overloaded'))) {
-            return { doctype: 'Purchase Invoice', error: "The AI service is currently busy or unavailable. Please try again in a few moments." };
+            return { error: "The AI service is currently busy or unavailable. Please try again in a few moments." };
         }
-        return { doctype: 'Purchase Invoice', error: "An unexpected error occurred during invoice extraction." };
+        console.error("Critical error in extractIncomingInvoiceDataFlow:", e);
+        return { error: "An unexpected critical error occurred during invoice extraction." };
     }
   }
 );
+
+    

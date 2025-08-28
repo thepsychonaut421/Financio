@@ -36,7 +36,7 @@ interface IncomingInvoicesPageCache {
   erpSortKey?: ERPSortKey | null;
   erpSortOrder?: SortOrder;
   kontenrahmen?: string;
-  processedFileFingerprints?: Set<string>;
+  processedFileFingerprints?: string[];
 }
 
 const erpTableSortOptions: { key: ERPSortKey; label: string }[] = [
@@ -152,7 +152,7 @@ export function IncomingInvoicesPageContent() {
           erpSortKey,
           erpSortOrder,
           kontenrahmen,
-          processedFileFingerprints: Array.from(processedFileFingerprints) as any,
+          processedFileFingerprints: Array.from(processedFileFingerprints),
         };
         localStorage.setItem(LOCAL_STORAGE_PAGE_CACHE_KEY, JSON.stringify(cacheToSave));
       } catch (error) {
@@ -860,3 +860,5 @@ export function IncomingInvoicesPageContent() {
     </div>
   );
 }
+
+    
