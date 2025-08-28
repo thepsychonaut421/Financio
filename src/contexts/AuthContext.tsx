@@ -5,6 +5,7 @@ import React, { createContext, useContext, useState, useEffect, type ReactNode }
 import { useRouter, usePathname } from 'next/navigation';
 import { getAuth, onAuthStateChanged, type User, signInWithEmailAndPassword, signOut } from 'firebase/auth';
 import { initializeApp, getApps } from 'firebase/app';
+import { initializeAppCheck, ReCaptchaV3Provider } from 'firebase/app-check';
 
 // Your web app's Firebase configuration
 const firebaseConfig = {
@@ -18,6 +19,22 @@ const firebaseConfig = {
 
 // Initialize Firebase
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
+
+// Initialize App Check
+if (typeof window !== 'undefined') {
+    if (process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY) {
+        // Pass your reCAPTCHA v3 site key (public) to activate().
+        // You can get a site key by registering your app at
+        // https://www.google.com/recaptcha/admin.
+        initializeAppCheck(app, {
+          provider: new ReCaptchaV3Provider(process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY),
+        
+          // Optional: Set to true to allow list your debug token.
+          isTokenAutoRefreshEnabled: true
+        });
+    }
+}
+
 
 interface AuthContextType {
   user: User | null;
