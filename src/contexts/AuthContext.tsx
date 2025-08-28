@@ -27,12 +27,13 @@ if (getApps().length === 0) {
 
 const auth = getAuth(app);
 
-// Connect to Auth Emulator if running locally
-if (typeof window !== 'undefined' && window.location.hostname === 'localhost') {
+// Connect to Auth Emulator if the environment variable is set
+if (process.env.NEXT_PUBLIC_USE_EMULATOR === 'true') {
   console.log('Connecting to Firebase Auth Emulator...');
   try {
      // Point to the auth emulator
      connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true });
+     console.log('Successfully connected to Auth Emulator.');
   } catch (error: any) {
     if (error.code !== 'auth/emulator-config-failed') { // Ignore if already connected
         console.error('Error connecting to auth emulator:', error);
