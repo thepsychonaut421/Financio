@@ -5,6 +5,7 @@ import React, { createContext, useContext, useState, useEffect, type ReactNode }
 import { useRouter, usePathname } from 'next/navigation';
 import { getAuth, onAuthStateChanged, type User, signInWithEmailAndPassword, signOut, connectAuthEmulator } from 'firebase/auth';
 import { initializeApp, getApps, type FirebaseApp } from 'firebase/app';
+import { useToast } from '@/hooks/use-toast';
 
 // Your web app's Firebase configuration
 const firebaseConfig = {
@@ -30,9 +31,10 @@ const auth = getAuth(app);
 if (typeof window !== 'undefined' && window.location.hostname === 'localhost') {
   console.log('Connecting to Firebase Auth Emulator...');
   try {
+     // Point to the auth emulator
      connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true });
   } catch (error: any) {
-    if (error.code !== 'auth/emulator-config-failed') {
+    if (error.code !== 'auth/emulator-config-failed') { // Ignore if already connected
         console.error('Error connecting to auth emulator:', error);
     }
   }
@@ -55,6 +57,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const router = useRouter();
   const pathname = usePathname();
+  const { toast } = useToast();
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
@@ -72,8 +75,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // On successful login, onAuthStateChanged will trigger and handle the redirect
     } catch (error: any) {
         console.error("Login failed:", error.message);
-        // In a real app, you'd use the toast hook here
-        alert("Login Failed: " + error.message);
+        toast({
+          title: "Login Failed",
+          description: error.message,
+          variant: "destructive"
+        });
     }
   };
 
@@ -97,17 +103,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       router.push('/incoming-invoices');
     }
   }, [isLoading, user, pathname, router]);
-
-  if (!firebaseConfig.apiKey) {
-    return (
-      <div className="flex h-screen items-center justify-center bg-red-100 text-red-800">
-        <div className="p-8 text-center">
-          <h1 className="text-2xl font-bold">Firebase Configuration Error</h1>
-          <p className="mt-2">The Firebase API Key is missing. Please check your <code>.env.local</code> file and ensure all Firebase variables are set correctly.</p>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <AuthContext.Provider value={{ user, isAuthenticated: !!user, isLoading, login, logout, getIdToken }}>

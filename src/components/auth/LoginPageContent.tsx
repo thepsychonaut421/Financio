@@ -64,7 +64,7 @@ export function LoginPageContent() {
           </Link>
           <CardTitle className="text-3xl font-bold font-headline text-primary">Secure Login</CardTitle>
           <CardDescription className="text-muted-foreground">
-            Access your Financio dashboard.
+            Access your Financio dashboard. Use test@example.com / password.
           </CardDescription>
         </CardHeader>
         <CardContent className="p-6 sm:p-8 space-y-6">
