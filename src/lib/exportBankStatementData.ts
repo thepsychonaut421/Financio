@@ -83,7 +83,7 @@ const ERPNEXT_BANK_REC_HEADERS = [
   'Datum', 'Einzahlung', 'Auszahlung', 'Beschreibung', 'Referenznummer', 'Bankkonto', 'Währung'
 ];
 
-function getTransactionRowDataERPNextBankRec(transaction: BankTransactionAI): (string | number | undefined | null)[] {
+function getTransactionRowDataERPNextBankRec(transaction: BankTransactionAI, erpBankAccountName: string): (string | number | undefined | null)[] {
   const einzahlung = transaction.amount > 0 ? transaction.amount : 0;
   const auszahlung = transaction.amount < 0 ? Math.abs(transaction.amount) : 0;
   
@@ -93,17 +93,17 @@ function getTransactionRowDataERPNextBankRec(transaction: BankTransactionAI): (s
     auszahlung,
     transaction.description,
     transaction.recipientOrPayer || '', // Use recipientOrPayer as Referenznummer
-    'HAUPTKONTO', // Placeholder for Bankkonto
+    erpBankAccountName, // Use the dynamic bank account name
     transaction.currency,
   ];
 }
 
-export function bankTransactionsToERPNextBankRecCSV(transactions: BankTransactionAI[]): string {
+export function bankTransactionsToERPNextBankRecCSV(transactions: BankTransactionAI[], erpBankAccountName: string): string {
   if (!transactions || transactions.length === 0) return '';
 
   const csvRows = [
     ERPNEXT_BANK_REC_HEADERS.join(','),
-    ...transactions.map(tx => getTransactionRowDataERPNextBankRec(tx).map(escapeCSVField).join(','))
+    ...transactions.map(tx => getTransactionRowDataERPNextBankRec(tx, erpBankAccountName).map(escapeCSVField).join(','))
   ];
   return csvRows.join('\n');
 }

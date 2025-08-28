@@ -16,11 +16,18 @@ import { Copy, FileJson, FileSpreadsheet, Landmark, Send, Trash2 } from 'lucide-
 interface BankStatementActionButtonsProps {
   transactions: BankTransactionAI[];
   isSubmitting: boolean;
+  erpBankAccountName: string;
   onSubmitToERPNext: () => void;
   onClearAllData: () => void;
 }
 
-export function BankStatementActionButtons({ transactions, isSubmitting, onSubmitToERPNext, onClearAllData }: BankStatementActionButtonsProps) {
+export function BankStatementActionButtons({ 
+    transactions, 
+    isSubmitting,
+    erpBankAccountName, 
+    onSubmitToERPNext, 
+    onClearAllData 
+}: BankStatementActionButtonsProps) {
   const { toast } = useToast();
 
   const handleCopyToClipboard = async () => {
@@ -67,7 +74,11 @@ export function BankStatementActionButtons({ transactions, isSubmitting, onSubmi
       toast({ title: "No data", description: "There are no transactions to export for ERPNext Bank Rec.", variant: "destructive" });
       return;
     }
-    const csvData = bankTransactionsToERPNextBankRecCSV(transactions);
+    if (!erpBankAccountName.trim()) {
+      toast({ title: "Missing Bank Account", description: "Please enter the ERPNext Bank Account name before exporting.", variant: "destructive" });
+      return;
+    }
+    const csvData = bankTransactionsToERPNextBankRecCSV(transactions, erpBankAccountName);
     const fileName = 'erpnext_bank_reconciliation.csv';
     downloadFile(csvData, fileName, 'text/csv;charset=utf-8;');
     toast({ title: "ERPNext Bank Rec. CSV Exported", description: `Data for ${transactions.length} transaction(s) exported.` });

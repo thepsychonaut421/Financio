@@ -283,6 +283,7 @@ export function BankStatementExtractorPageContent() {
             <BankStatementActionButtons 
                 transactions={extractedTransactions} 
                 isSubmitting={isSubmitting}
+                erpBankAccountName={erpBankAccountName}
                 onSubmitToERPNext={handleSubmitToERPNext}
                 onClearAllData={handleClearAllData}
              />
