@@ -32,7 +32,7 @@ if (process.env.NEXT_PUBLIC_USE_EMULATOR === 'true') {
   console.log('Connecting to Firebase Auth Emulator...');
   try {
      // Point to the auth emulator
-     connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true });
+     connectAuthEmulator(auth, 'http://localhost:9099', { disableWarnings: true });
      console.log('Successfully connected to Auth Emulator.');
   } catch (error: any) {
     if (error.code !== 'auth/emulator-config-failed') { // Ignore if already connected
