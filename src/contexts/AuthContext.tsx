@@ -31,9 +31,9 @@ const auth = getAuth(app);
 if (process.env.NEXT_PUBLIC_USE_EMULATOR === 'true') {
   console.log('Connecting to Firebase Auth Emulator...');
   try {
-     // Point to the auth emulator
-     connectAuthEmulator(auth, 'http://localhost:9099', { disableWarnings: true });
-     console.log('Successfully connected to Auth Emulator.');
+     // Point to the auth emulator at 0.0.0.0
+     connectAuthEmulator(auth, 'http://0.0.0.0:9099', { disableWarnings: true });
+     console.log('Successfully configured Auth Emulator connection.');
   } catch (error: any) {
     if (error.code !== 'auth/emulator-config-failed') { // Ignore if already connected
         console.error('Error connecting to auth emulator:', error);
