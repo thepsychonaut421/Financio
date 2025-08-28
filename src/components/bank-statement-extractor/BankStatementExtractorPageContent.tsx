@@ -10,9 +10,18 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertCircle, Info } from 'lucide-react';
 import { readFileAsDataURL } from '@/lib/file-helpers';
 import { extractBankStatementData, type BankTransactionAI } from '@/ai/flows/extract-bank-statement-data';
-import { v4 as uuidv4 } from 'uuid';
+import { useToast } from '@/hooks/use-toast';
 
 type ProcessingStatus = 'idle' | 'processing' | 'success' | 'error';
+
+interface ExtractorState {
+  // We can't persist File objects, so we store their data URIs and names
+  files: { name: string; dataUri: string }[];
+  transactions: BankTransactionAI[];
+  status: ProcessingStatus;
+}
+
+const LOCAL_STORAGE_KEY = 'bankStatementExtractorCache';
 
 export function BankStatementExtractorPageContent() {
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
@@ -22,10 +31,46 @@ export function BankStatementExtractorPageContent() {
   const [currentFileProgress, setCurrentFileProgress] = useState('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [currentYear, setCurrentYear] = useState<string>('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const { toast } = useToast();
 
   useEffect(() => {
     setCurrentYear(new Date().getFullYear().toString());
+
+    // Load from localStorage on initial mount
+    try {
+      const cachedStateJSON = localStorage.getItem(LOCAL_STORAGE_KEY);
+      if (cachedStateJSON) {
+        const cachedState: ExtractorState = JSON.parse(cachedStateJSON);
+        // We can't restore File objects, but we can show that files were selected
+        // For simplicity, we just restore the transactions and status.
+        // A more advanced implementation could re-create File objects from blobs if needed.
+        if (cachedState.transactions.length > 0) {
+            setExtractedTransactions(cachedState.transactions);
+            setStatus(cachedState.status);
+        }
+      }
+    } catch (e) {
+      console.error("Failed to load state from localStorage", e);
+      localStorage.removeItem(LOCAL_STORAGE_KEY);
+    }
   }, []);
+
+  // Persist to localStorage whenever transactions or status change
+  useEffect(() => {
+    if (status !== 'processing' && status !== 'idle') {
+        try {
+            const stateToCache: Partial<ExtractorState> = {
+                transactions: extractedTransactions,
+                status: status,
+            };
+            localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(stateToCache));
+        } catch (e) {
+            console.error("Failed to save state to localStorage", e);
+        }
+    }
+  }, [extractedTransactions, status]);
+
 
   const handleFilesSelected = useCallback((files: File[]) => {
     setSelectedFiles(files);
@@ -34,6 +79,7 @@ export function BankStatementExtractorPageContent() {
     setErrorMessage(null);
     setProgress(0);
     setCurrentFileProgress('');
+    localStorage.removeItem(LOCAL_STORAGE_KEY); // Clear cache on new file selection
   }, []);
 
   const handleProcessFiles = async () => {
@@ -83,6 +129,40 @@ export function BankStatementExtractorPageContent() {
     }
   };
 
+  const handleSubmitToERPNext = async () => {
+    if (extractedTransactions.length === 0) {
+      toast({ title: "No Data", description: "No transactions to submit to ERPNext.", variant: "destructive" });
+      return;
+    }
+    setIsSubmitting(true);
+    try {
+      const response = await fetch('/api/erpnext/bank', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(extractedTransactions),
+      });
+
+      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to submit bank transactions');
+      }
+
+      toast({
+        title: "Bank Transactions Submitted",
+        description: (
+            <pre className="mt-2 w-full max-w-sm rounded-md bg-slate-950 p-4 whitespace-pre-wrap">
+              <code className="text-white">{result.message}</code>
+            </pre>
+        ),
+      });
+
+    } catch (error: any) {
+      toast({ title: "Submission Failed", description: error.message, variant: "destructive" });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   return (
     <div className="container mx-auto px-4 py-8 md:px-8 md:py-12 flex-grow">
       <header className="mb-8 text-center">
@@ -127,7 +207,11 @@ export function BankStatementExtractorPageContent() {
 
         {(status === 'success' || (status !== 'processing' && extractedTransactions.length > 0)) && (
           <div className="mt-8">
-            <BankStatementActionButtons transactions={extractedTransactions} />
+            <BankStatementActionButtons 
+                transactions={extractedTransactions} 
+                isSubmitting={isSubmitting}
+                onSubmitToERPNext={handleSubmitToERPNext}
+             />
             <BankStatementDataTable transactions={extractedTransactions} />
           </div>
         )}

@@ -7,17 +7,19 @@ import {
   bankTransactionsToCSV,
   bankTransactionsToTSV,
   bankTransactionsToJSON,
-  bankTransactionsToERPNextBankRecCSV, // Added new export function
+  bankTransactionsToERPNextBankRecCSV,
   downloadFile 
 } from '@/lib/exportBankStatementData'; 
 import type { BankTransactionAI } from '@/ai/flows/extract-bank-statement-data';
-import { Copy, FileJson, FileSpreadsheet, Landmark } from 'lucide-react'; // Added Landmark
+import { Copy, FileJson, FileSpreadsheet, Landmark, Send } from 'lucide-react';
 
 interface BankStatementActionButtonsProps {
   transactions: BankTransactionAI[];
+  isSubmitting: boolean;
+  onSubmitToERPNext: () => void;
 }
 
-export function BankStatementActionButtons({ transactions }: BankStatementActionButtonsProps) {
+export function BankStatementActionButtons({ transactions, isSubmitting, onSubmitToERPNext }: BankStatementActionButtonsProps) {
   const { toast } = useToast();
 
   const handleCopyToClipboard = async () => {
@@ -91,6 +93,14 @@ export function BankStatementActionButtons({ transactions }: BankStatementAction
       <Button onClick={handleExportERPNextBankRec} variant="secondary" className="w-full sm:w-auto">
         <Landmark className="mr-2 h-4 w-4" />
         Export ERPNext Bank Rec.
+      </Button>
+      <Button
+        variant="secondary"
+        onClick={onSubmitToERPNext}
+        disabled={isSubmitting || transactions.length === 0}
+      >
+        <Send className="mr-2 h-4 w-4" />
+        {isSubmitting ? 'Submitting...' : 'Submit to ERPNext (API)'}
       </Button>
     </div>
   );

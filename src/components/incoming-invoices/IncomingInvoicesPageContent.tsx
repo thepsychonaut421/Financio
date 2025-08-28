@@ -77,7 +77,6 @@ export function IncomingInvoicesPageContent() {
   const [isExportingToERPNext, setIsExportingToERPNext] = useState(false);
   const [isExportingSuppliers, setIsExportingSuppliers] = useState(false);
   const [isExportingItems, setIsExportingItems] = useState(false);
-  const [isExportingBank, setIsExportingBank] = useState(false);
   const [isExportingZip, setIsExportingZip] = useState(false);
   const { toast } = useToast();
   const [currentYear, setCurrentYear] = useState<string>('');
@@ -538,43 +537,35 @@ export function IncomingInvoicesPageContent() {
   };
 
     const handleSubmitItemsAPI = async () => {
-        setIsExportingItems(true);
-        try {
-            const response = await fetch('/api/erpnext/items', { 
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ invoices: erpProcessedInvoices })
-            });
-            const result = await response.json();
-            if (!response.ok) {
-                throw new Error(result.error || 'Failed to submit items');
-            }
-            toast({ title: "Items API", description: result.summary, variant: "default" });
-        } catch (error: any) {
-            toast({ title: "Items API Failed", description: error.message, variant: "destructive" });
-        } finally {
-            setIsExportingItems(false);
+      setIsExportingItems(true);
+      try {
+        const response = await fetch('/api/erpnext/items', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ invoices: erpProcessedInvoices }),
+        });
+        if (!response.ok) {
+          const result = await response.json();
+          throw new Error(result.error || 'Failed to submit items');
         }
-    };
-
-    const handleSubmitBankAPI = async () => {
-        setIsExportingBank(true);
-        try {
-            const response = await fetch('/api/erpnext/bank', { 
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                // The backend route will fetch the data from its source
-            });
-            const result = await response.json();
-            if (!response.ok) {
-                throw new Error(result.error || 'Failed to submit bank transactions');
-            }
-            toast({ title: "Bank API", description: result.message, variant: "default" });
-        } catch (error: any) {
-            toast({ title: "Bank API Failed", description: error.message, variant: "destructive" });
-        } finally {
-            setIsExportingBank(false);
-        }
+        const result = await response.json();
+        toast({
+          title: 'Items API',
+          description: (
+            <pre className="mt-2 w-full max-w-sm rounded-md bg-slate-950 p-4 whitespace-pre-wrap">
+              <code className="text-white">{result.summary}</code>
+            </pre>
+          ),
+        });
+      } catch (error: any) {
+        toast({
+          title: 'Items API Failed',
+          description: error.message,
+          variant: 'destructive',
+        });
+      } finally {
+        setIsExportingItems(false);
+      }
     };
 
 
@@ -791,8 +782,6 @@ export function IncomingInvoicesPageContent() {
               isExportingSuppliers={isExportingSuppliers}
               onSubmitItemsAPI={handleSubmitItemsAPI}
               isSubmittingItems={isExportingItems}
-              onSubmitBankAPI={handleSubmitBankAPI}
-              isSubmittingBank={isExportingBank}
               onExportInvoicesAsZip={handleExportInvoicesAsZip} 
               isExportingZip={isExportingZip} 
               onClearAllInvoices={handleClearAllInvoices}

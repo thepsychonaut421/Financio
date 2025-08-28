@@ -12,7 +12,7 @@ import {
   downloadFile 
 } from '@/lib/export-helpers';
 import type { IncomingInvoiceItem, ERPIncomingInvoiceItem } from '@/types/incoming-invoice';
-import { Copy, FileJson, FileSpreadsheet, ExternalLink, Users, FileArchive, Trash2, Send, Package, Landmark } from 'lucide-react'; // Added Package, Landmark
+import { Copy, FileJson, FileSpreadsheet, ExternalLink, Users, FileArchive, Trash2, Send, Package } from 'lucide-react'; // Removed Landmark
 
 interface IncomingInvoiceActionButtonsProps {
   invoices: IncomingInvoiceItem[] | ERPIncomingInvoiceItem[];
@@ -21,10 +21,8 @@ interface IncomingInvoiceActionButtonsProps {
   isExportingToERPNext: boolean;
   onExportSuppliersERPNext: () => void;
   isExportingSuppliers: boolean;
-  onSubmitItemsAPI: () => void; // New
-  isSubmittingItems: boolean; // New
-  onSubmitBankAPI: () => void; // New
-  isSubmittingBank: boolean; // New
+  onSubmitItemsAPI: () => void;
+  isSubmittingItems: boolean;
   onExportInvoicesAsZip: () => void; 
   isExportingZip: boolean; 
   onClearAllInvoices: () => void;
@@ -40,8 +38,6 @@ export function IncomingInvoiceActionButtons({
   isExportingSuppliers,
   onSubmitItemsAPI,
   isSubmittingItems,
-  onSubmitBankAPI,
-  isSubmittingBank,
   onExportInvoicesAsZip, 
   isExportingZip,
   onClearAllInvoices,
@@ -140,14 +136,6 @@ export function IncomingInvoiceActionButtons({
             >
               <Package className="mr-2 h-4 w-4" />
               {isSubmittingItems ? 'Submitting...' : 'Submit Items (API)'}
-            </Button>
-            <Button
-              variant="secondary"
-              onClick={onSubmitBankAPI}
-              disabled={isSubmittingBank || invoices.length === 0}
-            >
-              <Landmark className="mr-2 h-4 w-4" />
-              {isSubmittingBank ? 'Submitting...' : 'Submit Bank Rec. (API)'}
             </Button>
           <Button 
             onClick={onExportInvoicesAsZip}
