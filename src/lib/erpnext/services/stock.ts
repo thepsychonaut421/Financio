@@ -5,8 +5,14 @@ interface Options {
   headers?: Record<string, string>;
 }
 
-function buildKey(
-  type: 'reconciliation' | 'entry',
+type StockDocType = 'reconciliation' | 'entry';
+
+/**
+ * Build the idempotency key used for stock operations.
+ * The format is: `stock:{type}:{warehouse}:{item_code}:{posting_date}`
+ */
+export function stockKey(
+  type: StockDocType,
   warehouse: string,
   itemCode: string,
   postingDate: string,
@@ -14,17 +20,25 @@ function buildKey(
   return `stock:${type}:${warehouse}:${itemCode}:${postingDate}`;
 }
 
-export async function createStockReconciliation(
-  doc: StockReconciliation,
+async function postStockDocument(
+  doc: StockReconciliation | StockEntry,
+  key: string,
   options: Options,
-): Promise<string> {
-  const item = doc.items[0];
-  const key = buildKey('reconciliation', item.warehouse, item.item_code, doc.posting_date);
+): Promise<void> {
   await fetch(options.endpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
     body: JSON.stringify({ ...doc, idempotency_key: key }),
   });
+}
+
+export async function createStockReconciliation(
+  doc: StockReconciliation,
+  options: Options,
+): Promise<string> {
+  const item = doc.items[0];
+  const key = stockKey('reconciliation', item.warehouse, item.item_code, doc.posting_date);
+  await postStockDocument(doc, key, options);
   return key;
 }
 
@@ -34,13 +48,7 @@ export async function createStockEntry(
 ): Promise<string> {
   const item = doc.items[0];
   const warehouse = item.s_warehouse || item.t_warehouse || '';
-  const key = buildKey('entry', warehouse, item.item_code, doc.posting_date);
-  await fetch(options.endpoint, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
-    body: JSON.stringify({ ...doc, idempotency_key: key }),
-  });
+  const key = stockKey('entry', warehouse, item.item_code, doc.posting_date);
+  await postStockDocument(doc, key, options);
   return key;
 }
-
-export { buildKey as stockKey };

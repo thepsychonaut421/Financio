@@ -28,11 +28,11 @@ export async function POST(request: Request) {
           { status: 500 },
         );
       }
-      await createStockReconciliation(body as StockReconciliation, {
+      const key = await createStockReconciliation(body as StockReconciliation, {
         endpoint: process.env.ERNEXT_STOCK_RECONCILIATION_URL!,
         headers,
       });
-      return NextResponse.json({ message: 'Stock reconciliation processed.' });
+      return NextResponse.json({ message: 'Stock reconciliation processed.', key });
     }
 
     if (type === 'entry') {
@@ -42,11 +42,11 @@ export async function POST(request: Request) {
           { status: 500 },
         );
       }
-      await createStockEntry(body as StockEntry, {
+      const key = await createStockEntry(body as StockEntry, {
         endpoint: process.env.ERNEXT_STOCK_ENTRY_URL!,
         headers,
       });
-      return NextResponse.json({ message: 'Stock entry processed.' });
+      return NextResponse.json({ message: 'Stock entry processed.', key });
     }
 
     return NextResponse.json({ error: 'Invalid type parameter.' }, { status: 400 });
