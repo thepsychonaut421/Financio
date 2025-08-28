@@ -1,21 +1,27 @@
 import { NextResponse } from 'next/server';
 import type { BankTransaction } from '@/lib/erpnext/types';
-import { parseBankCSV, toBankTransactions } from '@/csv/parsers';
-import { upsertBankTransactions, applyMatchingRules } from '@/lib/erpnext/services/bank';
+import { parseCsvLines, upsertBankTransactions, applyMatchingRules } from '@/lib/erpnext/services/bank';
 import type { ERPIncomingInvoiceItem } from '@/types/incoming-invoice';
 
 export async function POST(request: Request) {
-  if (!process.env.ERNEXT_BANK_TRANSACTION_URL || !process.env.ERNEXT_API_KEY || !process.env.ERNEXT_API_SECRET) {
-    return NextResponse.json(
-      { error: 'Server configuration error: ERPNext credentials not set.' },
-      { status: 500 },
-    );
+  const { searchParams } = new URL(request.url);
+  const dryRun = searchParams.get('dryRun') === 'true';
+
+  if (!dryRun) {
+    if (!process.env.ERNEXT_BANK_TRANSACTION_URL || !process.env.ERNEXT_API_KEY || !process.env.ERNEXT_API_SECRET) {
+      return NextResponse.json(
+        { error: 'Server configuration error: ERPNext credentials not set.' },
+        { status: 500 },
+      );
+    }
   }
 
-  const headers = {
-    Authorization: `token ${process.env.ERNEXT_API_KEY}:${process.env.ERNEXT_API_SECRET}`,
-    Accept: 'application/json',
-  };
+  const headers = !dryRun
+    ? {
+        Authorization: `token ${process.env.ERNEXT_API_KEY}:${process.env.ERNEXT_API_SECRET}`,
+        Accept: 'application/json',
+      }
+    : undefined;
 
   let transactions: BankTransaction[] = [];
   const contentType = request.headers.get('content-type') || '';
@@ -23,13 +29,12 @@ export async function POST(request: Request) {
   try {
     if (contentType.includes('text/csv')) {
       const csv = await request.text();
-      const rows = parseBankCSV(csv);
       const account = process.env.ERNEXT_BANK_ACCOUNT || '';
-      transactions = toBankTransactions(rows, account);
+      transactions = parseCsvLines(csv, account);
     } else {
       const body = await request.json();
       transactions = (body.transactions || []) as BankTransaction[];
-      if (body.invoices) {
+      if (!dryRun && body.invoices) {
         await applyMatchingRules(
           transactions,
           body.invoices as ERPIncomingInvoiceItem[],
@@ -47,10 +52,12 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'No transactions provided.' }, { status: 400 });
     }
 
-    await upsertBankTransactions(transactions, {
-      endpoint: process.env.ERNEXT_BANK_TRANSACTION_URL!,
-      headers,
-    });
+    if (!dryRun) {
+      await upsertBankTransactions(transactions, {
+        endpoint: process.env.ERNEXT_BANK_TRANSACTION_URL!,
+        headers,
+      });
+    }
 
     return NextResponse.json({ message: `${transactions.length} transaction(s) processed.` });
   } catch (e: any) {
