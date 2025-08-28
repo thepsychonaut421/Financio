@@ -3,9 +3,8 @@
 
 import React, { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
-import { getAuth, onAuthStateChanged, type User, signInWithEmailAndPassword, signOut } from 'firebase/auth';
+import { getAuth, onAuthStateChanged, type User, signInWithEmailAndPassword, signOut, connectAuthEmulator } from 'firebase/auth';
 import { initializeApp, getApps, type FirebaseApp } from 'firebase/app';
-// Removed AppCheck imports as they are causing persistent errors
 
 // Your web app's Firebase configuration
 const firebaseConfig = {
@@ -25,6 +24,20 @@ if (getApps().length === 0) {
   app = getApps()[0];
 }
 
+const auth = getAuth(app);
+
+// Connect to Auth Emulator if running locally
+if (typeof window !== 'undefined' && window.location.hostname === 'localhost') {
+  console.log('Connecting to Firebase Auth Emulator...');
+  try {
+     connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true });
+  } catch (error: any) {
+    if (error.code !== 'auth/emulator-config-failed') {
+        console.error('Error connecting to auth emulator:', error);
+    }
+  }
+}
+
 
 interface AuthContextType {
   user: User | null;
@@ -42,7 +55,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const router = useRouter();
   const pathname = usePathname();
-  const auth = getAuth(app);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
@@ -51,7 +63,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
 
     return () => unsubscribe();
-  }, [auth]);
+  }, []);
 
   const login = async () => {
     try {

@@ -28,7 +28,7 @@
     },
     "auth": {
       "port": 9099,
-      "config": "auth_export/auth.json"
+      "import": "auth_export"
     },
     "firestore": {
       "port": 8080
