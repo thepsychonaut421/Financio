@@ -2,6 +2,8 @@
 'use client';
 
 import type { BankTransactionAI } from '@/ai/flows/extract-bank-statement-data';
+import { format as formatDateFns, parseISO, isValid } from 'date-fns';
+
 
 // Re-using downloadFile from another helper as it's generic
 export function downloadFile(content: string, fileName: string, mimeType: string): void {
@@ -83,12 +85,32 @@ const ERPNEXT_BANK_REC_HEADERS = [
   'Datum', 'Einzahlung', 'Auszahlung', 'Beschreibung', 'Referenznummer', 'Bankkonto', 'Währung'
 ];
 
+function formatDateForERPNext(dateString: string): string {
+    try {
+        const date = parseISO(dateString); // Assumes dateString is already YYYY-MM-DD
+        if (isValid(date)) {
+            return formatDateFns(date, 'yyyy-MM-dd');
+        }
+    } catch(e) {
+        // Fallback for other potential formats, though should not be needed if AI flow is correct
+        try {
+            const d = new Date(dateString);
+            if(isValid(d)) return formatDateFns(d, 'yyyy-MM-dd');
+        } catch(e2) {
+             console.error(`Could not parse date: ${dateString}`);
+             return dateString; // return original if all fails
+        }
+    }
+    return dateString; 
+}
+
+
 function getTransactionRowDataERPNextBankRec(transaction: BankTransactionAI, erpBankAccountName: string): (string | number | undefined | null)[] {
   const einzahlung = transaction.amount > 0 ? transaction.amount : 0;
   const auszahlung = transaction.amount < 0 ? Math.abs(transaction.amount) : 0;
   
   return [
-    transaction.date, // Already YYYY-MM-DD
+    formatDateForERPNext(transaction.date), // Format date to YYYY-MM-DD
     einzahlung,
     auszahlung,
     transaction.description,
