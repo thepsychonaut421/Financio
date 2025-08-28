@@ -1,6 +1,8 @@
+
 // src/lib/erpnext-api.ts
 
 import type { ItemPayload, PurchaseInvoice, Supplier, BankTransaction, JournalEntry, JournalEntryAccount } from "./erpnext/types";
+import { logError, logInfo } from "./logger";
 
 /**
  * Generic fetch helper for ERPNext REST API.
@@ -32,15 +34,18 @@ async function erpnextFetch(path: string, opts: RequestInit = {}): Promise<any> 
     const responseBody = await response.text();
   
     if (!response.ok) {
-        console.error("ERPNext API Error Response:", responseBody);
         let errorDetails = responseBody;
         try {
             const errorJson = JSON.parse(responseBody);
-            errorDetails = errorJson.exception || errorJson.message || responseBody;
+            errorDetails = errorJson.exception || errorJson.message || errorJson._server_messages || responseBody;
+            if (Array.isArray(errorJson._server_messages)) {
+              errorDetails = JSON.parse(errorJson._server_messages[0]).message;
+            }
         } catch (e) {
             // ignore if response is not json
         }
-      throw new Error(`ERPNext API request failed with status ${response.status}: ${errorDetails}`);
+        logError({ workflow: 'erpnext-api', docType: 'Generic', action: 'fetch-error' }, errorDetails, `ERPNext API request failed to ${path}`);
+        throw new Error(`ERPNext API request failed with status ${response.status}: ${errorDetails}`);
     }
   
     try {
@@ -51,7 +56,53 @@ async function erpnextFetch(path: string, opts: RequestInit = {}): Promise<any> 
 }
   
 
-// --- Resource Creation Functions ---
+// --- Resource Creation & Ensure Functions ---
+
+/**
+ * Ensures a supplier exists in ERPNext. If not, it creates one.
+ * @param name The name of the supplier.
+ * @param payload Additional data for creation if the supplier doesn't exist.
+ */
+export async function ensureSupplierExists(name: string, payload?: Partial<Supplier>) {
+    try {
+        return await erpnextFetch(`/api/resource/Supplier/${encodeURIComponent(name)}`, { method: 'GET' });
+    } catch (e: any) {
+        if (e.message && e.message.includes('404')) {
+            logInfo({ workflow: 'erpnext-api', docType: 'Supplier', action: 'ensure-create' }, `Supplier "${name}" not found, creating.`);
+            return createSupplier({
+                supplier_name: name,
+                supplier_group: "Alle Lieferantengruppen", // Default group
+                supplier_type: "Company",
+                ...payload
+            });
+        }
+        throw e; // Re-throw other errors
+    }
+}
+
+/**
+ * Ensures an item exists in ERPNext. If not, it creates one.
+ * @param item_code The item code.
+ * @param payload Additional data for creation if the item doesn't exist.
+ */
+export async function ensureItemExists(item_code: string, payload?: Partial<ItemPayload>) {
+    try {
+        return await erpnextFetch(`/api/resource/Item/${encodeURIComponent(item_code)}`, { method: 'GET' });
+    } catch (e: any) {
+        if (e.message && e.message.includes('404')) {
+            logInfo({ workflow: 'erpnext-api', docType: 'Item', action: 'ensure-create' }, `Item "${item_code}" not found, creating.`);
+            return createItem({
+                item_code: item_code,
+                item_name: payload?.item_name || item_code,
+                item_group: "Alle Artikelgruppen", // Default group
+                stock_uom: "Stk", // Default UOM
+                ...payload
+            });
+        }
+        throw e; // Re-throw other errors
+    }
+}
+
 
 /**
  * Creates a new Supplier in ERPNext.
@@ -86,7 +137,6 @@ export async function createBankTransaction(tx: BankTransaction) {
             body: JSON.stringify(tx),
         });
     } catch (error: any) {
-        // Fallback to Journal Entry if Bank Transaction fails (e.g., doctype not available)
         console.warn("Bank Transaction failed, falling back to Journal Entry. Error:", error.message);
         
         const accounts: JournalEntryAccount[] = [];

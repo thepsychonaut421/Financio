@@ -12,6 +12,10 @@ interface MapperOptions {
   headers?: Record<string, string>;
 }
 
+const ERP_STOCK_MODE = process.env.ERP_STOCK_MODE || 'INVOICE_UPDATE';
+const ERP_DEFAULT_WAREHOUSE = process.env.ERP_DEFAULT_WAREHOUSE || 'Stores - B';
+
+
 function shouldPost(options: MapperOptions): boolean {
   const mode = process.env.FINANCIO_MODE || 'api';
   return mode === 'api' && !options.dryRun && Boolean(options.endpoint);
@@ -55,12 +59,14 @@ export async function mapPurchaseInvoice(
     grand_total: invoice.gesamtbetrag,
     is_paid: invoice.istBezahlt,
     set_posting_time: 1,
+    update_stock: ERP_STOCK_MODE === 'INVOICE_UPDATE' ? 1 : 0,
     items: resolvedItems.map(item => ({
       item_code: item.itemCode,
       item_name: item.productName,
       description: item.productName,
       qty: item.quantity,
       rate: item.unitPrice,
+      warehouse: ERP_STOCK_MODE === 'INVOICE_UPDATE' ? ERP_DEFAULT_WAREHOUSE : undefined,
     })),
   };
 
@@ -87,6 +93,8 @@ export async function mapPurchaseInvoice(
     csvRows.push(invoiceData.join(','));
   }
 
+  // This function is now more of a pure mapper; the API call is handled in the route.
+  // The 'shouldPost' logic might be deprecated or moved.
   if (shouldPost(options)) {
     const existing = await findExistingPurchaseInvoice(payload, {
       endpoint: options.endpoint!,

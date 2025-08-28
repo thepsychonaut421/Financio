@@ -24,6 +24,7 @@ export const PurchaseInvoiceSchema = z.object({
   grand_total: z.number().optional(),
   is_paid: z.union([z.boolean(), z.number()]).optional(),
   set_posting_time: z.number().optional(),
+  update_stock: z.number().optional(), // Added for stock management
   items: z.array(ErpInvoiceItemSchema),
 });
 export type PurchaseInvoice = z.infer<typeof PurchaseInvoiceSchema>;
@@ -38,6 +39,7 @@ export const SalesInvoiceSchema = z.object({
   grand_total: z.number().optional(),
   is_pos: z.boolean().optional(),
   set_posting_time: z.number().optional(),
+  update_stock: z.number().optional(), // Added for stock management
   items: z.array(ErpInvoiceItemSchema),
 });
 export type SalesInvoice = z.infer<typeof SalesInvoiceSchema>;
@@ -48,8 +50,8 @@ export const ItemSchema = z.object({
   item_code: z.string(),
   item_name: z.string(),
   description: z.string().optional(),
-  item_group: z.string(),
-  stock_uom: z.string(),
+  item_group: z.string().optional().default("Alle Artikelgruppen"),
+  stock_uom: z.string().optional().default("Stk"),
   is_stock_item: z.boolean().default(true).optional(),
 });
 export type ItemPayload = z.infer<typeof ItemSchema>;
@@ -164,8 +166,8 @@ export type StockEntry = z.infer<typeof StockEntrySchema>;
 export const SupplierSchema = z.object({
     doctype: z.literal('Supplier'),
     supplier_name: z.string(),
-    supplier_group: z.string().optional(),
-    supplier_type: z.enum(['Company', 'Individual']).optional(),
+    supplier_group: z.string().optional().default("Alle Lieferantengruppen"),
+    supplier_type: z.enum(['Company', 'Individual']).optional().default("Company"),
     tax_id: z.string().optional(),
 });
 export type Supplier = z.infer<typeof SupplierSchema>;
