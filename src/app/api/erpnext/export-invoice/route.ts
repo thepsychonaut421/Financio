@@ -6,13 +6,22 @@
 
 import { NextResponse } from 'next/server';
 import type { ERPIncomingInvoiceItem } from '@/types/incoming-invoice';
+import { logInfo, logError } from '@/lib/logger';
 
 
 export async function POST(request: Request) {
-  console.log('[ExportERP API] Route /api/erpnext/export-invoice called.');
+  const start = Date.now();
+  logInfo(
+    { workflow: 'export-invoice', docType: 'Purchase Invoice', action: 'start' },
+    'Route /api/erpnext/export-invoice called',
+  );
 
   if (!process.env.ERNEXT_API_URL || !process.env.ERNEXT_API_KEY || !process.env.ERNEXT_API_SECRET) {
-      console.error('[ExportERP API] ERPNext API credentials are not configured in .env file.');
+      logError(
+        { workflow: 'export-invoice', docType: 'Purchase Invoice', action: 'error' },
+        new Error('ERPNext credentials not set'),
+        'ERPNext API credentials are not configured in .env file.',
+      );
       return NextResponse.json({ error: 'Server configuration error: ERPNext credentials not set.' }, { status: 500 });
   }
 
@@ -26,9 +35,16 @@ export async function POST(request: Request) {
 
     let successCount = 0;
     let errorCount = 0;
-    const errors: { invoiceNumber?: string, error: string }[] = [];
+    const errors: { invoiceNumber?: string; error: string }[] = [];
 
-    console.log(`[ExportERP API] Preparing to export ${invoices.length} invoice(s) to ERPNext.`);
+    logInfo(
+      {
+        workflow: 'export-invoice',
+        docType: 'Purchase Invoice',
+        action: 'prepare',
+      },
+      `Preparing to export ${invoices.length} invoice(s) to ERPNext.`,
+    );
 
     for (const invoice of invoices) {
       const erpNextPayload = {
@@ -52,7 +68,7 @@ export async function POST(request: Request) {
       };
 
       try {
-        console.log('[ExportERP API] Attempting to fetch ERPNext API with payload for invoice:', invoice.rechnungsnummer);
+        const callStart = Date.now();
         const response = await fetch(process.env.ERNEXT_API_URL!, {
           method: 'POST',
           headers: {
@@ -62,50 +78,102 @@ export async function POST(request: Request) {
           },
           body: JSON.stringify(erpNextPayload),
         });
-        console.log('[ExportERP API] ERPNext API response status:', response.status);
-
+        const duration = Date.now() - callStart;
 
         if (!response.ok) {
           let errorData;
           try {
             errorData = await response.json();
-            console.log('[ExportERP API] ERPNext API error response (JSON):', errorData);
           } catch (e) {
             const errorText = await response.text();
-            console.log('[ExportERP API] ERPNext API error response (text):', errorText);
             errorData = { message: errorText || `ERPNext API Error: ${response.status} ${response.statusText}` };
           }
           throw new Error(errorData.message || `ERPNext API Error: ${response.status} ${response.statusText}`);
         }
         const responseData = await response.json();
-        console.log('[ExportERP API] Successfully created Purchase Invoice in ERPNext:', responseData.data.name);
-        
+        logInfo(
+          {
+            workflow: 'export-invoice',
+            docType: 'Purchase Invoice',
+            docId: invoice.rechnungsnummer,
+            action: 'insert',
+            duration_ms: duration,
+          },
+          `Created Purchase Invoice ${responseData.data.name} in ERPNext`,
+        );
         successCount++;
-
       } catch (e: any) {
         errorCount++;
-        const errorMessage = e.message || "Unknown error during individual invoice export";
+        const errorMessage = e.message || 'Unknown error during individual invoice export';
         errors.push({ invoiceNumber: invoice.rechnungsnummer || invoice.pdfFileName, error: errorMessage });
-        console.error(`[ExportERP API] Failed to export invoice ${invoice.rechnungsnummer} to ERPNext:`, errorMessage, e.stack);
+        logError(
+          {
+            workflow: 'export-invoice',
+            docType: 'Purchase Invoice',
+            docId: invoice.rechnungsnummer,
+            action: 'error',
+          },
+          e,
+          `Failed to export invoice ${invoice.rechnungsnummer} to ERPNext`,
+        );
       }
     }
 
+    const diagnostics = {
+      insert: successCount,
+      update: 0,
+      noop: invoices.length - successCount - errorCount,
+      warnings: errorCount,
+    };
+    const summary = {
+      workflow: 'export-invoice',
+      docType: 'Purchase Invoice',
+      total: invoices.length,
+      ...diagnostics,
+    };
+
     if (errorCount > 0) {
-      console.log(`[ExportERP API] Export partially completed. ${successCount} succeeded, ${errorCount} failed. Errors:`, errors);
+      logInfo(
+        {
+          workflow: 'export-invoice',
+          docType: 'Purchase Invoice',
+          action: 'summary',
+          duration_ms: Date.now() - start,
+        },
+        `Export partially completed. ${successCount} succeeded, ${errorCount} failed.`,
+      );
       return NextResponse.json(
         {
           message: `Export partially completed. ${successCount} invoices succeeded, ${errorCount} failed.`,
-          errors
+          errors,
+          diagnostics,
+          summary,
         },
-        { status: successCount > 0 ? 207 : 500 } // Use 207 for partial success
+        { status: successCount > 0 ? 207 : 500 },
       );
     }
 
-    console.log(`[ExportERP API] ${successCount} invoice(s) successfully submitted to ERPNext.`);
-    return NextResponse.json({ message: `${successCount} invoice(s) successfully submitted to ERPNext.` });
+    logInfo(
+      {
+        workflow: 'export-invoice',
+        docType: 'Purchase Invoice',
+        action: 'summary',
+        duration_ms: Date.now() - start,
+      },
+      `${successCount} invoice(s) successfully submitted to ERPNext.`,
+    );
+    return NextResponse.json({
+      message: `${successCount} invoice(s) successfully submitted to ERPNext.`,
+      diagnostics,
+      summary,
+    });
 
   } catch (error: any) {
-    console.error('[ExportERP API] Critical Error in /api/erpnext/export-invoice:', error.message, error.stack);
+    logError(
+      { workflow: 'export-invoice', docType: 'Purchase Invoice', action: 'error' },
+      error,
+      'Critical Error in /api/erpnext/export-invoice',
+    );
     return NextResponse.json({ error: error.message || 'An unexpected critical error occurred on the server.' }, { status: 500 });
   }
 }

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import type { BankTransaction } from '@/lib/erpnext/types';
 import { parseCsvLines, upsertBankTransactions, applyMatchingRules } from '@/lib/erpnext/services/bank';
 import type { ERPIncomingInvoiceItem } from '@/types/incoming-invoice';
+import { logInfo, logError } from '@/lib/logger';
 
 export async function POST(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -25,6 +26,7 @@ export async function POST(request: Request) {
 
   let transactions: BankTransaction[] = [];
   const contentType = request.headers.get('content-type') || '';
+  const start = Date.now();
 
   try {
     if (contentType.includes('text/csv')) {
@@ -60,7 +62,42 @@ export async function POST(request: Request) {
     }
 
     return NextResponse.json({ message: `${transactions.length} transaction(s) processed.` });
+    const keys = await upsertBankTransactions(transactions, {
+      endpoint: process.env.ERNEXT_BANK_TRANSACTION_URL!,
+      headers,
+    });
+    const diagnostics = {
+      insert: keys.length,
+      update: 0,
+      noop: transactions.length - keys.length,
+      warnings: 0,
+    };
+    const summary = {
+      workflow: 'bank-import',
+      docType: 'Bank Transaction',
+      total: transactions.length,
+      ...diagnostics,
+    };
+    logInfo(
+      {
+        workflow: 'bank-import',
+        docType: 'Bank Transaction',
+        action: 'summary',
+        duration_ms: Date.now() - start,
+      },
+      'Processed bank transactions',
+    );
+    return NextResponse.json({
+      message: `${transactions.length} transaction(s) processed.`,
+      diagnostics,
+      summary,
+    });
   } catch (e: any) {
+    logError(
+      { workflow: 'bank-import', docType: 'Bank Transaction', action: 'error' },
+      e,
+      'Failed to process transactions',
+    );
     return NextResponse.json({ error: e.message || 'Failed to process transactions.' }, { status: 500 });
   }
 }

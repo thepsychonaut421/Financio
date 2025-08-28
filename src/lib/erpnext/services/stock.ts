@@ -1,4 +1,5 @@
 import type { StockReconciliation, StockEntry } from '../types';
+import { logInfo } from '@/lib/logger';
 
 interface Options {
   endpoint: string;
@@ -25,11 +26,24 @@ async function postStockDocument(
   key: string,
   options: Options,
 ): Promise<void> {
+  const start = Date.now();
   await fetch(options.endpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
     body: JSON.stringify({ ...doc, idempotency_key: key }),
   });
+  const duration = Date.now() - start;
+  logInfo(
+    {
+      workflow: 'stock',
+      docType: doc.doctype,
+      docId: key,
+      idemKey: key,
+      action: 'insert',
+      duration_ms: duration,
+    },
+    'Posted stock document',
+  );
 }
 
 export async function createStockReconciliation(
