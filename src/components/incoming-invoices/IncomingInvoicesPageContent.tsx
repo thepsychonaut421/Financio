@@ -36,6 +36,7 @@ interface IncomingInvoicesPageCache {
   erpSortKey?: ERPSortKey | null;
   erpSortOrder?: SortOrder;
   kontenrahmen?: string;
+  processedFileFingerprints?: Set<string>;
 }
 
 const erpTableSortOptions: { key: ERPSortKey; label: string }[] = [
@@ -63,6 +64,10 @@ function compareERPValues(valA: any, valB: any, order: SortOrder): number {
   return order === 'asc' ? comparison : -comparison;
 }
 
+const getFileFingerprint = (file: File): string => {
+    return `${file.name}-${file.size}-${file.lastModified}`;
+};
+
 
 export function IncomingInvoicesPageContent() {
   'use client';
@@ -81,6 +86,7 @@ export function IncomingInvoicesPageContent() {
   const { toast } = useToast();
   const [currentYear, setCurrentYear] = useState<string>('');
   const [kontenrahmen, setKontenrahmen] = useState('20000 - Verbindlichkeiten Lief Inland');
+  const [processedFileFingerprints, setProcessedFileFingerprints] = useState<Set<string>>(new Set());
 
 
   const [erpExportFile, setErpExportFile] = useState<File | null>(null);
@@ -117,6 +123,7 @@ export function IncomingInvoicesPageContent() {
           }
            setErpSortKey(cachedData.erpSortKey || 'datum');
            setErpSortOrder(cachedData.erpSortOrder || 'desc');
+           setProcessedFileFingerprints(new Set(cachedData.processedFileFingerprints || []));
 
           if (cachedData.extractedInvoices.length > 0 || cachedData.erpProcessedInvoices.length > 0 || (cachedData.existingErpInvoiceKeys && cachedData.existingErpInvoiceKeys.length > 0)) {
              setStatus(cachedData.status as IncomingProcessingStatus);
@@ -145,13 +152,14 @@ export function IncomingInvoicesPageContent() {
           erpSortKey,
           erpSortOrder,
           kontenrahmen,
+          processedFileFingerprints: Array.from(processedFileFingerprints) as any,
         };
         localStorage.setItem(LOCAL_STORAGE_PAGE_CACHE_KEY, JSON.stringify(cacheToSave));
       } catch (error) {
         console.error("Failed to save incoming invoices page cache to localStorage:", error);
       }
     }
-  }, [extractedInvoices, erpProcessedInvoices, erpMode, status, existingErpInvoiceKeys, erpSortKey, erpSortOrder, kontenrahmen]);
+  }, [extractedInvoices, erpProcessedInvoices, erpMode, status, existingErpInvoiceKeys, erpSortKey, erpSortOrder, kontenrahmen, processedFileFingerprints]);
   
   const supplierMap: Record<string, string> = {
     "LIDL": "Lidl",
@@ -236,18 +244,7 @@ export function IncomingInvoicesPageContent() {
 
   const handleFilesSelected = useCallback((files: File[]) => {
     setSelectedFiles(files);
-    if (files.length > 0) {
-      setExtractedInvoices([]); 
-      setErpProcessedInvoices([]);
-      setStatus('idle'); // Ready to process new files
-      setErrorMessage(null);
-      setProgressValue(0);
-      setCurrentFileProgress('');
-    } else {
-      // If no files are selected, keep existing data unless cleared by "Clear All"
-      setStatus(extractedInvoices.length > 0 || erpProcessedInvoices.length > 0 ? 'success' : 'idle');
-    }
-  }, [extractedInvoices.length, erpProcessedInvoices.length]);
+  }, []);
 
 
   const resetStateOnModeChange = () => {
@@ -273,24 +270,53 @@ export function IncomingInvoicesPageContent() {
     setErrorMessage(null);
     setProgressValue(0);
     
-    const allProcessedForMatcher: ERPIncomingInvoiceItem[] = [];
-    const regularResultsDisplay: IncomingInvoiceItem[] = [];
-    const erpResultsDisplay: ERPIncomingInvoiceItem[] = [];
+    const newRegularInvoices: IncomingInvoiceItem[] = [];
+    const newErpInvoices: ERPIncomingInvoiceItem[] = [];
+    const newMatcherInvoices: ERPIncomingInvoiceItem[] = [];
+    const newFingerprints = new Set(processedFileFingerprints);
+    const duplicates: string[] = [];
+
     const yearCounters: Record<string, number> = {};
     let accumulatedErrors: string[] = [];
 
+    const filesToProcess = selectedFiles.filter(file => {
+        const fingerprint = getFileFingerprint(file);
+        if (newFingerprints.has(fingerprint)) {
+            duplicates.push(file.name);
+            return false;
+        }
+        return true;
+    });
+
+    if (duplicates.length > 0) {
+        toast({
+            title: "Duplicate Files Skipped",
+            description: `${duplicates.length} file(s) were already processed and have been skipped: ${duplicates.join(', ')}`,
+            variant: "default",
+        });
+    }
+
+    if (filesToProcess.length === 0) {
+        setStatus('success');
+        setCurrentFileProgress('No new files to process.');
+        return;
+    }
+
+
     try {
-      for (let i = 0; i < selectedFiles.length; i++) {
-        const file = selectedFiles[i];
-        setCurrentFileProgress(`Processing file ${i + 1} of ${selectedFiles.length}: ${file.name}`);
+      for (let i = 0; i < filesToProcess.length; i++) {
+        const file = filesToProcess[i];
+        setCurrentFileProgress(`Processing file ${i + 1} of ${filesToProcess.length}: ${file.name}`);
         
         const dataUri = await readFileAsDataURL(file);
         const aiResult: ExtractIncomingInvoiceDataOutput = await extractIncomingInvoiceData({ invoiceDataUri: dataUri });
         
+        const fingerprint = getFileFingerprint(file);
+        newFingerprints.add(fingerprint);
+
         if (aiResult.error) {
           accumulatedErrors.push(`${file.name}: ${aiResult.error}`);
-          // Continue to the next file instead of stopping
-          setProgressValue(Math.round(((i + 1) / selectedFiles.length) * 100));
+          setProgressValue(Math.round(((i + 1) / filesToProcess.length) * 100));
           continue;
         }
 
@@ -360,12 +386,12 @@ export function IncomingInvoicesPageContent() {
           kontenrahmen: kontenrahmen.trim(), 
           remarks: remarks.trim(),
         };
-        allProcessedForMatcher.push(erpCompatibleInvoice);
+        newMatcherInvoices.push(erpCompatibleInvoice);
 
         if (erpMode) {
-          erpResultsDisplay.push(erpCompatibleInvoice);
+          newErpInvoices.push(erpCompatibleInvoice);
         } else {
-          regularResultsDisplay.push({
+          newRegularInvoices.push({
               pdfFileName: file.name,
               rechnungsnummer: rechnungsnummerToUse,
               datum: aiResult.datum, 
@@ -381,16 +407,19 @@ export function IncomingInvoicesPageContent() {
               isPaidByAI: aiResult.isPaid,
           });
         }
-        setProgressValue(Math.round(((i + 1) / selectedFiles.length) * 100));
+        setProgressValue(Math.round(((i + 1) / filesToProcess.length) * 100));
       }
 
-      setExtractedInvoices(regularResultsDisplay);
-      setErpProcessedInvoices(erpResultsDisplay);
+      setExtractedInvoices(prev => [...prev, ...newRegularInvoices]);
+      setErpProcessedInvoices(prev => [...prev, ...newErpInvoices]);
+      setProcessedFileFingerprints(newFingerprints);
+      
+      const allProcessedForMatcher = [...erpProcessedInvoices, ...newMatcherInvoices];
       localStorage.setItem(LOCAL_STORAGE_MATCHER_DATA_KEY, JSON.stringify(allProcessedForMatcher));
       
       if (accumulatedErrors.length > 0) {
         setErrorMessage(accumulatedErrors.join('\n'));
-        setStatus(regularResultsDisplay.length > 0 || erpResultsDisplay.length > 0 ? 'success' : 'error');
+        setStatus('success');
       } else {
         setStatus('success'); 
       }
@@ -652,6 +681,8 @@ export function IncomingInvoicesPageContent() {
     setExistingErpInvoiceKeys(new Set());
     setErpSortKey('datum'); // Reset sort
     setErpSortOrder('desc');
+    setProcessedFileFingerprints(new Set());
+
 
     localStorage.removeItem(LOCAL_STORAGE_PAGE_CACHE_KEY);
     localStorage.removeItem(LOCAL_STORAGE_MATCHER_DATA_KEY);
