@@ -135,45 +135,64 @@ export function BankStatementExtractorPageContent() {
       return;
     }
     setIsSubmitting(true);
-    
-    const transactionsForAPI = extractedTransactions.map(t => ({
-        bank_account: process.env.NEXT_PUBLIC_ERPNEXT_BANK_ACCOUNT || "Bank Account", // Use env var or a fallback
-        date: t.date,
-        amount: t.amount,
-        description: t.description,
-        reference_number: t.id, // Use our internal ID as the reference number
-        party: t.recipientOrPayer,
-        party_type: t.recipientOrPayer ? 'Supplier' : undefined, // Simple logic, can be enhanced
-    }));
-    
+
+    const BATCH_SIZE = 75;
+    let totalCreated = 0;
+    let totalExists = 0;
+    let totalErrors = 0;
+
     try {
-      const response = await fetch('/api/erpnext/bank', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ transactions: transactionsForAPI }),
-      });
+        for (let i = 0; i < extractedTransactions.length; i += BATCH_SIZE) {
+            const chunk = extractedTransactions.slice(i, i + BATCH_SIZE);
+            
+            const transactionsForAPI = chunk.map(t => ({
+                bank_account: process.env.NEXT_PUBLIC_ERPNEXT_BANK_ACCOUNT || "Bank Account",
+                date: t.date,
+                amount: t.amount,
+                description: t.description,
+                reference_number: t.id,
+                party: t.recipientOrPayer,
+                party_type: t.recipientOrPayer ? 'Supplier' : undefined,
+            }));
 
-      const result = await response.json();
-      if (!response.ok) {
-        throw new Error(result.error || 'Failed to submit bank transactions');
-      }
-      
-      const summary = result.summary || {};
-      const message = `Created: ${summary.created}, Exists: ${summary.exists}, Errors: ${summary.errors}`;
+            const response = await fetch('/api/erpnext/bank', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ transactions: transactionsForAPI }),
+            });
 
-      toast({
-        title: "Bank Transactions Submitted",
-        description: (
-            <pre className="mt-2 w-full max-w-sm rounded-md bg-slate-950 p-4 whitespace-pre-wrap">
-              <code className="text-white">{message}</code>
-            </pre>
-        ),
-      });
+            const contentType = response.headers.get("content-type");
+            if (!response.ok || !contentType || !contentType.includes("application/json")) {
+                const errorText = await response.text();
+                throw new Error(`Server responded with an error: ${response.status} ${response.statusText}. Response: ${errorText.substring(0, 500)}`);
+            }
+
+            const result = await response.json();
+            if (!result.ok) {
+                throw new Error(result.error || 'An unknown error occurred during batch submission.');
+            }
+            
+            if(result.summary) {
+                totalCreated += result.summary.created || 0;
+                totalExists += result.summary.exists || 0;
+                totalErrors += result.summary.errors || 0;
+            }
+        }
+        
+        const message = `Created: ${totalCreated}, Exists (Skipped): ${totalExists}, Errors: ${totalErrors}`;
+        toast({
+            title: "Bank Transactions Submission Complete",
+            description: (
+                <pre className="mt-2 w-full max-w-sm rounded-md bg-slate-950 p-4 whitespace-pre-wrap">
+                  <code className="text-white">{message}</code>
+                </pre>
+            ),
+        });
 
     } catch (error: any) {
-      toast({ title: "Submission Failed", description: error.message, variant: "destructive" });
+        toast({ title: "Submission Failed", description: error.message, variant: "destructive" });
     } finally {
-      setIsSubmitting(false);
+        setIsSubmitting(false);
     }
   };
 
