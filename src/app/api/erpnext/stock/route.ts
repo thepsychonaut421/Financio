@@ -6,24 +6,32 @@ import { logInfo, logError } from '@/lib/logger';
 export async function POST(request: Request) {
   const { searchParams } = new URL(request.url);
   const type = searchParams.get('type');
+  const dryRun = searchParams.get('dryRun') === 'true';
 
-  if (!process.env.ERNEXT_API_KEY || !process.env.ERNEXT_API_SECRET) {
-    return NextResponse.json(
-      { error: 'Server configuration error: ERPNext credentials not set.' },
-      { status: 500 },
-    );
+  if (!dryRun) {
+    if (!process.env.ERNEXT_API_KEY || !process.env.ERNEXT_API_SECRET) {
+      return NextResponse.json(
+        { error: 'Server configuration error: ERPNext credentials not set.' },
+        { status: 500 },
+      );
+    }
   }
 
-  const headers = {
-    Authorization: `token ${process.env.ERNEXT_API_KEY}:${process.env.ERNEXT_API_SECRET}`,
-    Accept: 'application/json',
-  };
+  const headers = !dryRun
+    ? {
+        Authorization: `token ${process.env.ERNEXT_API_KEY}:${process.env.ERNEXT_API_SECRET}`,
+        Accept: 'application/json',
+      }
+    : undefined;
 
   const start = Date.now();
   try {
     const body = await request.json();
 
     if (type === 'reconciliation') {
+      if (dryRun) {
+        return NextResponse.json({ message: 'Dry run: reconciliation skipped.' });
+      }
       if (!process.env.ERNEXT_STOCK_RECONCILIATION_URL) {
         return NextResponse.json(
           { error: 'Server configuration error: Stock Reconciliation URL not set.' },
@@ -44,6 +52,9 @@ export async function POST(request: Request) {
     }
 
     if (type === 'entry') {
+      if (dryRun) {
+        return NextResponse.json({ message: 'Dry run: entry skipped.' });
+      }
       if (!process.env.ERNEXT_STOCK_ENTRY_URL) {
         return NextResponse.json(
           { error: 'Server configuration error: Stock Entry URL not set.' },
