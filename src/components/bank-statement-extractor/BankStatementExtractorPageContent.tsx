@@ -135,23 +135,37 @@ export function BankStatementExtractorPageContent() {
       return;
     }
     setIsSubmitting(true);
+    
+    const transactionsForAPI = extractedTransactions.map(t => ({
+        bank_account: process.env.NEXT_PUBLIC_ERPNEXT_BANK_ACCOUNT || "Bank Account", // Use env var or a fallback
+        date: t.date,
+        amount: t.amount,
+        description: t.description,
+        reference_number: t.id, // Use our internal ID as the reference number
+        party: t.recipientOrPayer,
+        party_type: t.recipientOrPayer ? 'Supplier' : undefined, // Simple logic, can be enhanced
+    }));
+    
     try {
       const response = await fetch('/api/erpnext/bank', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(extractedTransactions),
+        body: JSON.stringify({ transactions: transactionsForAPI }),
       });
 
       const result = await response.json();
       if (!response.ok) {
         throw new Error(result.error || 'Failed to submit bank transactions');
       }
+      
+      const summary = result.summary || {};
+      const message = `Created: ${summary.created}, Exists: ${summary.exists}, Errors: ${summary.errors}`;
 
       toast({
         title: "Bank Transactions Submitted",
         description: (
             <pre className="mt-2 w-full max-w-sm rounded-md bg-slate-950 p-4 whitespace-pre-wrap">
-              <code className="text-white">{result.message}</code>
+              <code className="text-white">{message}</code>
             </pre>
         ),
       });
