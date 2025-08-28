@@ -23,36 +23,56 @@ export type ExtractIncomingInvoiceDataInput = z.infer<typeof ExtractIncomingInvo
 
 // Schema for AI model output (uses AILineItemSchema for flexibility)
 const AIOutputSchema = z.object({
-  rechnungsnummer: z.string().optional().describe('The invoice number (Rechnungsnummer). This must be the number explicitly and clearly labeled as "Rechnungs-Nr.", "Rechnungsnummer", or "Invoice No.". Absolutely do NOT use any number labeled "Bestell-Nr.", "Order Number", "Bestellnummer", "Auftragsnummer", or similar order/customer identifiers, NOR from the filename. If no value is explicitly labeled as "Rechnungs-Nr." or "Rechnungsnummer", this field must be left empty.'),
-  datum: z.string().optional().describe('The invoice date (Datum), preferably in YYYY-MM-DD format (convert if DD.MM.YYYY). Look for labels like "Rechnungsdatum".'),
-  lieferantName: z.string().optional().describe('The name of the supplier (Lieferant). Try to match to the ERPNext supplier name from the provided list. If no match, return the extracted name or "UNBEKANNT".'),
-  lieferantAdresse: z.string().optional().describe('The full address of the supplier (Adresse Lieferant).'),
-  zahlungsziel: z.string().optional().describe('The payment terms (Zahlungsziel), e.g., "14 Tage netto", "sofort zahlbar".'),
-  zahlungsart: z.string().optional().describe('The payment method (Zahlungsart), e.g., "Überweisung", "Sofort", "PayPal", "Lastschrift".'),
-  gesamtbetrag: z.number().optional().describe('The total amount of the invoice (Gesamtbetrag) as a numeric value.'),
-  mwstSatz: z.string().optional().describe('The VAT rate (MwSt.-Satz or USt.-Satz), e.g., "19%" or "7%".'),
-  rechnungspositionen: z.array(AILineItemSchema).describe('An array of line items (Rechnungspositionen) from the invoice, including productCode, productName, quantity, and unitPrice. If quantity or unitPrice are not found, use 0 and 0.0 respectively.'),
-  kundenNummer: z.string().optional().describe('The customer number (Kunden-Nr.) if present.'),
-  bestellNummer: z.string().optional().describe('The order number (Bestell-Nr., Bestellnummer) if present and distinct from Rechnungsnummer.'),
-  isPaid: z.boolean().optional().describe('Whether the invoice is marked as paid ("Bezahlt"). True if paid, false or undefined otherwise.'),
+  doctype: z.literal('Purchase Invoice'),
+  supplier: z.string().optional(),
+  posting_date: z.string().optional().describe("Invoice date in YYYY-MM-DD format."),
+  due_date: z.string().optional().describe("Due date in YYYY-MM-DD format."),
+  bill_no: z.string().optional().describe("Invoice number."),
+  bill_date: z.string().optional().describe("Same as posting_date, in YYYY-MM-DD format."),
+  currency: z.string().optional().default('EUR'),
+  buying_price_list: z.string().optional().default('Standard Buying'),
+  items: z.array(AILineItemSchema).optional().describe('An array of line items.'),
+  taxes: z.array(z.object({
+    charge_type: z.string().optional(),
+    account_head: z.string().optional(),
+    rate: z.number().optional(),
+    tax_amount: z.number().optional(),
+  })).optional(),
+  supplier_address: z.string().optional(),
+  contact_person: z.string().optional(),
+  remarks: z.string().optional().describe("Any additional text from the invoice."),
+  custom_fields: z.object({
+    order_reference: z.string().optional(),
+    payment_method: z.string().optional(),
+    delivery_method: z.string().optional(),
+    iban: z.string().optional(),
+    swift: z.string().optional(),
+  }).optional(),
+  is_return: z.number().optional().describe("1 if it's a credit note (Gutschrift), otherwise 0 or undefined."),
   error: z.string().optional().describe('An error message if the operation failed.'),
 });
 
-// Type for the exported function's return value (uses AppLineItem for stricter line items)
+
+// Type for the exported function's return value
 export type ExtractIncomingInvoiceDataOutput = {
   rechnungsnummer?: string;
   datum?: string;
   lieferantName?: string;
   lieferantAdresse?: string;
-  zahlungsziel?: string;
+  zahlungsziel?: string; // Can be derived from due_date
   zahlungsart?: string;
-  gesamtbetrag?: number;
-  mwstSatz?: string;
+  gesamtbetrag?: number; // Can be calculated from items and taxes
+  mwstSatz?: string; // Can be derived from taxes
   rechnungspositionen: AppLineItem[];
-  kundenNummer?: string;
+  kundenNummer?: string; // Part of custom_fields or remarks
   bestellNummer?: string;
-  isPaid?: boolean; // This is what AI directly returns, will be mapped to istBezahlt in calling component
+  isPaid?: boolean; // Can be inferred from payment_method or remarks
   error?: string;
+  // Exposing new fields
+  dueDate?: string;
+  taxes?: { charge_type?: string; account_head?: string; rate?: number; tax_amount?: number; }[];
+  remarks?: string;
+  isReturn?: boolean;
 }
 
 // Helper function for product code normalization
@@ -75,26 +95,35 @@ export async function extractIncomingInvoiceData(input: ExtractIncomingInvoiceDa
     return { rechnungspositionen: [], error: rawOutput.error };
   }
 
-  const normalizedLineItems: AppLineItem[] = (rawOutput.rechnungspositionen || []).map(item => ({
+  const normalizedLineItems: AppLineItem[] = (rawOutput.items || []).map(item => ({
     productCode: normalizeProductCode(item.productCode),
     productName: String(item.productName || '').trim().replace(/\n/g, ' '),
     quantity: item.quantity === undefined ? 0 : item.quantity,
     unitPrice: item.unitPrice === undefined ? 0.0 : item.unitPrice,
   }));
 
+  const totalAmountFromItems = normalizedLineItems.reduce((acc, item) => acc + (item.quantity * item.unitPrice), 0);
+  const totalTaxAmount = (rawOutput.taxes || []).reduce((acc, tax) => acc + (tax.tax_amount || 0), 0);
+
   const normalizedOutput: ExtractIncomingInvoiceDataOutput = {
-    rechnungsnummer: rawOutput.rechnungsnummer,
-    datum: rawOutput.datum,
-    lieferantName: String(rawOutput.lieferantName || '').trim().replace(/\n/g, ' '),
-    lieferantAdresse: String(rawOutput.lieferantAdresse || '').trim().replace(/\n/g, ' '),
-    zahlungsziel: String(rawOutput.zahlungsziel || '').trim().replace(/\n/g, ' '),
-    zahlungsart: String(rawOutput.zahlungsart || '').trim().replace(/\n/g, ' '),
-    gesamtbetrag: rawOutput.gesamtbetrag,
-    mwstSatz: rawOutput.mwstSatz,
-    kundenNummer: String(rawOutput.kundenNummer || '').trim(),
-    bestellNummer: String(rawOutput.bestellNummer || '').trim(),
-    isPaid: rawOutput.isPaid,
+    rechnungsnummer: rawOutput.bill_no,
+    datum: rawOutput.posting_date,
+    lieferantName: String(rawOutput.supplier || '').trim().replace(/\n/g, ' '),
+    lieferantAdresse: String(rawOutput.supplier_address || '').trim().replace(/\n/g, ' '),
+    zahlungsziel: rawOutput.due_date, // Directly use due_date
+    zahlungsart: rawOutput.custom_fields?.payment_method,
+    gesamtbetrag: totalAmountFromItems + totalTaxAmount,
+    mwstSatz: rawOutput.taxes?.[0]?.rate?.toString() ? `${rawOutput.taxes[0].rate}%` : undefined,
     rechnungspositionen: normalizedLineItems,
+    bestellNummer: rawOutput.custom_fields?.order_reference,
+    // Infer isPaid, can be improved
+    isPaid: rawOutput.custom_fields?.payment_method?.toLowerCase().includes('klarna') || rawOutput.custom_fields?.payment_method?.toLowerCase().includes('paypal'),
+    error: rawOutput.error,
+    // New fields
+    dueDate: rawOutput.due_date,
+    taxes: rawOutput.taxes,
+    remarks: rawOutput.remarks,
+    isReturn: rawOutput.is_return === 1,
   };
   
   return normalizedOutput;
@@ -104,73 +133,56 @@ const prompt = ai.definePrompt({
   name: 'extractIncomingInvoiceDataPrompt',
   input: {schema: ExtractIncomingInvoiceDataInputSchema},
   output: {schema: AIOutputSchema}, // AI tries to fill this schema
-  prompt: `You are an expert AI assistant specialized in extracting detailed information from German invoices (Eingangsrechnungen) for ERPNext integration.
-You will receive an invoice as a data URI. Extract the following information meticulously:
+  prompt: `Extrage din PDF-ul atașat toate informațiile relevante pentru contabilitate și ERPNext și structurează-le într-un obiect JSON gata de inserat ca Purchase Invoice în ERPNext.
 
-Context: You are working with German "Eingangsrechnung" (purchase invoices). The goal is to accurately extract and structure data for import into ERPNext.
-IMPORTANT: Some PDF files may contain a number in their title that is actually a Bestellnummer (order number), NOT the real invoice number (Rechnungsnummer). This has been a primary source of errors. Strictly follow the rules below to avoid confusion.
+Respectă următoarea structură:
 
-Extraction Rules for Invoices:
+{
+  "doctype": "Purchase Invoice",
+  "supplier": "string",
+  "posting_date": "YYYY-MM-DD",
+  "due_date": "YYYY-MM-DD",
+  "bill_no": "string",
+  "bill_date": "YYYY-MM-DD",
+  "currency": "EUR",
+  "buying_price_list": "Standard Buying",
+  "items": [
+    {
+      "productCode": "string (ArtikelNr.)",
+      "productName": "string (descriere produs)",
+      "quantity": 1,
+      "unitPrice": 0.00
+    }
+  ],
+  "taxes": [
+    {
+      "charge_type": "On Net Total",
+      "account_head": "Input Tax 19%",
+      "rate": 19,
+      "tax_amount": 0.00
+    }
+  ],
+  "supplier_address": "string",
+  "contact_person": "string",
+  "remarks": "Orice text adițional de pe factură (ex: Klarna, DHL, AGB, retur etc.)",
+  "custom_fields": {
+    "order_reference": "string",
+    "payment_method": "string (Klarna, PayPal etc.)",
+    "delivery_method": "string (DHL, Spedition etc.)",
+    "iban": "string dacă apare",
+    "swift": "string dacă apare"
+  },
+  "is_return": 1
+}
 
-1.  Rechnungsnummer (Invoice Number):
-    *   CRITICAL: Search ONLY for labels like "Rechnungs-Nr.", "Rechnungsnummer", "Invoice No."
-    *   Absolutely DO NOT use numbers from the file title/filename or those labeled "Bestell-Nr.", "Bestellnummer", "Order Number", "Kunden-Nr.", "Customer Number", "Auftragsnummer".
-    *   If a document has a title like "Rechnung 12345" but "12345" is also found next to "Bestell-Nr.", then "12345" is NOT the Rechnungsnummer.
-    *   The Rechnungsnummer MUST have its own distinct "Rechnungs-Nr." or "Rechnungsnummer" label.
-    *   If these specific labels are missing, leave the 'rechnungsnummer' field empty.
+Instrucțiuni:
+	1.	Completează câmpurile lipsă (ex: due_date) pe baza contextului sau lasă null dacă nu există.
+	2.	Normalizează datele (format ISO pentru date, numere în float).
+	3.	Asigură-te că toate sumele se potrivesc: net + TVA = brut.
+	4.	Dacă factura e Gutschrift, marchează în JSON is_return: 1.
+	5.	Pune toate notele adiționale (Klarna, „Bitte nicht auf unser Konto zahlen”, WEEE, etc.) în remarks.
 
-2.  Datum (Invoice Date / Rechnungsdatum):
-    *   Look for labels like "Rechnungsdatum" or "Invoice Date". This will be the 'posting_date'.
-    *   CRITICAL: Return the date in YYYY-MM-DD ISO format. If the invoice shows DD.MM.YYYY (e.g., 17.01.2025), you MUST convert it to YYYY-MM-DD (e.g., 2025-01-17).
-
-3.  Lieferant (Supplier):
-    *   Extract the supplier's name from the invoice.
-    *   Then, try to match the extracted name to an exact name from this valid ERPNext supplier list. Return the ERPNext name if a match is found.
-        Valid ERPNext Supplier Names (supplierMap, keys should be uppercase for matching):
-        {
-          "LIDL": "Lidl",
-          "LIDL DIGITAL DEUTSCHLAND GMBH & CO. KG": "Lidl",
-          "GD ARTLANDS ETRADING GMBH": "GD Artlands eTrading GmbH",
-          "RETOURA": "RETOURA",
-          "DOITBAU GMBH & CO.KG": "doitBau",
-          "KAUFLAND": "Kaufland",
-          "ALDI": "ALDI E-Commerce",
-          "FIRMA HANDLOWA KABIS BOZENA KEDZIORA": "FIRMA HANDLOWA KABIS BOZENA KEDZIORA",
-          "ZWECO UG": "Zweco UG",
-          "FAVORIO C/O HATRACO GMBH": "Favorio c/o Hatraco GmbH",
-          "HATRACO GMBH": "Hatraco GmbH",
-          "CUMO GMBH": "CUMO GmbH",
-          "SELLIXX GMBH": "SELLIXX GmbH"
-        }
-    *   If the extracted supplier name (after converting it to uppercase for robust comparison) does not exactly match any key in the list above, return the originally extracted name. If you are very unsure or cannot extract a name, return "UNBEKANNT".
-
-4.  Lieferant Adresse (Supplier Address): The full postal address of the supplier. Clean any newline characters.
-
-5.  Zahlungsziel (Payment Terms): e.g., "14 Tage netto", "sofort zahlbar". Clean any newline characters.
-
-6.  Zahlungsart (Payment Method): e.g., "Überweisung", "PayPal", "Sofort", "Lastschrift". Clean any newline characters. If not explicitly mentioned, try to infer it from payment details if possible, or leave it empty.
-
-7.  Gesamtbetrag (Total Amount): The final total amount of the invoice. This should be a numerical value. Parse it carefully.
-
-8.  MwSt.-Satz (VAT Rate): e.g., "19%", "7%". If multiple VAT rates are present and a summary rate is not obvious, this can be omitted or you can list the most prominent one.
-
-9.  Rechnungspositionen (Line Items): A list of all individual items or services. For each item, extract:
-    *   productCode (item_code): The product code or article number (e.g., EAN). If not available, leave empty. This should be a plain string.
-    *   productName (description): The name or description of the product/service. Clean string.
-    *   quantity (qty): The quantity. If not explicitly stated for an item, use 0 for quantity.
-    *   unitPrice (rate): The price per unit. If not explicitly stated for an item, use 0.0 for unitPrice.
-
-10. Sonderfall Versandkosten (Special Case: Shipping Costs):
-    *   Look for any line items or summary rows labeled 'Versandkosten', 'Versand', 'Fracht', or 'Lieferkosten'.
-    *   If you find such a cost (like the 8,90 for 'Versandkosten' in the example image), you MUST create a separate, distinct line item for it in the 'rechnungspositionen' array.
-    *   For this shipping line item, use these exact values: productCode should be "VERSAND", productName should be "Versandkostenpauschale", quantity should be 1, and unitPrice should be the numerical value of the shipping cost (e.g., 8.90).
-    *   This is critical for accounting. Do not merge shipping costs into other items. If there are no shipping costs, do not add this item.
-
-11. KundenNummer (Customer Number): Extract if labeled "Kunden-Nr." or similar.
-12. BestellNummer (Order Number): Extract if labeled "Bestell-Nr.", "Bestellnummer", or similar, AND it is clearly distinct from the Rechnungsnummer.
-13. isPaid: Determine if the invoice explicitly states it has been paid (e.g., contains the word "Bezahlt"). Set to true if paid, false or undefined otherwise.
-
-Ensure all text fields are extracted as accurately as possible. For numerical fields like Gesamtbetrag, quantity, and unitPrice, provide them as numbers where available.
+Output-ul final trebuie să fie un JSON valid, fără explicații suplimentare.
 
 Invoice: {{media url=invoiceDataUri}}`,
 });
@@ -184,12 +196,12 @@ const extractIncomingInvoiceDataFlow = ai.defineFlow(
   async (input) => {
     try {
         const {output} = await prompt(input, {model: 'googleai/gemini-1.5-flash-latest'});
-        return output || { rechnungspositionen: [] };
+        return output || { doctype: 'Purchase Invoice' };
     } catch (e: any) {
         if (e.message && (e.message.includes('503') || e.message.includes('overloaded'))) {
-            return { rechnungspositionen: [], error: "The AI service is currently busy or unavailable. Please try again in a few moments." };
+            return { doctype: 'Purchase Invoice', error: "The AI service is currently busy or unavailable. Please try again in a few moments." };
         }
-        return { rechnungspositionen: [], error: "An unexpected error occurred during invoice extraction." };
+        return { doctype: 'Purchase Invoice', error: "An unexpected error occurred during invoice extraction." };
     }
   }
 );
