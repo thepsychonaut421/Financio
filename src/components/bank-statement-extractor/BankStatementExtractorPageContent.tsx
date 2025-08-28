@@ -7,10 +7,11 @@ import { BankStatementDataTable } from '@/components/bank-statement-extractor/Ba
 import { BankStatementActionButtons } from '@/components/bank-statement-extractor/BankStatementActionButtons';
 import { Progress } from '@/components/ui/progress';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { AlertCircle, Info } from 'lucide-react';
+import { AlertCircle, Info, Trash2 } from 'lucide-react';
 import { readFileAsDataURL } from '@/lib/file-helpers';
 import { extractBankStatementData, type BankTransactionAI } from '@/ai/flows/extract-bank-statement-data';
 import { useToast } from '@/hooks/use-toast';
+import { Button } from '@/components/ui/button';
 
 type ProcessingStatus = 'idle' | 'processing' | 'success' | 'error';
 
@@ -125,6 +126,21 @@ export function BankStatementExtractorPageContent() {
       setCurrentFileProgress('Processing failed.');
     }
   };
+  
+  const handleClearAllData = () => {
+    setSelectedFiles([]);
+    setExtractedTransactions([]);
+    setStatus('idle');
+    setErrorMessage(null);
+    setProgress(0);
+    setCurrentFileProgress('');
+    setIsSubmitting(false);
+    localStorage.removeItem(LOCAL_STORAGE_KEY);
+    toast({
+        title: "Data Cleared",
+        description: "All selected files and extracted transactions have been removed."
+    });
+  }
 
   const handleSubmitToERPNext = async () => {
     if (extractedTransactions.length === 0) {
@@ -134,52 +150,26 @@ export function BankStatementExtractorPageContent() {
     setIsSubmitting(true);
     setProgress(0);
 
-    const BATCH_SIZE = 75;
-    let totalCreated = 0;
-    let totalExists = 0;
-    let totalErrors = 0;
-
     try {
-        for (let i = 0; i < extractedTransactions.length; i += BATCH_SIZE) {
-            const chunk = extractedTransactions.slice(i, i + BATCH_SIZE);
-            setCurrentFileProgress(`Submitting batch ${i / BATCH_SIZE + 1} of ${Math.ceil(extractedTransactions.length / BATCH_SIZE)}...`);
-            
-            const transactionsForAPI = chunk.map(t => ({
-                bank_account: process.env.NEXT_PUBLIC_ERPNEXT_BANK_ACCOUNT || "Bank Account", // This should be configured
-                date: t.date,
-                amount: t.amount,
-                description: t.description,
-                reference_number: t.id,
-                party: t.recipientOrPayer,
-                party_type: t.recipientOrPayer ? 'Supplier' : undefined,
-            }));
+        const response = await fetch('/api/erpnext/bank', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+            body: JSON.stringify({ transactions: extractedTransactions }),
+        });
 
-            const response = await fetch('/api/erpnext/bank', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-                body: JSON.stringify({ transactions: transactionsForAPI }),
-            });
+        const contentType = response.headers.get("content-type");
+        if (!response.ok || !contentType || !contentType.includes("application/json")) {
+            const errorText = await response.text();
+            throw new Error(`Server responded with an error: ${response.status} ${response.statusText}. Response: ${errorText.substring(0, 500)}`);
+        }
 
-            const contentType = response.headers.get("content-type");
-            if (!response.ok || !contentType || !contentType.includes("application/json")) {
-                const errorText = await response.text();
-                throw new Error(`Server responded with an error: ${response.status} ${response.statusText}. Response: ${errorText.substring(0, 500)}`);
-            }
-
-            const result = await response.json();
-            if (!result.ok) {
-                throw new Error(result.error || 'An unknown error occurred during batch submission.');
-            }
-            
-            if(result.summary) {
-                totalCreated += result.summary.created || 0;
-                totalExists += result.summary.exists || 0;
-                totalErrors += result.summary.errors || 0;
-            }
-            setProgress(Math.round(((i + BATCH_SIZE) / extractedTransactions.length) * 100));
+        const result = await response.json();
+        if (!result.ok) {
+            throw new Error(result.error || 'An unknown error occurred during submission.');
         }
         
-        const message = `Created: ${totalCreated}, Exists (Skipped): ${totalExists}, Errors: ${totalErrors}`;
+        const { created, exists, errors } = result.summary;
+        const message = `Created: ${created}, Exists (Skipped): ${exists}, Errors: ${errors}`;
         toast({
             title: "Bank Transactions Submission Complete",
             description: (
@@ -260,6 +250,16 @@ export function BankStatementExtractorPageContent() {
             </AlertDescription>
           </Alert>
         )}
+
+        {(selectedFiles.length > 0 || extractedTransactions.length > 0) && !isSubmitting && status !== 'processing' &&(
+          <div className="flex justify-center mt-6">
+            <Button variant="outline" onClick={handleClearAllData}>
+              <Trash2 className="mr-2 h-4 w-4" />
+              Clear All Data
+            </Button>
+          </div>
+        )}
+
       </main>
       <footer className="text-center mt-12 py-4 border-t">
         <p className="text-sm text-muted-foreground">&copy; {currentYear} PDF Suite. Powered by AI.</p>
