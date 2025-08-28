@@ -416,31 +416,21 @@ export function IncomingInvoicesPageContent() {
     }
     setIsExportingToERPNext(true);
     try {
-      const response = await fetch('/api/erpnext/export-invoice', {
+      const response = await fetch('/api/erpnext/invoices', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ invoices: invoicesToExport }),
       });
+
+      const result = await response.json();
+
       if (!response.ok) {
-        let detailedErrorMessage = `Server Error: ${response.status} ${response.statusText || ''}`.trim();
-        try {
-          const errorResult = await response.json();
-          if (errorResult.error) detailedErrorMessage = errorResult.error;
-          else if (errorResult.message) detailedErrorMessage = errorResult.message;
-        } catch (jsonError) { /* ignore */ }
-        toast({ title: `Export Error (${response.status})`, description: detailedErrorMessage, variant: "destructive" });
+        toast({ title: `Export Error (${response.status})`, description: result.error || result.message || "An unknown server error occurred.", variant: "destructive" });
         return;
       }
-      if (response.status === 204) { 
-        toast({ title: "Export Submitted", description: "Invoices submitted to ERPNext (server returned no content, assuming success)." });
-      } else {
-        const result = await response.json();
-        if (result.message) {
-          toast({ title: "Export Status", description: result.message, variant: response.status === 207 ? "default" : "default" }); 
-        } else {
-           toast({ title: "Export Submitted", description: "Invoices submitted to ERPNext." });
-        }
-      }
+      
+      toast({ title: "Export Status", description: result.message || "Invoices submitted successfully.", variant: response.status === 207 ? "default" : "default" });
+
     } catch (error: any) {
       const message = error instanceof Error ? error.message : "Unknown client-side error during ERPNext export.";
       toast({ title: "ERPNext Export Failed", description: message, variant: "destructive" });
@@ -449,9 +439,9 @@ export function IncomingInvoicesPageContent() {
     }
   };
 
-  const handleExportSuppliersERPNext = () => {
+  const handleExportSuppliersERPNext = async () => {
     const invoicesToUse = erpMode ? sortedErpProcessedInvoices : erpProcessedInvoices;
-    if (invoicesToUse.length === 0) {
+     if (invoicesToUse.length === 0) {
       toast({
         title: "No Data for Suppliers",
         description: "No processed invoice data in ERP Mode to extract suppliers from.",
@@ -459,14 +449,56 @@ export function IncomingInvoicesPageContent() {
       });
       return;
     }
-    const csvData = erpInvoicesToSupplierCSV(invoicesToUse);
-    downloadFile(csvData, 'erpnext_suppliers_for_import.csv', 'text/csv;charset=utf-8;');
-    
-    const uniqueSupplierNames = new Set(invoicesToUse.map(inv => (inv.lieferantName || '').trim()).filter(name => name && name !== "UNBEKANNT_SUPPLIER_PLACEHOLDER"));
-    toast({
-      title: "Suppliers CSV Exported",
-      description: `Supplier data for ${uniqueSupplierNames.size} unique supplier(s) ready for ERPNext import.`,
+
+    const uniqueSuppliers = new Map<string, ERPIncomingInvoiceItem>();
+    invoicesToUse.forEach(invoice => {
+        const supplierKey = (invoice.lieferantName || '').trim().toUpperCase();
+        if (supplierKey && !uniqueSuppliers.has(supplierKey) && supplierKey !== "UNBEKANNT_SUPPLIER_PLACEHOLDER" && supplierKey !== "UNBEKANNT") {
+        uniqueSuppliers.set(supplierKey, invoice);
+        }
     });
+
+    const supplierPayloads = Array.from(uniqueSuppliers.values()).map(invoice => {
+        let taxIdValue = "";
+         if (invoice.remarks) { 
+            const taxIdMatch = invoice.remarks.match(/Tax ID:\s*([^\s\/,]+)/i) ||
+                            invoice.remarks.match(/VAT ID:\s*([^\s\/,]+)/i) ||
+                            invoice.remarks.match(/USt-IdNr.:\s*([^\s\/,]+)/i);
+            if (taxIdMatch && taxIdMatch[1]) {
+                taxIdValue = taxIdMatch[1];
+            }
+        }
+        return {
+            doctype: 'Supplier',
+            supplier_name: invoice.lieferantName,
+            supplier_group: "Alle Lieferantengruppen", // Default or from config
+            supplier_type: "Company",
+            tax_id: taxIdValue,
+        };
+    });
+
+    if (supplierPayloads.length === 0) {
+        toast({ title: "No New Suppliers", description: "No unique suppliers found to export." });
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/erpnext/suppliers', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(supplierPayloads),
+        });
+
+        const result = await response.json();
+
+        if (!response.ok) {
+            toast({ title: "Supplier Export Error", description: result.error || "Failed to export suppliers.", variant: "destructive" });
+        } else {
+            toast({ title: "Suppliers Exported", description: result.message || `${supplierPayloads.length} suppliers processed.` });
+        }
+    } catch (error: any) {
+         toast({ title: "Supplier Export Failed", description: error.message, variant: "destructive" });
+    }
   };
 
   const handleExportInvoicesAsZip = async () => {

@@ -1,60 +1,35 @@
 import { NextResponse } from 'next/server';
-import { mapItem, type InternalItem } from '@/lib/erpnext/mappers/item';
-import { mergeItems } from '@/lib/erpnext/services/sku-resolver';
+import { createItem } from '@/lib/erpnext-api';
+import type { ItemPayload } from '@/lib/erpnext/types';
+import { logError, logInfo } from '@/lib/logger';
 
 export async function POST(request: Request) {
-  const { searchParams } = new URL(request.url);
-  const mode = searchParams.get('mode') || 'api';
-  const dryRun = searchParams.get('dryRun') === 'true' || mode === 'csv';
-
-  if (mode === 'api' && !dryRun) {
-    if (!process.env.ERNEXT_ITEM_URL || !process.env.ERNEXT_API_KEY || !process.env.ERNEXT_API_SECRET) {
-      return NextResponse.json(
-        { error: 'Server configuration error: ERPNext credentials not set.' },
-        { status: 500 },
-      );
-    }
-  }
-
-  const headers =
-    mode === 'api' && !dryRun
-      ? {
-          Authorization: `token ${process.env.ERNEXT_API_KEY}:${process.env.ERNEXT_API_SECRET}`,
-          Accept: 'application/json',
-        }
-      : undefined;
-
   try {
-    const { items = [], merges = [] } = (await request.json()) as {
-      items?: InternalItem[];
-      merges?: { from: string; to: string }[];
-    };
+    const itemData: ItemPayload = await request.json();
 
-    for (const m of merges) {
-      mergeItems(m.from, m.to);
-    }
+    logInfo(
+      { workflow: 'erpnext-api', docType: 'Item', action: 'create' },
+      `Received request to create item: ${itemData.item_name}`
+    );
 
-    const rows: string[] = [];
-    for (const item of items) {
-      const { csv } = await mapItem(item, {
-        endpoint: mode === 'api' && !dryRun ? process.env.ERNEXT_ITEM_URL : undefined,
-        headers,
-        dryRun,
-      });
-      if (csv) rows.push(csv);
-    }
+    const response = await createItem(itemData);
 
-    if (mode === 'csv') {
-      return new Response(rows.join('\n'), {
-        headers: { 'Content-Type': 'text/csv' },
-      });
-    }
+    logInfo(
+      { workflow: 'erpnext-api', docType: 'Item', action: 'success', response },
+      `Successfully created item: ${itemData.item_name}`
+    );
 
-    return NextResponse.json({ message: `${items.length} item(s) processed.`, merges: merges.length });
+    return NextResponse.json({ ok: true, data: response.data });
+
   } catch (e: any) {
+    logError(
+      { workflow: 'erpnext-api', docType: 'Item', action: 'error' },
+      e,
+      'Failed to create item'
+    );
     return NextResponse.json(
-      { error: e.message || 'Failed to process items.' },
-      { status: 500 },
+      { ok: false, error: e.message || 'An unknown error occurred.' },
+      { status: 500 }
     );
   }
 }

@@ -1,25 +1,17 @@
-import crypto from 'crypto';
+'use server';
+
 import type { BankTransaction, PaymentEntry } from '../types';
 import type { ERPIncomingInvoiceItem } from '@/types/incoming-invoice';
 import { parseBankCSV, toBankTransactions } from '@/csv/parsers';
 import { matchTransactions } from '@/lib/bank-matcher/matchBankToInvoices';
 import { findExistingBankTransaction } from './dedupe';
 import { logInfo } from '@/lib/logger';
+import { createBankTransaction as createBankTransactionInERPNext } from '../api';
 
 /** Parse CSV text into ERPNext Bank Transaction payloads. */
 export function parseCsvLines(csv: string, account: string): BankTransaction[] {
   const rows = parseBankCSV(csv);
   return toBankTransactions(rows, account);
-}
-
-function idempotencyKey(tx: BankTransaction): string {
-  const amount = tx.deposit ?? (tx.withdrawal ? -tx.withdrawal : 0);
-  const refHash = crypto
-    .createHash('sha256')
-    .update(tx.reference_number || '')
-    .digest('hex')
-    .slice(0, 8);
-  return `bank:${tx.date}:${amount.toFixed(2)}:${refHash}`;
 }
 
 interface Options {
@@ -33,7 +25,7 @@ interface Options {
  */
 export async function upsertBankTransactions(
   transactions: BankTransaction[],
-  options: Options,
+  options: Options
 ): Promise<string[]> {
   const created: string[] = [];
   for (const tx of transactions) {
@@ -47,33 +39,31 @@ export async function upsertBankTransactions(
           idemKey: existing.name,
           action: 'noop',
         },
-        'Bank transaction already exists',
+        'Bank transaction already exists'
       );
       continue;
     }
-    const key = idempotencyKey(tx);
-    const start = Date.now();
-    await fetch(options.endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
-      body: JSON.stringify({ ...tx, idempotency_key: key }),
-    });
-    const duration = Date.now() - start;
+    
+    // Use the new API client to create the transaction
+    const response = await createBankTransactionInERPNext(tx);
+
     logInfo(
       {
         workflow: 'bank-upsert',
         docType: 'Bank Transaction',
         docId: tx.reference_number,
-        idemKey: key,
         action: 'insert',
-        duration_ms: duration,
+        response,
       },
-      'Upserted bank transaction',
+      'Upserted bank transaction'
     );
-    created.push(key);
+    if(response.data?.name) {
+      created.push(response.data.name);
+    }
   }
   return created;
 }
+
 
 /**
  * Apply matching rules between bank transactions and provided invoices. When
@@ -83,14 +73,14 @@ export async function upsertBankTransactions(
 export async function applyMatchingRules(
   transactions: BankTransaction[],
   invoices: ERPIncomingInvoiceItem[],
-  options: Options & { paymentEndpoint?: string; createPayments?: boolean },
+  options: Options & { paymentEndpoint?: string; createPayments?: boolean }
 ) {
   const matches = await matchTransactions(transactions, invoices);
   if (options.createPayments && options.paymentEndpoint) {
     for (const m of matches) {
       if (m.matchedInvoice && m.status === 'Matched') {
         const amount = Math.abs(
-          m.transaction.deposit ?? -(m.transaction.withdrawal || 0),
+          m.transaction.deposit ?? -(m.transaction.withdrawal || 0)
         );
         const entry: PaymentEntry = {
           doctype: 'Payment Entry',
@@ -126,7 +116,7 @@ export async function applyMatchingRules(
             action: 'insert',
             duration_ms: duration,
           },
-          'Created payment entry',
+          'Created payment entry'
         );
       } else {
         logInfo(
@@ -136,12 +126,10 @@ export async function applyMatchingRules(
             docId: m.matchedInvoice?.rechnungsnummer,
             action: 'noop',
           },
-          'No payment entry created',
+          'No payment entry created'
         );
       }
     }
   }
   return matches;
 }
-
-export { idempotencyKey };

@@ -68,6 +68,28 @@ export const BankTransactionSchema = z.object({
 });
 export type BankTransaction = z.infer<typeof BankTransactionSchema>;
 
+/** Journal Entry Account line */
+export const JournalEntryAccountSchema = z.object({
+  account: z.string(),
+  debit_in_account_currency: z.number().optional(),
+  credit_in_account_currency: z.number().optional(),
+  party_type: z.string().optional(),
+  party: z.string().optional(),
+});
+export type JournalEntryAccount = z.infer<typeof JournalEntryAccountSchema>;
+
+/** Journal Entry payload */
+export const JournalEntrySchema = z.object({
+    doctype: z.literal('Journal Entry'),
+    posting_date: z.string(),
+    company: z.string(),
+    voucher_type: z.string(),
+    user_remark: z.string().optional(),
+    accounts: z.array(JournalEntryAccountSchema),
+});
+export type JournalEntry = z.infer<typeof JournalEntrySchema>;
+
+
 /** Payment Entry reference line */
 export const PaymentEntryReferenceSchema = z.object({
   reference_doctype: z.string(),
@@ -137,3 +159,13 @@ export const StockEntrySchema = z.object({
   items: z.array(StockEntryItemSchema),
 });
 export type StockEntry = z.infer<typeof StockEntrySchema>;
+
+/** Supplier payload for creation */
+export const SupplierSchema = z.object({
+    doctype: z.literal('Supplier'),
+    supplier_name: z.string(),
+    supplier_group: z.string().optional(),
+    supplier_type: z.enum(['Company', 'Individual']).optional(),
+    tax_id: z.string().optional(),
+});
+export type Supplier = z.infer<typeof SupplierSchema>;
