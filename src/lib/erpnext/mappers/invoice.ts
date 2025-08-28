@@ -12,6 +12,11 @@ interface MapperOptions {
   headers?: Record<string, string>;
 }
 
+function shouldPost(options: MapperOptions): boolean {
+  const mode = process.env.FINANCIO_MODE || 'api';
+  return mode === 'api' && !options.dryRun && Boolean(options.endpoint);
+}
+
 function escapeCSVField(field: string | number | undefined | null): string {
   if (field === undefined || field === null) return '';
   const stringField = String(field);
@@ -82,9 +87,9 @@ export async function mapPurchaseInvoice(
     csvRows.push(invoiceData.join(','));
   }
 
-  if (!options.dryRun && options.endpoint) {
+  if (shouldPost(options)) {
     const existing = await findExistingPurchaseInvoice(payload, {
-      endpoint: options.endpoint,
+      endpoint: options.endpoint!,
       headers: options.headers,
     });
     if (existing) {
@@ -95,7 +100,7 @@ export async function mapPurchaseInvoice(
       };
     }
 
-    const response = await fetch(options.endpoint, {
+    const response = await fetch(options.endpoint!, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

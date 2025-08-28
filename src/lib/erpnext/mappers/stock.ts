@@ -33,6 +33,11 @@ interface MapperOptions {
   headers?: Record<string, string>;
 }
 
+function shouldPost(options: MapperOptions): boolean {
+  const mode = process.env.FINANCIO_MODE || 'api';
+  return mode === 'api' && !options.dryRun && Boolean(options.endpoint);
+}
+
 function escapeCSVField(field: string | number | undefined | null): string {
   if (field === undefined || field === null) return '';
   const stringField = String(field);
@@ -79,7 +84,7 @@ function escapeCSVField(field: string | number | undefined | null): string {
       it.valuationRate ?? '',
     ].map(escapeCSVField).join(','));
 
-  if (!options.dryRun && options.endpoint) {
+  if (shouldPost(options)) {
     if (isDuplicateStockReconciliation(payload)) {
       return {
         payload,
@@ -88,7 +93,7 @@ function escapeCSVField(field: string | number | undefined | null): string {
       };
     }
 
-    const response = await fetch(options.endpoint, {
+    const response = await fetch(options.endpoint!, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -147,7 +152,7 @@ export async function mapStockEntry(
     it.basicRate ?? '',
   ].map(escapeCSVField).join(','));
 
-  if (!options.dryRun && options.endpoint) {
+  if (shouldPost(options)) {
     if (isDuplicateStockEntry(payload)) {
       return {
         payload,
@@ -156,7 +161,7 @@ export async function mapStockEntry(
       };
     }
 
-    const response = await fetch(options.endpoint, {
+      const response = await fetch(options.endpoint!, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
