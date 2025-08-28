@@ -6,6 +6,7 @@ import crypto from "crypto";
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+export const maxDuration = 60; // Allow longer duration for Vercel functions
 
 type IncomingTxn = {
   id?: string;
@@ -71,31 +72,24 @@ export async function POST(req: Request) {
     const txns = payload?.transactions ?? [];
 
     if (!Array.isArray(txns) || txns.length === 0) {
-      return NextResponse.json({ ok: false, error: "No transactions provided." }, { status: 400 });
+      return NextResponse.json({ ok: false, error: "No transactions provided." }, { status: 400, headers: { 'Content-Type': 'application/json' } });
     }
 
     const results: Array<{ external_id: string; status: "created" | "exists" | "error"; message?: string }> = [];
 
-    // batch for safety (ERPNext rate limiting)
-    const batchSize = 75;
-    for (let i = 0; i < txns.length; i += batchSize) {
-      const slice = txns.slice(i, i + batchSize);
-
-      // Process sequentially to keep it simple/robust; can parallelize if needed
-      for (const t of slice) {
-        const doc = toDoc(t);
-        try {
-          // idempotency check
-          const exists = await findResource("Bank Transaction", [["external_id", "=", doc.external_id]]);
-          if (exists) {
-            results.push({ external_id: doc.external_id, status: "exists" });
-            continue;
-          }
-          await createResource("Bank Transaction", doc);
-          results.push({ external_id: doc.external_id, status: "created" });
-        } catch (e: any) {
-          results.push({ external_id: doc.external_id, status: "error", message: e?.message ?? String(e) });
+    // The client now sends batches, so the server processes what it receives.
+    for (const t of txns) {
+      const doc = toDoc(t);
+      try {
+        const exists = await findResource("Bank Transaction", [["external_id", "=", doc.external_id]]);
+        if (exists) {
+          results.push({ external_id: doc.external_id, status: "exists" });
+          continue;
         }
+        await createResource("Bank Transaction", doc);
+        results.push({ external_id: doc.external_id, status: "created" });
+      } catch (e: any) {
+        results.push({ external_id: doc.external_id, status: "error", message: e?.message ?? String(e) });
       }
     }
     
@@ -105,8 +99,9 @@ export async function POST(req: Request) {
         errors: results.filter(r => r.status === 'error').length,
     }
 
-    return NextResponse.json({ ok: true, count: results.length, summary, results });
+    return NextResponse.json({ ok: true, count: results.length, summary, results }, { headers: { 'Content-Type': 'application/json' } });
   } catch (err: any) {
-    return NextResponse.json({ ok: false, error: err?.message ?? String(err) }, { status: 500 });
+    const errorMessage = err.message || "An unhandled error occurred in the bank API route.";
+    return NextResponse.json({ ok: false, error: errorMessage }, { status: 500, headers: { 'Content-Type': 'application/json' } });
   }
 }

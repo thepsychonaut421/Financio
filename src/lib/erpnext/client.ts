@@ -5,7 +5,7 @@
 import { logError, logInfo } from "@/lib/logger";
 
 const RETRY_COUNT = 3;
-const BASE_DELAY_MS = 800; // Start lower than 1000 to fit within 1-3s with jitter
+const BASE_DELAY_MS = 800; 
 const REQ_TIMEOUT_MS = 30_000;
 
 type JsonLike = Record<string, any> | any[];
@@ -18,6 +18,25 @@ function withJitter(base: number) {
   const jitter = Math.floor(Math.random() * (base * 0.3)); // ±30%
   return base + jitter;
 }
+
+const safeParseJSON = (text: string) => { 
+  try { 
+    return JSON.parse(text); 
+  } catch { 
+    return { _error: 'Invalid JSON response from server', _raw: text.slice(0, 500) }; 
+  } 
+};
+
+const httpStatusLabel = (status: number) => {
+  const labels: Record<number, string> = {
+    400: "Bad Request", 401: "Unauthorized", 403: "Forbidden", 404: "Not Found",
+    413: "Payload Too Large", 429: "Too Many Requests", 500: "Internal Server Error",
+    502: "Bad Gateway", 503: "Service Unavailable", 504: "Gateway Timeout"
+  };
+  return labels[status] || `HTTP ${status}`;
+};
+
+const trimHTML = (html: string) => html.replace(/\s+/g, ' ').replace(/<[^>]*>/g, '').slice(0, 300);
 
 function unwrapErpResponse(json: any) {
   if (json == null) return json;
@@ -32,32 +51,19 @@ function unwrapErpResponse(json: any) {
 function extractErpErrorDetails(rawText: string): string {
   try {
     const j = JSON.parse(rawText);
-    // _server_messages is typically a stringified JSON array: '["{...json...}"]'
     if (j._server_messages) {
       try {
         const arr = JSON.parse(j._server_messages) as string[];
-        const messages = arr
-          .map((s) => {
-            try {
-              const o = JSON.parse(s);
-              return o.message || o.msg || o._error_message || s;
-            } catch {
-              return s;
-            }
-          })
-          .filter(Boolean)
-          .join(" | ");
+        const messages = arr.map((s) => { try { const o = JSON.parse(s); return o.message || o.msg || o._error_message || s; } catch { return s; } }).filter(Boolean).join(" | ");
         if (messages) return messages;
-      } catch {
-        /* ignore */
-      }
+      } catch { /* ignore */ }
     }
     if (j.exception) return j.exception;
     if (j.message) return typeof j.message === "string" ? j.message : JSON.stringify(j.message);
     if (j._error_message) return j._error_message;
-    return rawText;
+    return rawText.slice(0, 500); // Truncate to avoid overly long errors
   } catch {
-    return rawText;
+    return rawText.slice(0, 500);
   }
 }
 
@@ -75,77 +81,58 @@ export async function erpnextFetch(path: string, init: RequestInit = {}): Promis
 
   for (let attempt = 1; attempt <= RETRY_COUNT; attempt++) {
     const controller = new AbortController();
-    const t = setTimeout(() => controller.abort(), REQ_TIMEOUT_MS);
+    const timeoutId = setTimeout(() => controller.abort(), REQ_TIMEOUT_MS);
 
     try {
-      const res = await fetch(url, {
-        cache: "no-store", // Important for Next.js to avoid implicit caching
-        ...init,
-        headers,
-        signal: controller.signal,
-      });
+      const response = await fetch(url, { ...init, headers, signal: controller.signal, cache: 'no-store' });
+      clearTimeout(timeoutId);
 
-      clearTimeout(t);
+      const contentType = response.headers.get('content-type') || '';
+      const rawText = await response.text();
 
-      if (!res.ok) {
-        // Retry on 429 (Too Many Requests) or 5xx server errors
-        if (res.status === 429 || res.status >= 500) {
-          const retryAfterHeader = res.headers.get("retry-after");
-          let delay =
-            retryAfterHeader && /^\d+$/.test(retryAfterHeader)
-              ? parseInt(retryAfterHeader, 10) * 1000
-              : withJitter(BASE_DELAY_MS * Math.pow(2, attempt - 1));
-
-          logInfo(
-            { workflow: "erpnext-client", action: "retry", docType: "Unknown", status: res.status },
-            `Retrying ${path} in ${delay}ms (attempt ${attempt}/${RETRY_COUNT})`
-          );
-
-          if (attempt === RETRY_COUNT) {
-            const text = await res.text();
-            const details = extractErpErrorDetails(text);
-            throw new Error(`ERPNext request failed after retries: ${details}`);
-          }
-          await sleep(delay);
-          continue;
+      if (!response.ok) {
+        let errorPayload;
+        if (contentType.includes('application/json')) {
+          errorPayload = { details: extractErpErrorDetails(rawText) };
+        } else {
+          errorPayload = { error: httpStatusLabel(response.status), html: trimHTML(rawText) };
         }
-
-        // For other 4xx errors, fail immediately with a decoded message
-        const text = await res.text();
-        const details = extractErpErrorDetails(text);
-        logError({ workflow: "erpnext-client", action: "fetch-fail", docType: "Unknown", status: res.status }, details, path);
-        throw new Error(details);
+        
+        // Retry logic for specific statuses
+        if (response.status === 429 || response.status >= 500) {
+            if (attempt < RETRY_COUNT) {
+                const delay = withJitter(BASE_DELAY_MS * Math.pow(2, attempt - 1));
+                logInfo({ workflow: "erpnext-client", action: "retry", status: response.status, attempt }, `Retrying after ${delay}ms...`);
+                await sleep(delay);
+                continue; // Retry the loop
+            }
+        }
+        // If not retrying, throw the error
+        throw new Error(JSON.stringify({ status: response.status, ...errorPayload }));
       }
 
-      // Handle successful responses
-      const text = await res.text();
-      if (!text) return { ok: true }; // Handle empty responses (e.g., from DELETE)
-
-      let json: any;
-      try {
-        json = JSON.parse(text);
-      } catch {
-        // ERPNext can sometimes return plain text
-        return text;
-      }
+      if (!rawText) return { ok: true };
+      const json = safeParseJSON(rawText);
       return unwrapErpResponse(json);
 
     } catch (err: any) {
-      clearTimeout(t);
-      const aborted = err?.name === "AbortError";
-      const msg = aborted ? `Timeout after ${REQ_TIMEOUT_MS}ms` : err.message || String(err);
-      logInfo({ workflow: "erpnext-client", action: "fetch-exception", docType: "Unknown", attempt }, `${path} → ${msg}`);
-
+      clearTimeout(timeoutId);
       if (attempt === RETRY_COUNT) {
-        throw new Error(`Request to ${path} failed after ${RETRY_COUNT} attempts: ${msg}`);
+         let parsedError;
+         try {
+             parsedError = JSON.parse(err.message);
+         } catch {
+             parsedError = { message: err.message };
+         }
+         logError({ workflow: "erpnext-client", action: "fetch-fail", attempt }, parsedError, path);
+         throw new Error(parsedError.message || err.message);
       }
-      await sleep(withJitter(BASE_DELAY_MS * Math.pow(2, attempt - 1)));
     }
   }
-
-  // This should theoretically be unreachable
-  throw new Error("Unreachable code in erpnextFetch");
+  // This part should be unreachable if the loop logic is correct
+  throw new Error("erpnexFetch failed after all retries.");
 }
+
 
 /** CRUD helpers that benefit from the robust fetch client */
 export async function getResource(docType: string, name: string) {

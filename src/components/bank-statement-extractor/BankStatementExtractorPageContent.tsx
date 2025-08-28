@@ -42,9 +42,6 @@ export function BankStatementExtractorPageContent() {
       const cachedStateJSON = localStorage.getItem(LOCAL_STORAGE_KEY);
       if (cachedStateJSON) {
         const cachedState: ExtractorState = JSON.parse(cachedStateJSON);
-        // We can't restore File objects, but we can show that files were selected
-        // For simplicity, we just restore the transactions and status.
-        // A more advanced implementation could re-create File objects from blobs if needed.
         if (cachedState.transactions.length > 0) {
             setExtractedTransactions(cachedState.transactions);
             setStatus(cachedState.status);
@@ -135,6 +132,7 @@ export function BankStatementExtractorPageContent() {
       return;
     }
     setIsSubmitting(true);
+    setProgress(0);
 
     const BATCH_SIZE = 75;
     let totalCreated = 0;
@@ -144,9 +142,10 @@ export function BankStatementExtractorPageContent() {
     try {
         for (let i = 0; i < extractedTransactions.length; i += BATCH_SIZE) {
             const chunk = extractedTransactions.slice(i, i + BATCH_SIZE);
+            setCurrentFileProgress(`Submitting batch ${i / BATCH_SIZE + 1} of ${Math.ceil(extractedTransactions.length / BATCH_SIZE)}...`);
             
             const transactionsForAPI = chunk.map(t => ({
-                bank_account: process.env.NEXT_PUBLIC_ERPNEXT_BANK_ACCOUNT || "Bank Account",
+                bank_account: process.env.NEXT_PUBLIC_ERPNEXT_BANK_ACCOUNT || "Bank Account", // This should be configured
                 date: t.date,
                 amount: t.amount,
                 description: t.description,
@@ -157,7 +156,7 @@ export function BankStatementExtractorPageContent() {
 
             const response = await fetch('/api/erpnext/bank', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
                 body: JSON.stringify({ transactions: transactionsForAPI }),
             });
 
@@ -177,6 +176,7 @@ export function BankStatementExtractorPageContent() {
                 totalExists += result.summary.exists || 0;
                 totalErrors += result.summary.errors || 0;
             }
+            setProgress(Math.round(((i + BATCH_SIZE) / extractedTransactions.length) * 100));
         }
         
         const message = `Created: ${totalCreated}, Exists (Skipped): ${totalExists}, Errors: ${totalErrors}`;
@@ -193,6 +193,8 @@ export function BankStatementExtractorPageContent() {
         toast({ title: "Submission Failed", description: error.message, variant: "destructive" });
     } finally {
         setIsSubmitting(false);
+        setCurrentFileProgress('');
+        setProgress(0);
     }
   };
 
@@ -213,7 +215,7 @@ export function BankStatementExtractorPageContent() {
           selectedFileCount={selectedFiles.length}
         />
 
-        {status === 'processing' && (
+        {(status === 'processing' || isSubmitting) && (
           <div className="my-6 p-4 border rounded-lg shadow-sm bg-card">
             <Progress value={progress} className="w-full mb-2" />
             <p className="text-sm text-center text-muted-foreground">{currentFileProgress}</p>
