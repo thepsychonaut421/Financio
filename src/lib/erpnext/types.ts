@@ -137,4 +137,3 @@ export const StockEntrySchema = z.object({
   items: z.array(StockEntryItemSchema),
 });
 export type StockEntry = z.infer<typeof StockEntrySchema>;
-

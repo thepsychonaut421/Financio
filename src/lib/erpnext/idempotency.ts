@@ -60,4 +60,3 @@ export function stockEntryKey(
 }
 
 export type IdempotencyKeyBuilder<T> = (doc: T) => string;
-

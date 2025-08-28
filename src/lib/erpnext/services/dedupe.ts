@@ -128,4 +128,3 @@ export function isDuplicateStockEntry(doc: StockEntry): boolean {
   const key = stockEntryKey(doc);
   return markLocal('Stock Entry', key);
 }
-

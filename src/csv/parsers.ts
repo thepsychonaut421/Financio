@@ -65,4 +65,3 @@ export function toBankTransactions(rows: BankCsvRow[], account: string): BankTra
     };
   });
 }
-

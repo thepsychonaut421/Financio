@@ -147,4 +147,3 @@ export function mergeItems(from: string, to: string): void {
 }
 
 export { CatalogMap, catalog as CatalogMapInstance };
-
