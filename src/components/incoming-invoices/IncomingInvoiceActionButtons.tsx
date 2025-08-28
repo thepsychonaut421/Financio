@@ -12,15 +12,19 @@ import {
   downloadFile 
 } from '@/lib/export-helpers';
 import type { IncomingInvoiceItem, ERPIncomingInvoiceItem } from '@/types/incoming-invoice';
-import { Copy, FileJson, FileSpreadsheet, ExternalLink, Users, FileArchive, Trash2, Send } from 'lucide-react'; // Added Send icon
+import { Copy, FileJson, FileSpreadsheet, ExternalLink, Users, FileArchive, Trash2, Send, Package, Landmark } from 'lucide-react'; // Added Package, Landmark
 
 interface IncomingInvoiceActionButtonsProps {
   invoices: IncomingInvoiceItem[] | ERPIncomingInvoiceItem[];
   erpMode: boolean;
   onExportToERPNext: () => void;
   isExportingToERPNext: boolean;
-  onExportSuppliersERPNext: () => void; // Changed name for clarity
-  isExportingSuppliers: boolean; // Added for loading state
+  onExportSuppliersERPNext: () => void;
+  isExportingSuppliers: boolean;
+  onSubmitItemsAPI: () => void; // New
+  isSubmittingItems: boolean; // New
+  onSubmitBankAPI: () => void; // New
+  isSubmittingBank: boolean; // New
   onExportInvoicesAsZip: () => void; 
   isExportingZip: boolean; 
   onClearAllInvoices: () => void;
@@ -33,7 +37,11 @@ export function IncomingInvoiceActionButtons({
   onExportToERPNext,
   isExportingToERPNext,
   onExportSuppliersERPNext,
-  isExportingSuppliers, // Consuming new prop
+  isExportingSuppliers,
+  onSubmitItemsAPI,
+  isSubmittingItems,
+  onSubmitBankAPI,
+  isSubmittingBank,
   onExportInvoicesAsZip, 
   isExportingZip,
   onClearAllInvoices,
@@ -125,6 +133,22 @@ export function IncomingInvoiceActionButtons({
              <Send className="mr-2 h-4 w-4" />
              {isExportingSuppliers ? 'Submitting...' : 'Submit Suppliers (API)'}
           </Button>
+           <Button
+              variant="secondary"
+              onClick={onSubmitItemsAPI}
+              disabled={isSubmittingItems || invoices.length === 0}
+            >
+              <Package className="mr-2 h-4 w-4" />
+              {isSubmittingItems ? 'Submitting...' : 'Submit Items (API)'}
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={onSubmitBankAPI}
+              disabled={isSubmittingBank || invoices.length === 0}
+            >
+              <Landmark className="mr-2 h-4 w-4" />
+              {isSubmittingBank ? 'Submitting...' : 'Submit Bank Rec. (API)'}
+            </Button>
           <Button 
             onClick={onExportInvoicesAsZip}
             variant="secondary"

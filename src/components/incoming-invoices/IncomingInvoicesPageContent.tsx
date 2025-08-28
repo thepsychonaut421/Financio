@@ -76,6 +76,8 @@ export function IncomingInvoicesPageContent() {
   const [erpMode, setErpMode] = useState(false);
   const [isExportingToERPNext, setIsExportingToERPNext] = useState(false);
   const [isExportingSuppliers, setIsExportingSuppliers] = useState(false);
+  const [isExportingItems, setIsExportingItems] = useState(false);
+  const [isExportingBank, setIsExportingBank] = useState(false);
   const [isExportingZip, setIsExportingZip] = useState(false);
   const { toast } = useToast();
   const [currentYear, setCurrentYear] = useState<string>('');
@@ -462,7 +464,7 @@ export function IncomingInvoicesPageContent() {
     const supplierPayloads = Array.from(uniqueSuppliers.values()).map(invoice => ({
         name: invoice.lieferantName,
         type: "Unternehmen",
-        group: "Alle Lieferantengruppen",
+        group: "All Suppliers",
         country: "Deutschland",
         tax_id: invoice.remarks?.match(/USt-IdNr.:\s*([^\s]+)/)?.[1],
         address: {
@@ -535,6 +537,46 @@ export function IncomingInvoicesPageContent() {
     }
   };
 
+    const handleSubmitItemsAPI = async () => {
+        setIsExportingItems(true);
+        try {
+            const response = await fetch('/api/erpnext/items', { 
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ invoices: erpProcessedInvoices })
+            });
+            const result = await response.json();
+            if (!response.ok) {
+                throw new Error(result.error || 'Failed to submit items');
+            }
+            toast({ title: "Items API", description: result.summary, variant: "default" });
+        } catch (error: any) {
+            toast({ title: "Items API Failed", description: error.message, variant: "destructive" });
+        } finally {
+            setIsExportingItems(false);
+        }
+    };
+
+    const handleSubmitBankAPI = async () => {
+        setIsExportingBank(true);
+        try {
+            const response = await fetch('/api/erpnext/bank', { 
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                // The backend route will fetch the data from its source
+            });
+            const result = await response.json();
+            if (!response.ok) {
+                throw new Error(result.error || 'Failed to submit bank transactions');
+            }
+            toast({ title: "Bank API", description: result.message, variant: "default" });
+        } catch (error: any) {
+            toast({ title: "Bank API Failed", description: error.message, variant: "destructive" });
+        } finally {
+            setIsExportingBank(false);
+        }
+    };
+
 
   const handleExportInvoicesAsZip = async () => {
     const invoicesToZip = erpMode ? sortedErpProcessedInvoices : erpProcessedInvoices;
@@ -586,96 +628,6 @@ export function IncomingInvoicesPageContent() {
     } finally {
       setIsExportingZip(false);
     }
-  };
-
-  const handleErpExportFileChange = (event: ChangeEvent<HTMLInputElement>) => {
-    if (event.target.files && event.target.files[0]) {
-      setErpExportFile(event.target.files[0]);
-      setErrorMessage(null); 
-    } else {
-      setErpExportFile(null);
-    }
-  };
-
-  const handleProcessErpExport = () => {
-    if (!erpExportFile) {
-      setErrorMessage("Please select an ERPNext export CSV file first.");
-      return;
-    }
-    setIsCheckingDuplicates(true);
-    setErrorMessage(null);
-
-    Papa.parse(erpExportFile, {
-      header: true,
-      skipEmptyLines: true,
-      complete: (results) => {
-        const newKeys = new Set<string>();
-        const headers = (results.meta.fields || []).map(h => h.toLowerCase().trim());
-        
-        const supplierColVariations = ["supplier", "supplier name", "lieferant", "lieferantenname", "supplier_name"];
-        const billNoColVariations = ["bill no", "bill_no", "invoice no", "invoice_no", "rechnungsnummer", "name", "id"]; 
-        const dateColVariations = ["posting date", "posting_date", "invoice date", "invoice_date", "rechnungsdatum", "datum", "bill date", "bill_date"];
-
-        let actualSupplierCol = headers.find(h => supplierColVariations.includes(h));
-        let actualBillNoCol = headers.find(h => billNoColVariations.includes(h));
-        let actualDateCol = headers.find(h => dateColVariations.includes(h));
-        
-        if (!actualSupplierCol || !actualBillNoCol || !actualDateCol) {
-            const missing = [
-                !actualSupplierCol ? "Supplier" : null,
-                !actualBillNoCol ? "Invoice Number" : null,
-                !actualDateCol ? "Invoice Date" : null
-            ].filter(Boolean).join(', ');
-            setErrorMessage(`Could not find required columns in ERPNext export: ${missing}. Found headers: ${(results.meta.fields || []).join(', ')}`);
-            setIsCheckingDuplicates(false);
-            setExistingErpInvoiceKeys(new Set()); 
-            return;
-        }
-        
-        // Get original case headers for data access
-        const originalHeaders = results.meta.fields!;
-        const supplierHeader = originalHeaders[headers.indexOf(actualSupplierCol)];
-        const billNoHeader = originalHeaders[headers.indexOf(actualBillNoCol)];
-        const dateHeader = originalHeaders[headers.indexOf(actualDateCol)];
-
-
-        results.data.forEach((row: any) => {
-          const rawSupplierNameFromErp = (row[supplierHeader] || '').trim();
-          let normalizedSupplierNameForErpKey = rawSupplierNameFromErp.toLowerCase();
-          const upperCaseErpSupplierName = rawSupplierNameFromErp.toUpperCase();
-
-          if (supplierMap[upperCaseErpSupplierName]) {
-            normalizedSupplierNameForErpKey = supplierMap[upperCaseErpSupplierName].toLowerCase();
-          }
-          
-          const invoiceNumberFromErp = (row[billNoHeader] || '').trim().toLowerCase();
-          const rawDateFromErp = (row[dateHeader] || '').trim();
-          const parsedAndFormattedDate = formatDateForERP(rawDateFromErp); 
-
-          if (normalizedSupplierNameForErpKey && invoiceNumberFromErp && parsedAndFormattedDate) {
-            const key = `${normalizedSupplierNameForErpKey}||${invoiceNumberFromErp}||${parsedAndFormattedDate}`;
-            newKeys.add(key);
-          } else {
-            // console.warn("Skipping row for ERP key generation due to missing supplier, invoice number, or unparsable date:", row);
-          }
-        });
-
-        setExistingErpInvoiceKeys(newKeys);
-        toast({
-          title: "ERPNext Data Processed",
-          description: `Found ${newKeys.size} unique invoice keys (Supplier + Number + Date) from your ERPNext export.`,
-        });
-        setIsCheckingDuplicates(false);
-        setStatus(prev => prev === 'idle' && (extractedInvoices.length > 0 || erpProcessedInvoices.length > 0) ? 'success' : prev);
-
-      },
-      error: (error: Error) => {
-        console.error("Error parsing ERPNext export CSV:", error);
-        setErrorMessage(`Error parsing ERPNext export: ${error.message}`);
-        setExistingErpInvoiceKeys(new Set()); 
-        setIsCheckingDuplicates(false);
-      }
-    });
   };
   
   const createInvoiceKey = (invoice: ERPIncomingInvoiceItem | IncomingInvoiceItem): string => {
@@ -740,10 +692,6 @@ export function IncomingInvoicesPageContent() {
         </p>
       </header>
       
-      <div className="bg-red-500 text-white p-4 my-4 rounded-md font-bold">
-          BUILD: {process.env.NEXT_PUBLIC_BUILD_ID || 'no-id'} - TEST BANNER
-      </div>
-
       <main className="space-y-8">
         <IncomingInvoiceUploadForm
           onFilesSelected={handleFilesSelected}
@@ -751,43 +699,7 @@ export function IncomingInvoicesPageContent() {
           isProcessing={status === 'processing'}
           selectedFileCount={selectedFiles.length}
         />
-
-        <Card className="w-full max-w-2xl mx-auto shadow-lg">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 font-headline">
-              <CheckSquare className="w-6 h-6 text-green-600" />
-              Check Duplicates with ERPNext Export (Optional)
-            </CardTitle>
-            <CardDescription>Upload a CSV export from ERPNext (containing Supplier, Invoice No, and Date) to flag invoices possibly already in your system.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div>
-              <Label htmlFor={erpExportInputId} className="text-sm font-medium">ERPNext CSV Export File</Label>
-              <Input
-                id={erpExportInputId}
-                type="file"
-                accept=".csv,text/csv"
-                onChange={handleErpExportFileChange}
-                disabled={isCheckingDuplicates}
-                className="mt-1 block w-full text-sm text-slate-500
-                  file:mr-4 file:py-2 file:px-4
-                  file:rounded-full file:border-0
-                  file:text-sm file:font-semibold
-                  file:bg-primary/10 file:text-primary
-                  hover:file:bg-primary/20"
-              />
-            </div>
-            <Button
-              onClick={handleProcessErpExport}
-              disabled={isCheckingDuplicates || !erpExportFile}
-              className="w-full"
-            >
-              {isCheckingDuplicates ? 'Processing ERP Export...' : 'Load & Check ERP Data'}
-            </Button>
-          </CardContent>
-        </Card>
-
-
+        
         <div className="flex flex-col sm:flex-row items-center justify-center gap-4 p-4 bg-card border rounded-lg shadow-sm">
           <div className="flex items-center space-x-3">
             <Switch
@@ -863,7 +775,7 @@ export function IncomingInvoicesPageContent() {
             <Info className="h-4 w-4 text-primary" />
             <AlertTitle className="text-primary font-semibold">Get Started</AlertTitle>
             <AlertDescription className="text-primary/80">
-              Upload one or more PDF files. Extracted details for each invoice will be shown below. Toggle ERP Vorlage Mode for ERPNext specific processing. Processed data is saved for the Bank Matcher. You can also upload an ERPNext CSV export to check for duplicates.
+              Upload one or more PDF files. Extracted details for each invoice will be shown below. Toggle ERP Vorlage Mode for ERPNext specific processing. Processed data is saved for the Bank Matcher.
             </AlertDescription>
           </Alert>
         )}
@@ -877,6 +789,10 @@ export function IncomingInvoicesPageContent() {
               isExportingToERPNext={isExportingToERPNext}
               onExportSuppliersERPNext={handleExportSuppliersERPNext}
               isExportingSuppliers={isExportingSuppliers}
+              onSubmitItemsAPI={handleSubmitItemsAPI}
+              isSubmittingItems={isExportingItems}
+              onSubmitBankAPI={handleSubmitBankAPI}
+              isSubmittingBank={isExportingBank}
               onExportInvoicesAsZip={handleExportInvoicesAsZip} 
               isExportingZip={isExportingZip} 
               onClearAllInvoices={handleClearAllInvoices}
