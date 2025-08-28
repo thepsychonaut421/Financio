@@ -1,8 +1,7 @@
-
 // src/app/api/erpnext/suppliers/route.ts
 import { NextResponse } from "next/server";
 import { ensureSupplierExistsDE } from "@/lib/erpnext-api";
-import { logError } from "@/lib/logger";
+import { logError, logInfo } from "@/lib/logger";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -28,6 +27,7 @@ export async function POST(req: Request) {
         continue;
       }
       try {
+        logInfo({ workflow: 'erpnext-api', docType: 'Supplier', action: 'ensure-de-start', docId: s.name }, `[API] Processing supplier: ${s.name}`);
         const r = await ensureSupplierExistsDE(s);
         results.push({ ok:true, name:s.name, status:r.status, id:r.supplier?.name });
       } catch (e:any) {
@@ -43,7 +43,7 @@ export async function POST(req: Request) {
     const succeeded = results.filter(r => r.ok).length;
     
     // Use 207 Multi-Status if some failed, 200 if all succeeded
-    const responseStatus = succeeded > 0 && succeeded < results.length ? 207 : 200;
+    const responseStatus = succeeded > 0 && succeeded < results.length ? 207 : (succeeded === results.length ? 200 : 500);
     
     return NextResponse.json({ 
         ok: succeeded === results.length, 

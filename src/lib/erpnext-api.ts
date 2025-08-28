@@ -1,4 +1,3 @@
-
 // src/lib/erpnext-api.ts
 'use server';
 
@@ -29,7 +28,7 @@ async function resolveGroup(preferred?: string): Promise<string> {
   } catch (e) {
       logInfo({ workflow: 'erpnext-api', docType: 'Supplier Group', action: 'resolve-leaf-fail' }, `Could not find any leaf supplier group. Error: ${e}`);
   }
-  return "All Suppliers"; // Fallback to a common default
+  return "Alle Lieferantengruppen"; // Fallback to a common default like "All Suppliers" in German
 }
 
 export async function ensureSupplierExistsDE(input: {
@@ -61,6 +60,7 @@ export async function ensureSupplierExistsDE(input: {
     tax_id: input.tax_id || undefined,
     country: input.country || undefined,
   };
+  logInfo({ workflow: 'erpnext-api', docType: 'Supplier', action: 'create-payload' }, `Creating supplier "${input.name}" with payload: ${JSON.stringify(payload)}`);
   const created = await createResource("Supplier", payload) as any;
 
   // 3) (opțional) create Address linked
