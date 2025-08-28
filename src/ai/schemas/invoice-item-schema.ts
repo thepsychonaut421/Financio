@@ -41,14 +41,16 @@ export type ErpItem = z.infer<typeof ErpItemSchema>;
 
 
 export const PurchaseInvoiceSchema = z.object({
-  doctype: z.literal('Purchase Invoice'),
+  doctype: z.literal('Purchase Invoice', {
+    required_error: "The 'doctype' field must be 'Purchase Invoice'.",
+  }),
   supplier: z.string(),
   posting_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, { message: "Date must be in YYYY-MM-DD format" }),
   due_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
   bill_no: z.string(),
   bill_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   currency: z.string().default('EUR'),
-  items: z.array(ErpItemSchema).min(1, { message: "At least one item is required" }),
+  items: z.array(ErpItemSchema).min(1, { message: "At least one item is required in the 'items' array." }),
   taxes: z.array(z.object({
     charge_type: z.string(),
     account_head: z.string(),
@@ -63,5 +65,3 @@ export const PurchaseInvoiceSchema = z.object({
 });
 
 export type PurchaseInvoice = z.infer<typeof PurchaseInvoiceSchema>;
-
-    

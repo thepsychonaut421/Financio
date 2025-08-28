@@ -151,6 +151,8 @@ Rules:
 - Sum check: net + VAT = gross; per-line amount = qty*rate.
 - If document is a Gutschrift/Credit Note set is_return true.
 - If due date absent, set null.
+- IMPORTANT: NEVER return an object with an "error" key. Always return a valid JSON object matching the schema. If information is missing, use null for optional fields and empty strings "" for required string fields. Explain any uncertainty in the "remarks" field. Always include doctype, supplier, posting_date, bill_no, bill_date, and at least one item.
+
 
 Fields:
 \`\`\`json
@@ -210,6 +212,13 @@ const extractIncomingInvoiceDataFlow = ai.defineFlow(
             return { error: `Failed to parse the AI's JSON response: ${e.message}` };
         }
 
+        // IMPORTANT: Check for an "error" property in the AI's JSON response *before* validation.
+        if (parsedJson && typeof parsedJson === 'object' && 'error' in parsedJson) {
+            const errorMessage = (parsedJson as {error: string}).error || 'Unknown error from AI model.';
+            console.error("AI returned an error object:", errorMessage);
+            return { error: `AI Model Error: ${errorMessage}` };
+        }
+        
         const validationResult = PurchaseInvoiceSchema.safeParse(parsedJson);
 
         if (!validationResult.success) {
@@ -236,5 +245,3 @@ const extractIncomingInvoiceDataFlow = ai.defineFlow(
     }
   }
 );
-
-    
