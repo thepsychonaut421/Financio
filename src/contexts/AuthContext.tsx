@@ -20,16 +20,11 @@ const firebaseConfig = {
 // Initialize Firebase
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
 
-// Initialize App Check
+// Initialize App Check only if the reCAPTCHA site key is available
 if (typeof window !== 'undefined') {
     if (process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY) {
-        // Pass your reCAPTCHA v3 site key (public) to activate().
-        // You can get a site key by registering your app at
-        // https://www.google.com/recaptcha/admin.
         initializeAppCheck(app, {
           provider: new ReCaptchaV3Provider(process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY),
-        
-          // Optional: Set to true to allow list your debug token.
           isTokenAutoRefreshEnabled: true
         });
     }
