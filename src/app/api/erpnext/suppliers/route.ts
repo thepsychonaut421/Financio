@@ -36,6 +36,7 @@ export async function POST(req: Request) {
           e,
           `[API] Failed to ensure/create German-localized supplier: ${s.name}`
         );
+        // Propagate the specific error message
         results.push({ ok:false, name:s.name, error: e?.message || String(e) });
       }
     }
@@ -59,6 +60,7 @@ export async function POST(req: Request) {
         e,
         'A critical error occurred while processing the supplier batch.'
       );
+      // Ensure the detailed error message is sent back in the response
       return NextResponse.json({ ok: false, error: 'Failed to process request: ' + (e.message || 'Unknown error') }, { status: 500 });
   }
 }

@@ -26,9 +26,9 @@ async function resolveGroup(preferred?: string): Promise<string> {
     const leaf = await findResource("Supplier Group", [["is_group","=",0]]);
     if (leaf && (leaf as any).name) return (leaf as any).name;
   } catch (e) {
-      logInfo({ workflow: 'erpnext-api', docType: 'Supplier Group', action: 'resolve-leaf-fail' }, `Could not find any leaf supplier group. Error: ${e}`);
+      logInfo({ workflow: 'erpnext-api', docType: 'Supplier Group', action: 'resolve-leaf-fail' }, `Could not find any leaf supplier group. Falling back to default. Error: ${e}`);
   }
-  return "Alle Lieferantengruppen"; // Fallback to a common default like "All Suppliers" in German
+  return "Alle Lieferantengruppen"; // Fallback to a common default
 }
 
 export async function ensureSupplierExistsDE(input: {
@@ -58,9 +58,9 @@ export async function ensureSupplierExistsDE(input: {
     supplier_type: mapSupplierTypeDE(input.type),
     supplier_group: await resolveGroup(input.group),
     tax_id: input.tax_id || undefined,
-    country: input.country || undefined,
+    country: input.country || "Deutschland",
   };
-  logInfo({ workflow: 'erpnext-api', docType: 'Supplier', action: 'create-payload' }, `Creating supplier "${input.name}" with payload: ${JSON.stringify(payload)}`);
+  logInfo({ workflow: 'erpnext-api', docType: 'Supplier', action: 'create-payload', docId: input.name }, `Creating supplier with payload: ${JSON.stringify(payload)}`);
   const created = await createResource("Supplier", payload) as any;
 
   // 3) (opțional) create Address linked

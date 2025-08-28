@@ -461,8 +461,8 @@ export function IncomingInvoicesPageContent() {
 
     const supplierPayloads = Array.from(uniqueSuppliers.values()).map(invoice => ({
         name: invoice.lieferantName,
-        type: "Unternehmen", // Setzt Standardwert, kann aber durch AI-Extraktion überschrieben werden
-        group: "Alle Lieferantengruppen", // Standardgruppe
+        type: "Unternehmen",
+        group: "Alle Lieferantengruppen",
         country: "Deutschland",
         tax_id: invoice.remarks?.match(/USt-IdNr.:\s*([^\s]+)/)?.[1],
         address: {
@@ -493,13 +493,13 @@ export function IncomingInvoicesPageContent() {
         const feedbackLines = (result.results || []).map((r:any) => r.ok ? `✅ ${r.name} (${r.status})` : `❌ ${r.name} — ${r.error}`).join("\n");
         toast({
             title: `Suppliers API: ${result.succeeded}/${result.total} succeeded`,
-            description: <pre className="mt-2 w-[340px] rounded-md bg-slate-950 p-4"><code className="text-white">{feedbackLines}</code></pre>,
+            description: <pre className="mt-2 w-full max-w-sm rounded-md bg-slate-950 p-4 whitespace-pre-wrap"><code className="text-white">{feedbackLines}</code></pre>,
         });
 
     } catch (error: any) {
         toast({ title: "Supplier Export Failed", description: error.message, variant: "destructive" });
     } finally {
-        setIsExportingSuppliers(false);
+      setIsExportingSuppliers(false);
     }
   };
 
