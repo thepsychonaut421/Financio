@@ -76,7 +76,7 @@ export function IncomingInvoicesPageContent() {
   const [erpMode, setErpMode] = useState(false);
   const [isExportingToERPNext, setIsExportingToERPNext] = useState(false);
   const [isExportingSuppliers, setIsExportingSuppliers] = useState(false);
-  const [isExportingItems, setIsExportingItems] = useState(false);
+  const [isSubmittingItems, setIsSubmittingItems] = useState(false);
   const [isExportingZip, setIsExportingZip] = useState(false);
   const { toast } = useToast();
   const [currentYear, setCurrentYear] = useState<string>('');
@@ -452,20 +452,21 @@ export function IncomingInvoicesPageContent() {
         return;
     }
 
-    const uniqueSuppliers = new Map<string, ERPIncomingInvoiceItem>();
+    const uniqueSuppliersMap = new Map<string, ERPIncomingInvoiceItem>();
     invoicesToUse.forEach(invoice => {
         const supplierKey = (invoice.lieferantName || '').trim().toUpperCase();
-        if (supplierKey && !uniqueSuppliers.has(supplierKey) && supplierKey !== "UNBEKANNT_SUPPLIER_PLACEHOLDER" && supplierKey !== "UNBEKANNT") {
-            uniqueSuppliers.set(supplierKey, invoice);
+        if (supplierKey && supplierKey !== "UNBEKANNT_SUPPLIER_PLACEHOLDER" && supplierKey !== "UNBEKANNT") {
+            if (!uniqueSuppliersMap.has(supplierKey)) {
+                uniqueSuppliersMap.set(supplierKey, invoice);
+            }
         }
     });
 
-    const supplierPayloads = Array.from(uniqueSuppliers.values()).map(invoice => ({
+    const supplierPayloads = Array.from(uniqueSuppliersMap.values()).map(invoice => ({
         name: invoice.lieferantName,
         type: "Unternehmen",
         group: "All Suppliers",
         country: "Deutschland",
-        tax_id: invoice.remarks?.match(/USt-IdNr.:\s*([^\s]+)/)?.[1],
         address: {
             line1: invoice.lieferantAdresse,
         }
@@ -537,25 +538,29 @@ export function IncomingInvoicesPageContent() {
   };
 
     const handleSubmitItemsAPI = async () => {
-      setIsExportingItems(true);
+      const invoicesToUse = erpMode ? sortedErpProcessedInvoices : erpProcessedInvoices;
+      if (invoicesToUse.length === 0) {
+        toast({ title: 'No Invoices', description: 'No processed invoices to submit items from.', variant: 'destructive'});
+        return;
+      }
+
+      setIsSubmittingItems(true);
       try {
         const response = await fetch('/api/erpnext/items', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ invoices: erpProcessedInvoices }),
+          body: JSON.stringify({ invoices: invoicesToUse }),
         });
         if (!response.ok) {
           const result = await response.json();
           throw new Error(result.error || 'Failed to submit items');
         }
         const result = await response.json();
+        const feedbackLines = (result.results || []).map((r:any) => r.success ? `✅ ${r.data?.item_code} (${r.status})` : `❌ ${r.original?.item_code} — ${r.error}`).join("\n");
+
         toast({
-          title: 'Items API',
-          description: (
-            <pre className="mt-2 w-full max-w-sm rounded-md bg-slate-950 p-4 whitespace-pre-wrap">
-              <code className="text-white">{result.summary}</code>
-            </pre>
-          ),
+          title: 'Items Submitted',
+          description:  <pre className="mt-2 w-full max-w-sm rounded-md bg-slate-950 p-4 whitespace-pre-wrap"><code className="text-white">{result.message}\n\n{feedbackLines}</code></pre>,
         });
       } catch (error: any) {
         toast({
@@ -564,7 +569,7 @@ export function IncomingInvoicesPageContent() {
           variant: 'destructive',
         });
       } finally {
-        setIsExportingItems(false);
+        setIsSubmittingItems(false);
       }
     };
 
@@ -781,7 +786,7 @@ export function IncomingInvoicesPageContent() {
               onExportSuppliersERPNext={handleExportSuppliersERPNext}
               isExportingSuppliers={isExportingSuppliers}
               onSubmitItemsAPI={handleSubmitItemsAPI}
-              isSubmittingItems={isExportingItems}
+              isSubmittingItems={isSubmittingItems}
               onExportInvoicesAsZip={handleExportInvoicesAsZip} 
               isExportingZip={isExportingZip} 
               onClearAllInvoices={handleClearAllInvoices}

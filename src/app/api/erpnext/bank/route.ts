@@ -1,4 +1,6 @@
 
+'use server';
+
 import { NextResponse } from 'next/server';
 import { createBankTransaction, findResource } from '@/lib/erpnext-api';
 import type { BankTransaction } from '@/lib/erpnext/types';
