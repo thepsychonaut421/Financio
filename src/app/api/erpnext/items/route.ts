@@ -1,7 +1,11 @@
+
 import { NextResponse } from 'next/server';
 import { createItem } from '@/lib/erpnext-api';
 import type { ItemPayload } from '@/lib/erpnext/types';
 import { logError, logInfo } from '@/lib/logger';
+
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 
 export async function POST(request: Request) {
   try {

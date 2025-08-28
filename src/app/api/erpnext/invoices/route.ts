@@ -1,3 +1,4 @@
+
 import { NextResponse } from 'next/server';
 import type { ERPIncomingInvoiceItem } from '@/types/incoming-invoice';
 import { mapPurchaseInvoice } from '@/lib/erpnext/mappers/invoice';
@@ -5,6 +6,8 @@ import { createPurchaseInvoice, ensureSupplierExists, ensureItemExists } from '@
 import { logError, logInfo } from '@/lib/logger';
 import { ItemSchema } from '@/lib/erpnext/types';
 
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 
 export async function POST(request: Request) {
   const { searchParams } = new URL(request.url);

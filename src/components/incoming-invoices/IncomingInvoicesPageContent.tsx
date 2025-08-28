@@ -440,6 +440,9 @@ export function IncomingInvoicesPageContent() {
   };
 
   const handleExportSuppliersERPNext = async () => {
+    const reqId = `sup-${Date.now()}`;
+    console.log('[UI] start', reqId);
+
     const invoicesToUse = erpMode ? sortedErpProcessedInvoices : erpProcessedInvoices;
      if (invoicesToUse.length === 0) {
       toast({
@@ -483,21 +486,29 @@ export function IncomingInvoicesPageContent() {
     }
 
     try {
+        console.log('[UI] sending request', reqId, { count: supplierPayloads.length });
         const response = await fetch('/api/erpnext/suppliers', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 
+                'Content-Type': 'application/json',
+                'X-Req-Id': reqId 
+            },
             body: JSON.stringify(supplierPayloads),
         });
+        console.log('[UI] response', reqId, response.status);
 
         const result = await response.json();
+        console.log('[UI] payload', reqId, result);
 
         if (!response.ok) {
-            toast({ title: "Supplier Export Error", description: result.error || "Failed to export suppliers.", variant: "destructive" });
-        } else {
-            toast({ title: "Suppliers Exported", description: result.message || `${supplierPayloads.length} suppliers processed.` });
+            throw new Error(result.error || result.message || "An unknown server error occurred.");
         }
+
+        toast({ title: "Suppliers Exported", description: result.message || `${supplierPayloads.length} suppliers processed.` });
+
     } catch (error: any) {
-         toast({ title: "Supplier Export Failed", description: error.message, variant: "destructive" });
+        console.error('[UI] error', reqId, error.message);
+        toast({ title: "Supplier Export Failed", description: error.message, variant: "destructive" });
     }
   };
 
