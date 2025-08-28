@@ -7,19 +7,23 @@ import { BankStatementDataTable } from '@/components/bank-statement-extractor/Ba
 import { BankStatementActionButtons } from '@/components/bank-statement-extractor/BankStatementActionButtons';
 import { Progress } from '@/components/ui/progress';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { AlertCircle, Info, Trash2 } from 'lucide-react';
+import { AlertCircle, Info } from 'lucide-react';
 import { readFileAsDataURL } from '@/lib/file-helpers';
 import { extractBankStatementData, type BankTransactionAI } from '@/ai/flows/extract-bank-statement-data';
 import { useToast } from '@/hooks/use-toast';
-import { Button } from '@/components/ui/button';
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
+import { Label } from '@/components/ui/label';
+import { Input } from '@/components/ui/input';
+import { FileCog } from 'lucide-react';
+
 
 type ProcessingStatus = 'idle' | 'processing' | 'success' | 'error';
 
 interface ExtractorState {
-  // We can't persist File objects, so we store their data URIs and names
   files: { name: string; dataUri: string }[];
   transactions: BankTransactionAI[];
   status: ProcessingStatus;
+  erpBankAccountName: string;
 }
 
 const LOCAL_STORAGE_KEY = 'bankStatementExtractorCache';
@@ -34,18 +38,21 @@ export function BankStatementExtractorPageContent() {
   const [currentYear, setCurrentYear] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { toast } = useToast();
+  const [erpBankAccountName, setErpBankAccountName] = useState('Bank Bayer Rem UG - Cc');
 
   useEffect(() => {
     setCurrentYear(new Date().getFullYear().toString());
 
-    // Load from localStorage on initial mount
     try {
       const cachedStateJSON = localStorage.getItem(LOCAL_STORAGE_KEY);
       if (cachedStateJSON) {
         const cachedState: ExtractorState = JSON.parse(cachedStateJSON);
-        if (cachedState.transactions.length > 0) {
+        if (cachedState.transactions && cachedState.transactions.length > 0) {
             setExtractedTransactions(cachedState.transactions);
             setStatus(cachedState.status);
+        }
+        if (cachedState.erpBankAccountName) {
+            setErpBankAccountName(cachedState.erpBankAccountName);
         }
       }
     } catch (e) {
@@ -54,20 +61,20 @@ export function BankStatementExtractorPageContent() {
     }
   }, []);
 
-  // Persist to localStorage whenever transactions or status change
   useEffect(() => {
-    if (status !== 'processing' && status !== 'idle') {
+    if (status !== 'processing') {
         try {
             const stateToCache: Partial<ExtractorState> = {
                 transactions: extractedTransactions,
                 status: status,
+                erpBankAccountName: erpBankAccountName,
             };
             localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(stateToCache));
         } catch (e) {
             console.error("Failed to save state to localStorage", e);
         }
     }
-  }, [extractedTransactions, status]);
+  }, [extractedTransactions, status, erpBankAccountName]);
 
 
   const handleFilesSelected = useCallback((files: File[]) => {
@@ -77,7 +84,7 @@ export function BankStatementExtractorPageContent() {
     setErrorMessage(null);
     setProgress(0);
     setCurrentFileProgress('');
-    localStorage.removeItem(LOCAL_STORAGE_KEY); // Clear cache on new file selection
+    localStorage.removeItem(LOCAL_STORAGE_KEY);
   }, []);
 
   const handleProcessFiles = async () => {
@@ -147,15 +154,25 @@ export function BankStatementExtractorPageContent() {
       toast({ title: "No Data", description: "No transactions to submit to ERPNext.", variant: "destructive" });
       return;
     }
+    if (!erpBankAccountName.trim()) {
+      toast({ title: "Missing Bank Account", description: "Please enter the ERPNext Bank Account name before submitting.", variant: "destructive" });
+      return;
+    }
+
     setIsSubmitting(true);
     setProgress(0);
     setCurrentFileProgress(`Submitting ${extractedTransactions.length} transactions...`);
+
+    const transactionsWithAccount = extractedTransactions.map(tx => ({
+        ...tx,
+        bank_account: erpBankAccountName,
+    }));
 
     try {
         const response = await fetch('/api/erpnext/bank', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-            body: JSON.stringify({ transactions: extractedTransactions }),
+            body: JSON.stringify({ transactions: transactionsWithAccount }),
         });
 
         const contentType = response.headers.get("content-type");
@@ -209,6 +226,32 @@ export function BankStatementExtractorPageContent() {
           isProcessing={status === 'processing'}
           selectedFileCount={selectedFiles.length}
         />
+
+        <Card className="w-full max-w-2xl mx-auto shadow-lg">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 font-headline">
+                <FileCog className="w-6 h-6 text-primary" />
+                ERPNext Settings
+              </CardTitle>
+              <CardDescription>
+                Configure the target bank account for ERPNext exports. This is saved for your session.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2">
+                <Label htmlFor="erp-bank-account-input" className="font-medium">
+                  ERPNext Bank Account Name
+                </Label>
+                <Input
+                  id="erp-bank-account-input"
+                  value={erpBankAccountName}
+                  onChange={(e) => setErpBankAccountName(e.target.value)}
+                  placeholder="e.g., Commerzbank - XXXX"
+                  disabled={status === 'processing' || isSubmitting}
+                />
+              </div>
+            </CardContent>
+        </Card>
 
         {(status === 'processing' || isSubmitting) && (
           <div className="my-6 p-4 border rounded-lg shadow-sm bg-card">
