@@ -698,6 +698,9 @@ export function IncomingInvoicesPageContent() {
 
   return (
     <div className="container mx-auto px-4 py-8 md:px-8 md:py-12">
+      <div style={{backgroundColor:'red', color:'white', padding:10, marginBottom: '1rem', textAlign: 'center', fontWeight: 'bold', borderRadius: '0.25rem'}}>
+          BUILD: {process.env.NEXT_PUBLIC_BUILD_ID || 'no-id'} - ENV: {process.env.NODE_ENV}
+      </div>
       <header className="mb-8 text-center">
         <h1 className="text-3xl md:text-4xl font-headline font-bold text-primary">Incoming Invoice Details</h1>
         <p className="text-muted-foreground mt-2">
