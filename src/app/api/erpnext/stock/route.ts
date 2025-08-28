@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import type { StockReconciliation, StockEntry } from '@/lib/erpnext/types';
 import { createStockReconciliation, createStockEntry } from '@/lib/erpnext/services/stock';
+import { logInfo, logError } from '@/lib/logger';
 
 export async function POST(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -18,6 +19,7 @@ export async function POST(request: Request) {
     Accept: 'application/json',
   };
 
+  const start = Date.now();
   try {
     const body = await request.json();
 
@@ -32,7 +34,13 @@ export async function POST(request: Request) {
         endpoint: process.env.ERNEXT_STOCK_RECONCILIATION_URL!,
         headers,
       });
-      return NextResponse.json({ message: 'Stock reconciliation processed.', key });
+      const diagnostics = { insert: 1, update: 0, noop: 0, warnings: 0 };
+      const summary = { workflow: 'stock', docType: 'Stock Reconciliation', total: 1, ...diagnostics };
+      logInfo(
+        { workflow: 'stock', docType: 'Stock Reconciliation', action: 'summary', duration_ms: Date.now() - start },
+        'Processed stock reconciliation',
+      );
+      return NextResponse.json({ message: 'Stock reconciliation processed.', key, diagnostics, summary });
     }
 
     if (type === 'entry') {
@@ -46,11 +54,18 @@ export async function POST(request: Request) {
         endpoint: process.env.ERNEXT_STOCK_ENTRY_URL!,
         headers,
       });
-      return NextResponse.json({ message: 'Stock entry processed.', key });
+      const diagnostics = { insert: 1, update: 0, noop: 0, warnings: 0 };
+      const summary = { workflow: 'stock', docType: 'Stock Entry', total: 1, ...diagnostics };
+      logInfo(
+        { workflow: 'stock', docType: 'Stock Entry', action: 'summary', duration_ms: Date.now() - start },
+        'Processed stock entry',
+      );
+      return NextResponse.json({ message: 'Stock entry processed.', key, diagnostics, summary });
     }
 
     return NextResponse.json({ error: 'Invalid type parameter.' }, { status: 400 });
   } catch (e: any) {
+    logError({ workflow: 'stock', docType: 'Stock', action: 'error' }, e, 'Failed to process stock document');
     return NextResponse.json(
       { error: e.message || 'Failed to process stock document.' },
       { status: 500 },

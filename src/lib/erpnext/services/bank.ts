@@ -4,6 +4,7 @@ import type { ERPIncomingInvoiceItem } from '@/types/incoming-invoice';
 import { parseBankCSV, toBankTransactions } from '@/csv/parsers';
 import { matchTransactions } from '@/lib/bank-matcher/matchBankToInvoices';
 import { findExistingBankTransaction } from './dedupe';
+import { logInfo } from '@/lib/logger';
 
 /** Parse CSV text into ERPNext Bank Transaction payloads. */
 export function parseCsvLines(csv: string, account: string): BankTransaction[] {
@@ -37,13 +38,38 @@ export async function upsertBankTransactions(
   const created: string[] = [];
   for (const tx of transactions) {
     const existing = await findExistingBankTransaction(tx, options);
-    if (existing) continue;
+    if (existing) {
+      logInfo(
+        {
+          workflow: 'bank-upsert',
+          docType: 'Bank Transaction',
+          docId: tx.reference_number,
+          idemKey: existing.name,
+          action: 'noop',
+        },
+        'Bank transaction already exists',
+      );
+      continue;
+    }
     const key = idempotencyKey(tx);
+    const start = Date.now();
     await fetch(options.endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
       body: JSON.stringify({ ...tx, idempotency_key: key }),
     });
+    const duration = Date.now() - start;
+    logInfo(
+      {
+        workflow: 'bank-upsert',
+        docType: 'Bank Transaction',
+        docId: tx.reference_number,
+        idemKey: key,
+        action: 'insert',
+        duration_ms: duration,
+      },
+      'Upserted bank transaction',
+    );
     created.push(key);
   }
   return created;
@@ -82,6 +108,7 @@ export async function applyMatchingRules(
             },
           ],
         };
+        const start = Date.now();
         await fetch(options.paymentEndpoint, {
           method: 'POST',
           headers: {
@@ -90,6 +117,27 @@ export async function applyMatchingRules(
           },
           body: JSON.stringify(entry),
         });
+        const duration = Date.now() - start;
+        logInfo(
+          {
+            workflow: 'bank-match',
+            docType: 'Payment Entry',
+            docId: m.matchedInvoice.rechnungsnummer,
+            action: 'insert',
+            duration_ms: duration,
+          },
+          'Created payment entry',
+        );
+      } else {
+        logInfo(
+          {
+            workflow: 'bank-match',
+            docType: 'Payment Entry',
+            docId: m.matchedInvoice?.rechnungsnummer,
+            action: 'noop',
+          },
+          'No payment entry created',
+        );
       }
     }
   }
