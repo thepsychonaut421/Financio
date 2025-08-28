@@ -1,6 +1,6 @@
 
 import { NextResponse } from 'next/server';
-import { createItem } from '@/lib/erpnext-api';
+import { createItem, ensureItemExists } from '@/lib/erpnext-api';
 import type { ItemPayload } from '@/lib/erpnext/types';
 import { logError, logInfo } from '@/lib/logger';
 
@@ -9,28 +9,39 @@ export const dynamic = 'force-dynamic';
 
 export async function POST(request: Request) {
   try {
-    const itemData: ItemPayload = await request.json();
+    const { items } = await request.json() as { items: Array<Partial<ItemPayload>> };
 
-    logInfo(
-      { workflow: 'erpnext-api', docType: 'Item', action: 'create' },
-      `Received request to create item: ${itemData.item_name}`
-    );
+    if (!items || !Array.isArray(items) || items.length === 0) {
+        return NextResponse.json({ ok: false, error: 'No items provided.' }, { status: 400 });
+    }
 
-    const response = await createItem(itemData);
+    const results = [];
+    for (const item of items) {
+        if (!item.item_code) {
+            results.push({ success: false, error: "Missing item_code", original: item });
+            continue;
+        }
+        try {
+            const result = await ensureItemExists(item.item_code, item);
+            results.push({ success: true, status: (result as any).doc ? 'created' : 'exists', data: result });
+            logInfo({ workflow: 'erpnext-api', docType: 'Item', action: 'ensure-success' }, `Successfully ensured item: ${item.item_code}`);
+        } catch (error: any) {
+            results.push({ success: false, error: error.message, original: item });
+            logError({ workflow: 'erpnext-api', docType: 'Item', action: 'ensure-error' }, error, `Failed to ensure item: ${item.item_code}`);
+        }
+    }
 
-    logInfo(
-      { workflow: 'erpnext-api', docType: 'Item', action: 'success', response },
-      `Successfully created item: ${itemData.item_name}`
-    );
+    const successfulEnsures = results.filter(r => r.success);
+    const status = successfulEnsures.length === items.length ? 200 : 207;
 
-    return NextResponse.json({ ok: true, data: response.data });
+    return NextResponse.json({ 
+        ok: status === 200, 
+        message: `Successfully ensured ${successfulEnsures.length} of ${items.length} items.`, 
+        results 
+    }, { status });
 
   } catch (e: any) {
-    logError(
-      { workflow: 'erpnext-api', docType: 'Item', action: 'error' },
-      e,
-      'Failed to create item'
-    );
+    logError({ workflow: 'erpnext-api', docType: 'Item', action: 'batch-error' }, e, 'A critical error occurred while processing items.');
     return NextResponse.json(
       { ok: false, error: e.message || 'An unknown error occurred.' },
       { status: 500 }

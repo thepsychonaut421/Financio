@@ -14,22 +14,23 @@ function mapSupplierTypeDE(t?: string): "Company"|"Individual" {
 }
 
 async function resolveGroup(preferred?: string): Promise<string> {
-  if (preferred) {
-    try {
-      const byName = await findResource("Supplier Group", [["name","=",preferred]]);
-      if (byName && (byName as any).name) return (byName as any).name;
-    } catch (e) {
-      logInfo({ workflow: 'erpnext-api', docType: 'Supplier Group', action: 'resolve-preferred-fail' }, `Could not find preferred supplier group "${preferred}". Falling back. Error: ${e}`);
+    if (preferred) {
+        try {
+            const byName = await findResource("Supplier Group", [["name", "like", `%${preferred}%`]]);
+            if (byName && (byName as any).name) return (byName as any).name;
+        } catch (e) {
+            logInfo({ workflow: 'erpnext-api', docType: 'Supplier Group', action: 'resolve-preferred-fail' }, `Could not find preferred supplier group "${preferred}". Falling back. Error: ${e}`);
+        }
     }
-  }
-  try {
-    const leaf = await findResource("Supplier Group", [["is_group","=",0]]);
-    if (leaf && (leaf as any).name) return (leaf as any).name;
-  } catch (e) {
-      logInfo({ workflow: 'erpnext-api', docType: 'Supplier Group', action: 'resolve-leaf-fail' }, `Could not find any leaf supplier group. Falling back to default. Error: ${e}`);
-  }
-  return "Alle Lieferantengruppen"; // Fallback to a common default
+    try {
+        const leaf = await findResource("Supplier Group", [["is_group", "=", 0]]);
+        if (leaf && (leaf as any).name) return (leaf as any).name;
+    } catch (e) {
+        logInfo({ workflow: 'erpnext-api', docType: 'Supplier Group', action: 'resolve-leaf-fail' }, `Could not find any leaf supplier group. Falling back to default. Error: ${e}`);
+    }
+    return "All Suppliers"; // Fallback to a common default
 }
+
 
 export async function ensureSupplierExistsDE(input: {
   name: string;                 // Lieferantenname
@@ -56,7 +57,7 @@ export async function ensureSupplierExistsDE(input: {
   const payload: any = {
     supplier_name: input.name,
     supplier_type: mapSupplierTypeDE(input.type),
-    supplier_group: await resolveGroup(input.group),
+    supplier_group: await resolveGroup(input.group || "All Suppliers"),
     tax_id: input.tax_id || undefined,
     country: input.country || "Deutschland",
   };
@@ -118,13 +119,15 @@ export async function ensureItemExists(item_code: string, payload?: Partial<Item
     } catch (e: any) {
         if (e.message && (e.message.includes('404') || e.message.includes('does not exist'))) {
             logInfo({ workflow: 'erpnext-api', docType: 'Item', action: 'ensure-create' }, `Item "${item_code}" not found, creating.`);
-            return createItem({
+            const createPayload: ItemPayload = {
+                doctype: "Item",
                 item_code: item_code,
                 item_name: payload?.item_name || item_code,
-                item_group: "Alle Artikelgruppen", // Default group
-                stock_uom: "Stk", // Default UOM
-                ...payload
-            });
+                item_group: payload?.item_group || "All Item Groups", // Default group
+                stock_uom: payload?.stock_uom || "Stk", // Default UOM
+                is_stock_item: typeof payload?.is_stock_item === 'boolean' ? (payload.is_stock_item ? 1 : 0) : 1,
+            };
+            return createItem(createPayload);
         }
         throw e; // Re-throw other errors
     }
@@ -208,4 +211,19 @@ export async function createJournalEntry(entry: JournalEntry) {
  */
 export async function createPurchaseInvoice(invoice: PurchaseInvoice) {
   return createResource("Purchase Invoice", invoice);
+}
+
+export async function ensureSupplierExists(name: string, extra: any = {}) {
+    const found = await findResource("Supplier", [["supplier_name","=",name]]);
+    if (found) return { status: "exists", doc: found };
+
+    const payload = {
+        supplier_name: name,
+        supplier_type: extra.supplier_type ?? "Company",
+        supplier_group: extra.supplier_group ?? "All Suppliers",
+        tax_id: extra.tax_id ?? undefined,
+        ...extra,
+    };
+    const created = await createResource("Supplier", payload);
+    return { status: "created", doc: created };
 }

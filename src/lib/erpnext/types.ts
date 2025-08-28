@@ -54,18 +54,46 @@ export const ItemPayloadSchema = z.object({
   description: z.string().optional(),
   item_group: z.string().optional().default("All Item Groups"),
   stock_uom: z.string().optional().default("Nos"),
-  is_stock_item: z.number().optional().default(1), // Use 1 for true
+  is_stock_item: z.union([z.number(), z.boolean()]).optional().default(1),
 });
 export type ItemPayload = z.infer<typeof ItemPayloadSchema>;
+
+
+export const BankTransactionSchema = z.object({
+  doctype: z.literal('Bank Transaction'),
+  date: z.string(),
+  account: z.string(),
+  description: z.string().optional(),
+  deposit: z.number().optional(),
+  withdrawal: z.number().optional(),
+  reference_number: z.string().optional(),
+  party: z.string().optional(),
+});
+export type BankTransaction = z.infer<typeof BankTransactionSchema>;
+
+export const JournalEntryAccountSchema = z.object({
+    account: z.string(),
+    debit_in_account_currency: z.number().optional(),
+    credit_in_account_currency: z.number().optional(),
+});
+export type JournalEntryAccount = z.infer<typeof JournalEntryAccountSchema>;
+
+export const JournalEntrySchema = z.object({
+    doctype: z.literal('Journal Entry'),
+    posting_date: z.string(),
+    company: z.string(),
+    voucher_type: z.string(),
+    user_remark: z.string().optional(),
+    accounts: z.array(JournalEntryAccountSchema),
+});
+export type JournalEntry = z.infer<typeof JournalEntrySchema>;
+
 
 // Keep existing types and schemas as well
 export const ErpNextExistingTypes = {
     PurchaseInvoiceSchema: z.any(),
     SalesInvoiceSchema: z.any(),
     ItemSchema: z.any(),
-    BankTransactionSchema: z.any(),
-    JournalEntryAccountSchema: z.any(),
-    JournalEntrySchema: z.any(),
     PaymentEntryReferenceSchema: z.any(),
     PaymentEntrySchema: z.any(),
     StockReconciliationItemSchema: z.any(),
@@ -78,9 +106,6 @@ export const ErpNextExistingTypes = {
 // In a real scenario, these would be integrated or removed.
 export type PurchaseInvoice = z.infer<typeof ErpNextExistingTypes.PurchaseInvoiceSchema>;
 export type SalesInvoice = z.infer<typeof ErpNextExistingTypes.SalesInvoiceSchema>;
-export type BankTransaction = z.infer<typeof ErpNextExistingTypes.BankTransactionSchema>;
-export type JournalEntryAccount = z.infer<typeof ErpNextExistingTypes.JournalEntryAccountSchema>;
-export type JournalEntry = z.infer<typeof ErpNextExistingTypes.JournalEntrySchema>;
 export type PaymentEntryReference = z.infer<typeof ErpNextExistingTypes.PaymentEntryReferenceSchema>;
 export type PaymentEntry = z.infer<typeof ErpNextExistingTypes.PaymentEntrySchema>;
 export type StockReconciliationItem = z.infer<typeof ErpNextExistingTypes.StockReconciliationItemSchema>;

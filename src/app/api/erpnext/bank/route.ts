@@ -21,7 +21,7 @@ export async function POST(request: Request) {
     for (const tx of transactions) {
       try {
         const response = await createBankTransaction(tx);
-        results.push({ success: true, data: response.data, original: tx });
+        results.push({ success: true, data: response, original: tx });
         logInfo(
           { workflow: 'erpnext-api', docType: 'Bank Transaction', action: 'success', reference: tx.reference_number },
           `Successfully created bank transaction.`
@@ -37,11 +37,13 @@ export async function POST(request: Request) {
     }
     
     const successfulCreations = results.filter(r => r.success);
-    if(successfulCreations.length === transactions.length) {
-        return NextResponse.json({ ok: true, message: `Successfully created ${successfulCreations.length} transaction(s).`, results });
-    } else {
-         return NextResponse.json({ ok: false, message: `Created ${successfulCreations.length} of ${transactions.length} transaction(s).`, results }, { status: 207 });
-    }
+    const status = successfulCreations.length === transactions.length ? 200 : 207;
+
+    return NextResponse.json({ 
+      ok: status === 200, 
+      message: `Created ${successfulCreations.length} of ${transactions.length} transaction(s).`, 
+      results 
+    }, { status });
 
   } catch (e: any) {
     logError(
