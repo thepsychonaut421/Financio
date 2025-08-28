@@ -1,3 +1,4 @@
+
 {
   "firestore": {
     "database": "(default)",
@@ -26,7 +27,8 @@
       "startCommand": "npm run dev"
     },
     "auth": {
-      "port": 9099
+      "port": 9099,
+      "config": "auth_export/auth.json"
     },
     "firestore": {
       "port": 8080

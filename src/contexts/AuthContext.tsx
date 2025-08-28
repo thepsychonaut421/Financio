@@ -4,7 +4,8 @@
 import React, { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { getAuth, onAuthStateChanged, type User, signInWithEmailAndPassword, signOut } from 'firebase/auth';
-import { initializeApp, getApps } from 'firebase/app';
+import { initializeApp, getApps, type FirebaseApp } from 'firebase/app';
+import { initializeAppCheck, ReCaptchaV3Provider, type AppCheck } from 'firebase/app-check';
 
 // Your web app's Firebase configuration
 const firebaseConfig = {
@@ -16,8 +17,31 @@ const firebaseConfig = {
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
 };
 
-// Initialize Firebase
-const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
+// Lazy initialization for Firebase services
+let app: FirebaseApp;
+let appCheck: AppCheck | undefined;
+
+if (getApps().length === 0) {
+  if (!firebaseConfig.apiKey) {
+    console.error("Firebase API Key is missing. App cannot be initialized.");
+  } else {
+    app = initializeApp(firebaseConfig);
+    // Initialize App Check only in the browser and if the key is provided
+    if (typeof window !== 'undefined' && process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY) {
+       // Pass your reCAPTCHA v3 site key (public key) to activate(). Make sure this
+       // key is the counterpart to the secret key you set in the Firebase console.
+       appCheck = initializeAppCheck(app, {
+         provider: new ReCaptchaV3Provider(process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY),
+         // Optional argument. If true, the SDK automatically refreshes App Check
+         // tokens as needed.
+         isTokenAutoRefreshEnabled: true
+       });
+    }
+  }
+} else {
+  app = getApps()[0];
+}
+
 
 interface AuthContextType {
   user: User | null;
@@ -38,13 +62,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const auth = getAuth(app);
 
   useEffect(() => {
-    // Check if Firebase is configured
-    if (!firebaseConfig.apiKey) {
-      console.error("Firebase API Key is missing. Please check your .env.local file.");
-      setIsLoading(false);
-      return;
-    }
-
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       setUser(user);
       setIsLoading(false);
