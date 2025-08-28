@@ -1,95 +1,44 @@
-
 // src/lib/erpnext-api.ts
+'use server';
 
 import type { ItemPayload, PurchaseInvoice, Supplier, BankTransaction, JournalEntry, JournalEntryAccount } from "./erpnext/types";
 import { logError, logInfo } from "./logger";
-
-/**
- * Generic fetch helper for ERPNext REST API.
- * Handles authentication and base URL.
- * Throws an error if the response is not OK.
- * @param path The API path (e.g., /api/resource/Supplier)
- * @param opts The fetch options (method, body, etc.)
- * @returns The JSON response from the server.
- */
-async function erpnextFetch(path: string, opts: RequestInit = {}): Promise<any> {
-    const baseUrl = process.env.ERPNEXT_BASE_URL;
-    const apiKey = process.env.ERPNEXT_API_KEY;
-    const apiSecret = process.env.ERPNEXT_API_SECRET;
-  
-    if (!baseUrl || !apiKey || !apiSecret) {
-      throw new Error("ERPNext environment variables (BASE_URL, API_KEY, API_SECRET) are not set.");
-    }
-  
-    const url = `${baseUrl}${path}`;
-    
-    const headers = {
-      ...opts.headers,
-      "Content-Type": "application/json",
-      "Authorization": `token ${apiKey}:${apiSecret}`,
-    };
-  
-    const response = await fetch(url, { ...opts, headers });
-  
-    const responseBody = await response.text();
-  
-    if (!response.ok) {
-        let errorDetails = responseBody;
-        try {
-            const errorJson = JSON.parse(responseBody);
-            errorDetails = errorJson.exception || errorJson.message || errorJson._server_messages || responseBody;
-            if (Array.isArray(errorJson._server_messages)) {
-              errorDetails = JSON.parse(errorJson._server_messages[0]).message;
-            }
-        } catch (e) {
-            // ignore if response is not json
-        }
-        logError({ workflow: 'erpnext-api', docType: 'Generic', action: 'fetch-error' }, errorDetails, `ERPNext API request failed to ${path}`);
-        throw new Error(`ERPNext API request failed with status ${response.status}: ${errorDetails}`);
-    }
-  
-    try {
-        return JSON.parse(responseBody);
-    } catch(e) {
-        return responseBody; // Return text if not valid JSON
-    }
-}
-  
-
-// --- Resource Creation & Ensure Functions ---
+import { findResource, createResource, getResource, erpnextFetch } from "./erpnext/client";
 
 /**
  * Ensures a supplier exists in ERPNext. If not, it creates one.
+ * Uses findResource for an efficient check.
  * @param name The name of the supplier.
  * @param payload Additional data for creation if the supplier doesn't exist.
  */
 export async function ensureSupplierExists(name: string, payload?: Partial<Supplier>) {
-    try {
-        return await erpnextFetch(`/api/resource/Supplier/${encodeURIComponent(name)}`, { method: 'GET' });
-    } catch (e: any) {
-        if (e.message && e.message.includes('404')) {
-            logInfo({ workflow: 'erpnext-api', docType: 'Supplier', action: 'ensure-create' }, `Supplier "${name}" not found, creating.`);
-            return createSupplier({
-                supplier_name: name,
-                supplier_group: "Alle Lieferantengruppen", // Default group
-                supplier_type: "Company",
-                ...payload
-            });
-        }
-        throw e; // Re-throw other errors
+    const found = await findResource("Supplier", [["supplier_name", "=", name]]);
+    if (found) {
+        logInfo({ workflow: 'erpnext-api', docType: 'Supplier', action: 'ensure-exists' }, `Supplier "${name}" already exists.`);
+        return found;
     }
+    logInfo({ workflow: 'erpnext-api', docType: 'Supplier', action: 'ensure-create' }, `Supplier "${name}" not found, creating.`);
+    return createResource("Supplier", {
+        supplier_name: name,
+        supplier_group: "Alle Lieferantengruppen", // Default group
+        supplier_type: "Company",
+        ...payload
+    });
 }
 
 /**
  * Ensures an item exists in ERPNext. If not, it creates one.
+ * Uses getResource and catches the error for creation.
  * @param item_code The item code.
  * @param payload Additional data for creation if the item doesn't exist.
  */
 export async function ensureItemExists(item_code: string, payload?: Partial<ItemPayload>) {
     try {
-        return await erpnextFetch(`/api/resource/Item/${encodeURIComponent(item_code)}`, { method: 'GET' });
+        const existing = await getResource("Item", item_code);
+        logInfo({ workflow: 'erpnext-api', docType: 'Item', action: 'ensure-exists' }, `Item "${item_code}" already exists.`);
+        return existing;
     } catch (e: any) {
-        if (e.message && e.message.includes('404')) {
+        if (e.message && (e.message.includes('404') || e.message.includes('does not exist'))) {
             logInfo({ workflow: 'erpnext-api', docType: 'Item', action: 'ensure-create' }, `Item "${item_code}" not found, creating.`);
             return createItem({
                 item_code: item_code,
@@ -103,16 +52,12 @@ export async function ensureItemExists(item_code: string, payload?: Partial<Item
     }
 }
 
-
 /**
  * Creates a new Supplier in ERPNext.
  * @param supplier The supplier data.
  */
-export async function createSupplier(supplier: Supplier) {
-  return erpnextFetch("/api/resource/Supplier", {
-    method: "POST",
-    body: JSON.stringify(supplier),
-  });
+export async function createSupplier(supplier: Partial<Supplier>) {
+  return createResource("Supplier", supplier);
 }
 
 /**
@@ -120,10 +65,7 @@ export async function createSupplier(supplier: Supplier) {
  * @param item The item data.
  */
 export async function createItem(item: ItemPayload) {
-  return erpnextFetch("/api/resource/Item", {
-    method: "POST",
-    body: JSON.stringify(item),
-  });
+  return createResource("Item", item);
 }
 
 /**
@@ -132,10 +74,7 @@ export async function createItem(item: ItemPayload) {
  */
 export async function createBankTransaction(tx: BankTransaction) {
     try {
-        return await erpnextFetch("/api/resource/Bank Transaction", {
-            method: "POST",
-            body: JSON.stringify(tx),
-        });
+        return await createResource("Bank Transaction", tx);
     } catch (error: any) {
         console.warn("Bank Transaction failed, falling back to Journal Entry. Error:", error.message);
         
@@ -181,10 +120,7 @@ export async function createBankTransaction(tx: BankTransaction) {
  * @param entry The journal entry data.
  */
 export async function createJournalEntry(entry: JournalEntry) {
-    return erpnextFetch("/api/resource/Journal Entry", {
-        method: "POST",
-        body: JSON.stringify(entry),
-    });
+    return createResource("Journal Entry", entry);
 }
 
 
@@ -193,8 +129,5 @@ export async function createJournalEntry(entry: JournalEntry) {
  * @param invoice The purchase invoice data.
  */
 export async function createPurchaseInvoice(invoice: PurchaseInvoice) {
-  return erpnextFetch("/api/resource/Purchase Invoice", {
-    method: "POST",
-    body: JSON.stringify(invoice),
-  });
+  return createResource("Purchase Invoice", invoice);
 }
