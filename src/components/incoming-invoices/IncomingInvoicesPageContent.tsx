@@ -86,7 +86,7 @@ export function IncomingInvoicesPageContent() {
   const { toast } = useToast();
   const [currentYear, setCurrentYear] = useState<string>('');
   const [kontenrahmen, setKontenrahmen] = useState('20000 - Verbindlichkeiten Lief Inland');
-  const [processedFileFingerprints, setProcessedFileFingerprints] = useState<{ [key: string]: string }>({});
+  const [processedFileFingerprints, setProcessedFileFingerprints] = useState<Record<string, string>>({});
 
 
   const [erpExportFile, setErpExportFile] = useState<File | null>(null);
@@ -105,38 +105,39 @@ export function IncomingInvoicesPageContent() {
   useEffect(() => {
     try {
       const cachedDataString = localStorage.getItem(LOCAL_STORAGE_PAGE_CACHE_KEY);
-      if (cachedDataString) {
-        const parsedJson = JSON.parse(cachedDataString);
-        if (
-          parsedJson &&
-          typeof parsedJson === 'object' &&
-          'status' in parsedJson 
-        ) {
-          const cachedData = parsedJson as IncomingInvoicesPageCache;
-
-          setExtractedInvoices(Array.isArray(cachedData.extractedInvoices) ? cachedData.extractedInvoices : []);
-          setErpProcessedInvoices(Array.isArray(cachedData.erpProcessedInvoices) ? cachedData.erpProcessedInvoices : []);
-          setErpMode(typeof cachedData.erpMode === 'boolean' ? cachedData.erpMode : false);
-          setKontenrahmen(cachedData.kontenrahmen || '20000 - Verbindlichkeiten Lief Inland');
-          if (Array.isArray(cachedData.existingErpInvoiceKeys)) {
-            setExistingErpInvoiceKeys(new Set(cachedData.existingErpInvoiceKeys));
-          }
-           setErpSortKey(cachedData.erpSortKey || 'datum');
-           setErpSortOrder(cachedData.erpSortOrder || 'desc');
-           setProcessedFileFingerprints(cachedData.processedFileFingerprints || {});
-
-          if (cachedData.extractedInvoices.length > 0 || cachedData.erpProcessedInvoices.length > 0 || (cachedData.existingErpInvoiceKeys && cachedData.existingErpInvoiceKeys.length > 0)) {
-             setStatus(cachedData.status as IncomingProcessingStatus);
-          } else {
-             setStatus('idle');
-          }
-        } else {
-          localStorage.removeItem(LOCAL_STORAGE_PAGE_CACHE_KEY);
-        }
-      } catch (error) {
-        console.error("Failed to load or parse incoming invoices page cache from localStorage:", error);
-        localStorage.removeItem(LOCAL_STORAGE_PAGE_CACHE_KEY); 
+      if (!cachedDataString) {
+        return;
       }
+  
+      const parsedJson = JSON.parse(cachedDataString) as Partial<IncomingInvoicesPageCache>;
+  
+      if (parsedJson && typeof parsedJson === 'object' && 'status' in parsedJson) {
+        setExtractedInvoices(Array.isArray(parsedJson.extractedInvoices) ? parsedJson.extractedInvoices : []);
+        setErpProcessedInvoices(Array.isArray(parsedJson.erpProcessedInvoices) ? parsedJson.erpProcessedInvoices : []);
+        setErpMode(typeof parsedJson.erpMode === 'boolean' ? parsedJson.erpMode : false);
+        setKontenrahmen(parsedJson.kontenrahmen || '20000 - Verbindlichkeiten Lief Inland');
+  
+        if (Array.isArray(parsedJson.existingErpInvoiceKeys)) {
+          setExistingErpInvoiceKeys(new Set(parsedJson.existingErpInvoiceKeys));
+        }
+  
+        setErpSortKey((parsedJson.erpSortKey as any) || 'datum');
+        setErpSortOrder((parsedJson.erpSortOrder as any) || 'desc');
+        setProcessedFileFingerprints(parsedJson.processedFileFingerprints || {});
+  
+        const hasAny =
+          (parsedJson.extractedInvoices && parsedJson.extractedInvoices.length > 0) ||
+          (parsedJson.erpProcessedInvoices && parsedJson.erpProcessedInvoices.length > 0) ||
+          (parsedJson.existingErpInvoiceKeys && parsedJson.existingErpInvoiceKeys.length > 0);
+  
+        setStatus(hasAny ? (parsedJson.status as any) : 'idle');
+      } else {
+        localStorage.removeItem(LOCAL_STORAGE_PAGE_CACHE_KEY);
+      }
+    } catch (error) {
+      console.error('Failed to load or parse incoming invoices page cache from localStorage:', error);
+      localStorage.removeItem(LOCAL_STORAGE_PAGE_CACHE_KEY);
+    }
   }, []);
 
   useEffect(() => {
@@ -875,5 +876,3 @@ export function IncomingInvoicesPageContent() {
     </div>
   );
 }
-
-    
