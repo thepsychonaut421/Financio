@@ -36,7 +36,7 @@ interface IncomingInvoicesPageCache {
   erpSortKey?: ERPSortKey | null;
   erpSortOrder?: SortOrder;
   kontenrahmen?: string;
-  processedFileFingerprints?: string[];
+  processedFileFingerprints?: { [key: string]: string }; // Now a map of fingerprint to pdfFileName
 }
 
 const erpTableSortOptions: { key: ERPSortKey; label: string }[] = [
@@ -86,7 +86,7 @@ export function IncomingInvoicesPageContent() {
   const { toast } = useToast();
   const [currentYear, setCurrentYear] = useState<string>('');
   const [kontenrahmen, setKontenrahmen] = useState('20000 - Verbindlichkeiten Lief Inland');
-  const [processedFileFingerprints, setProcessedFileFingerprints] = useState<Set<string>>(new Set());
+  const [processedFileFingerprints, setProcessedFileFingerprints] = useState<{ [key: string]: string }>({});
 
 
   const [erpExportFile, setErpExportFile] = useState<File | null>(null);
@@ -123,7 +123,7 @@ export function IncomingInvoicesPageContent() {
           }
            setErpSortKey(cachedData.erpSortKey || 'datum');
            setErpSortOrder(cachedData.erpSortOrder || 'desc');
-           setProcessedFileFingerprints(new Set(cachedData.processedFileFingerprints || []));
+           setProcessedFileFingerprints(cachedData.processedFileFingerprints || {});
 
           if (cachedData.extractedInvoices.length > 0 || cachedData.erpProcessedInvoices.length > 0 || (cachedData.existingErpInvoiceKeys && cachedData.existingErpInvoiceKeys.length > 0)) {
              setStatus(cachedData.status as IncomingProcessingStatus);
@@ -152,7 +152,7 @@ export function IncomingInvoicesPageContent() {
           erpSortKey,
           erpSortOrder,
           kontenrahmen,
-          processedFileFingerprints: Array.from(processedFileFingerprints),
+          processedFileFingerprints: processedFileFingerprints,
         };
         localStorage.setItem(LOCAL_STORAGE_PAGE_CACHE_KEY, JSON.stringify(cacheToSave));
       } catch (error) {
@@ -273,16 +273,27 @@ export function IncomingInvoicesPageContent() {
     const newRegularInvoices: IncomingInvoiceItem[] = [];
     const newErpInvoices: ERPIncomingInvoiceItem[] = [];
     const newMatcherInvoices: ERPIncomingInvoiceItem[] = [];
-    const newFingerprints = new Set(processedFileFingerprints);
+    const newFingerprints = { ...processedFileFingerprints };
     const duplicates: string[] = [];
 
-    const yearCounters: Record<string, number> = {};
-    let accumulatedErrors: string[] = [];
+    // Restore previously processed invoices that are duplicates
+    const cachedStateString = localStorage.getItem(LOCAL_STORAGE_PAGE_CACHE_KEY);
+    const cachedInvoices: (IncomingInvoiceItem | ERPIncomingInvoiceItem)[] = cachedStateString ? 
+        (JSON.parse(cachedStateString).erpMode ? JSON.parse(cachedStateString).erpProcessedInvoices : JSON.parse(cachedStateString).extractedInvoices) 
+        : [];
 
     const filesToProcess = selectedFiles.filter(file => {
         const fingerprint = getFileFingerprint(file);
-        if (newFingerprints.has(fingerprint)) {
+        if (newFingerprints[fingerprint]) {
             duplicates.push(file.name);
+            const foundInvoice = cachedInvoices.find(inv => inv.pdfFileName === file.name);
+            if(foundInvoice) {
+                if(erpMode) {
+                    newErpInvoices.push(foundInvoice as ERPIncomingInvoiceItem);
+                } else {
+                    newRegularInvoices.push(foundInvoice as IncomingInvoiceItem);
+                }
+            }
             return false;
         }
         return true;
@@ -291,16 +302,21 @@ export function IncomingInvoicesPageContent() {
     if (duplicates.length > 0) {
         toast({
             title: "Duplicate Files Skipped",
-            description: `${duplicates.length} file(s) were already processed and have been skipped: ${duplicates.join(', ')}`,
+            description: `${duplicates.length} file(s) were already processed and have been restored to the view: ${duplicates.join(', ')}`,
             variant: "default",
         });
     }
 
     if (filesToProcess.length === 0) {
+        setExtractedInvoices(prev => [...prev, ...newRegularInvoices]);
+        setErpProcessedInvoices(prev => [...prev, ...newErpInvoices]);
         setStatus('success');
-        setCurrentFileProgress('No new files to process.');
+        setCurrentFileProgress('No new files to process. Duplicates restored.');
         return;
     }
+
+    const yearCounters: Record<string, number> = {};
+    let accumulatedErrors: string[] = [];
 
 
     try {
@@ -312,7 +328,7 @@ export function IncomingInvoicesPageContent() {
         const aiResult: ExtractIncomingInvoiceDataOutput = await extractIncomingInvoiceData({ invoiceDataUri: dataUri });
         
         const fingerprint = getFileFingerprint(file);
-        newFingerprints.add(fingerprint);
+        newFingerprints[fingerprint] = file.name;
 
         if (aiResult.error) {
           accumulatedErrors.push(`${file.name}: ${aiResult.error}`);
@@ -573,19 +589,36 @@ export function IncomingInvoicesPageContent() {
         return;
       }
 
+      const itemsPayload = invoicesToUse
+        .flatMap(inv => inv.rechnungspositionen || [])
+        .map(item => ({
+            item_code: item.productCode || item.productName,
+            item_name: item.productName || item.productCode,
+            stock_uom: 'Stk',
+        }))
+        .filter(item => item.item_code);
+
+        const uniqueItems = Array.from(new Map(itemsPayload.map(item => [item.item_code, item])).values());
+
+
+      if(uniqueItems.length === 0) {
+        toast({ title: 'No Items', description: 'No valid items with product codes found to submit.', variant: 'destructive'});
+        return;
+      }
+
       setIsSubmittingItems(true);
       try {
         const response = await fetch('/api/erpnext/items', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ invoices: invoicesToUse }),
+          body: JSON.stringify({ items: uniqueItems }),
         });
         if (!response.ok) {
           const result = await response.json();
           throw new Error(result.error || 'Failed to submit items');
         }
         const result = await response.json();
-        const feedbackLines = (result.results || []).map((r:any) => r.success ? `✅ ${r.data?.item_code} (${r.status})` : `❌ ${r.original?.item_code} — ${r.error}`).join("\n");
+        const feedbackLines = (result.results || []).map((r:any) => r.success ? `✅ ${r.data?.item_code || r.original.item_code} (${r.status})` : `❌ ${r.original?.item_code} — ${r.error}`).join("\n");
 
         toast({
           title: 'Items Submitted',
@@ -681,7 +714,7 @@ export function IncomingInvoicesPageContent() {
     setExistingErpInvoiceKeys(new Set());
     setErpSortKey('datum'); // Reset sort
     setErpSortOrder('desc');
-    setProcessedFileFingerprints(new Set());
+    setProcessedFileFingerprints({});
 
 
     localStorage.removeItem(LOCAL_STORAGE_PAGE_CACHE_KEY);
@@ -860,5 +893,7 @@ export function IncomingInvoicesPageContent() {
     </div>
   );
 }
+
+    
 
     
