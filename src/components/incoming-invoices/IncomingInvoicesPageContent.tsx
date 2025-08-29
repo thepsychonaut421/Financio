@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useState, useCallback, useEffect, ChangeEvent, useMemo } from 'react';
@@ -132,11 +133,10 @@ export function IncomingInvoicesPageContent() {
         } else {
           localStorage.removeItem(LOCAL_STORAGE_PAGE_CACHE_KEY);
         }
+      } catch (error) {
+        console.error("Failed to load or parse incoming invoices page cache from localStorage:", error);
+        localStorage.removeItem(LOCAL_STORAGE_PAGE_CACHE_KEY); 
       }
-    } catch (error) {
-      console.error("Failed to load or parse incoming invoices page cache from localStorage:", error);
-      localStorage.removeItem(LOCAL_STORAGE_PAGE_CACHE_KEY); 
-    }
   }, []);
 
   useEffect(() => {
@@ -279,10 +279,6 @@ export function IncomingInvoicesPageContent() {
         const fingerprint = getFileFingerprint(file);
         if (newFingerprints[fingerprint]) {
             duplicates.push(file.name);
-            const foundInvoice = erpMode 
-                ? erpProcessedInvoices.find(inv => inv.pdfFileName === file.name)
-                : extractedInvoices.find(inv => inv.pdfFileName === file.name);
-            // Even if found, we don't re-add it here, just notify. The list isn't cleared.
             return false;
         }
         return true;
@@ -291,7 +287,7 @@ export function IncomingInvoicesPageContent() {
     if (duplicates.length > 0) {
         toast({
             title: "Duplicate Files Skipped",
-            description: `${duplicates.length} file(s) were already processed and are in the current view: ${duplicates.join(', ')}`,
+            description: `${duplicates.length} file(s) were already processed and are in the current list: ${duplicates.join(', ')}`,
             variant: "default",
         });
     }
@@ -879,7 +875,5 @@ export function IncomingInvoicesPageContent() {
     </div>
   );
 }
-
-    
 
     
