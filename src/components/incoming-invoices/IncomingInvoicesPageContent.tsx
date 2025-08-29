@@ -26,7 +26,6 @@ import { db } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
 import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
 
-
 const CACHE_VERSION = 'v2';
 const LOCAL_STORAGE_PAGE_CACHE_KEY = `incomingInvoicesPageCache:${CACHE_VERSION}`;
 const LOCAL_STORAGE_MATCHER_DATA_KEY = 'processedIncomingInvoicesForMatcher';
@@ -40,7 +39,7 @@ interface IncomingInvoicesPageCache {
   erpSortKey?: ERPSortKey | null;
   erpSortOrder?: SortOrder;
   kontenrahmen?: string;
-  processedFileFingerprints?: { [key: string]: string }; // Now a map of fingerprint to pdfFileName
+  processedFileFingerprints?: { [key: string]: string };
 }
 
 const erpTableSortOptions: { key: ERPSortKey; label: string }[] = [
@@ -86,36 +85,31 @@ function findCachedInvoiceByFilename(name: string, erpMode: boolean) {
   } catch { return null; }
 }
 
-function enforceErpSchemaSafety<T extends Record<string, any>>(x: T, filename: string): T {
+function safeErpFallback(filename: string) {
   const today = new Date().toISOString().slice(0,10);
-  x.doctype = 'Purchase Invoice';
-  x.posting_date ||= x.datum || today;
-  x.bill_date ||= x.posting_date;
-  x.currency ||= x.wahrung || 'EUR';
-
-  if (!Array.isArray(x.rechnungspositionen) || x.rechnungspositionen.length === 0) {
-    x.rechnungspositionen = [{
-      productCode: 'UNKNOWN',
+  return {
+    rechnungsnummer: `INTERNAL-${today}-${Math.random().toString(36).slice(2,7).toUpperCase()}`,
+    datum: today,
+    lieferantName: 'UNBEKANNT_SUPPLIER_PLACEHOLDER',
+    lieferantAdresse: '',
+    zahlungsziel: '',
+    zahlungsart: '',
+    gesamtbetrag: 0,
+    mwstSatz: undefined,
+    rechnungspositionen: [{
       productName: 'UNKNOWN ITEM',
+      productCode: 'UNKNOWN',
       quantity: 1,
       unitPrice: 0,
-    }];
-    x.anomalies = Array.from(new Set([...(x.anomalies||[]), 'NO_ITEMS_EXTRACTED']));
-  }
-
-  x.custom_fields = {
-    ...(x.custom_fields || {}),
-    _source_filename: filename,
-    _extraction_confidence: x.extraction_confidence ?? null,
+    }],
+    isPaid: false,
+    anomalies: ['AI_CRASH_FALLBACK'],
+    pdfFileName: filename,
   };
-  return x;
 }
 
-
-
 export function IncomingInvoicesPageContent() {
-  'use client';
-  const { user } = useAuth();
+  const { user, isLoading: isAuthLoading } = useAuth();
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [extractedInvoices, setExtractedInvoices] = useState<IncomingInvoiceItem[]>([]);
   const [erpProcessedInvoices, setErpProcessedInvoices] = useState<ERPIncomingInvoiceItem[]>([]);
@@ -340,7 +334,6 @@ export function IncomingInvoicesPageContent() {
 
     const currentRegularInvoices = [...extractedInvoices];
     const currentErpInvoices = [...erpProcessedInvoices];
-    const currentMatcherInvoices = JSON.parse(localStorage.getItem(LOCAL_STORAGE_MATCHER_DATA_KEY) || '[]');
     const newFingerprints = { ...processedFileFingerprints };
     const duplicates: string[] = [];
     
@@ -391,18 +384,36 @@ export function IncomingInvoicesPageContent() {
         const file = filesToProcess[i];
         setCurrentFileProgress(`Processing file ${i + 1} of ${filesToProcess.length}: ${file.name}`);
         
-        const dataUri = await readFileAsDataURL(file);
-        let aiResult: ExtractIncomingInvoiceDataOutput = await extractIncomingInvoiceData({ invoiceDataUri: dataUri });
+        let aiResult: ExtractIncomingInvoiceDataOutput | any;
+        try {
+            const dataUri = await readFileAsDataURL(file);
+            aiResult = await extractIncomingInvoiceData({ invoiceDataUri: dataUri });
+        } catch (e: any) {
+            console.error('AI extraction crashed:', e);
+            toast({
+                title: 'AI extraction failed',
+                description: (e?.message || String(e)).slice(0, 300),
+                variant: 'destructive',
+            });
+            aiResult = safeErpFallback(file.name);
+        }
         
-        aiResult = enforceErpSchemaSafety(aiResult as any, file.name);
+        const today = new Date().toISOString().slice(0,10);
+        aiResult = {
+          ...aiResult,
+          doctype: 'Purchase Invoice',
+          datum: aiResult?.datum || today,
+          rechnungspositionen: Array.isArray(aiResult?.rechnungspositionen) && aiResult.rechnungspositionen.length
+            ? aiResult.rechnungspositionen
+            : safeErpFallback(file.name).rechnungspositionen,
+          wahrung: aiResult?.wahrung || 'EUR',
+        };
 
         const fingerprint = getFileFingerprint(file);
         newFingerprints[fingerprint] = file.name;
 
         if (aiResult.error) {
           accumulatedErrors.push(`${file.name}: ${aiResult.error}`);
-          setProgressValue(Math.round(((i + 1) / filesToProcess.length) * 100));
-          continue;
         }
 
         let finalLieferantName = (aiResult.lieferantName || "").trim();
@@ -471,12 +482,11 @@ export function IncomingInvoicesPageContent() {
           kontenrahmen: kontenrahmen.trim(), 
           remarks: remarks.trim(),
         };
-        currentMatcherInvoices.push(erpCompatibleInvoice);
 
         if (erpMode) {
-          currentErpInvoices.push(erpCompatibleInvoice);
+          currentErpInvoices.unshift(erpCompatibleInvoice);
         } else {
-          currentRegularInvoices.push({
+          currentRegularInvoices.unshift({
               pdfFileName: file.name,
               rechnungsnummer: rechnungsnummerToUse,
               datum: aiResult.datum, 
@@ -493,14 +503,14 @@ export function IncomingInvoicesPageContent() {
           });
         }
         
-        const status: 'OK'|'WARN'|'ERROR'|'DUPLICATE' =
-            (aiResult as any)?.error ? 'ERROR' :
-            ((aiResult as any)?.anomalies?.length ? 'WARN' : 'OK');
-
+        const statusForDoc: 'OK'|'WARN'|'ERROR' = aiResult?.anomalies?.includes('AI_CRASH_FALLBACK')
+          ? 'ERROR'
+          : (aiResult?.anomalies?.length ? 'WARN' : 'OK');
+        
         await addDoc(collection(db, "processed_invoices"), {
           userId: user?.uid ?? 'anon',
           filename: file.name,
-          status,
+          status: statusForDoc,
           erpMode: true,
           payload: erpCompatibleInvoice,
           createdAt: serverTimestamp(),
@@ -513,7 +523,8 @@ export function IncomingInvoicesPageContent() {
       setErpProcessedInvoices(currentErpInvoices);
       setProcessedFileFingerprints(newFingerprints);
       
-      localStorage.setItem(LOCAL_STORAGE_MATCHER_DATA_KEY, JSON.stringify(currentMatcherInvoices));
+      const matcherInvoices = JSON.parse(localStorage.getItem(LOCAL_STORAGE_MATCHER_DATA_KEY) || '[]')
+      localStorage.setItem(LOCAL_STORAGE_MATCHER_DATA_KEY, JSON.stringify([...erpProcessedInvoices, ...matcherInvoices]));
       
       if (accumulatedErrors.length > 0) {
         setErrorMessage(accumulatedErrors.join('\n'));
