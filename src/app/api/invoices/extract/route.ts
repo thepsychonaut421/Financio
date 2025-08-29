@@ -1,6 +1,7 @@
 
 import { NextResponse } from 'next/server';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import crypto from 'crypto';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -8,7 +9,71 @@ export const maxDuration = 60; // Allow up to 60s for extraction
 
 const MODEL_NAME = process.env.GENAI_MODEL || 'gemini-1.5-flash';
 
+// --- Types ---
+type LineItem = {
+  productName: string;
+  productCode: string;
+  quantity: number;
+  unitPrice: number;
+  total: number;
+  uom: string;
+  autogenSku?: boolean;
+};
+
+
 // --- Utility Functions ---
+
+// VAT & SKU Helpers
+const LIKELY_VAT_RATES = [0, 5, 7, 10, 16, 19, 20, 21, 22, 23, 24, 25];
+
+function snapVatRate(r: number) {
+  if (!isFinite(r) || r < 0) return 0;
+  let best = LIKELY_VAT_RATES[0], d = Infinity;
+  for (const v of LIKELY_VAT_RATES) {
+    const dd = Math.abs(v - r);
+    if (dd < d) { d = dd; best = v; }
+  }
+  return best;
+}
+
+function sumLineTotals(items: { quantity:number; unitPrice:number; total:number }[]) {
+  return items.reduce((s, it) => s + (Number.isFinite(it.total) ? it.total : (it.quantity * it.unitPrice)), 0);
+}
+
+const VAT_NAME_RX = /^(?:mwst|mehrwertsteuer|umsatzsteuer|vat|tva)\b/i;
+function separateVatLine(items: LineItem[]) {
+  let vatAmountFromLine = 0;
+  const filtered = items.filter(it => {
+    const looksVat = VAT_NAME_RX.test(String(it.productName || '').trim());
+    if (looksVat) {
+      vatAmountFromLine += parseGermanNumber(it.total ?? it.unitPrice);
+      return false; // remove line
+    }
+    return true;
+  });
+  return { filtered, vatAmountFromLine };
+}
+
+function deriveVatFromTotals(grandTotal: number, items: LineItem[]) {
+  const sumItems = sumLineTotals(items);
+  if (!isFinite(grandTotal) || grandTotal <= 0 || sumItems <= 0) return null;
+  const approxRate = ((grandTotal / sumItems) - 1) * 100;
+  return snapVatRate(+approxRate.toFixed(2));
+}
+
+function hash32(str: string) {
+  let h = 2166136261 >>> 0;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 16777619) >>> 0;
+  }
+  return h.toString(36).toUpperCase();
+}
+function autoSku(name: string, supplier?: string) {
+  const base = (supplier ? supplier + ' ' : '') + name;
+  return `AUTO-${hash32(base).slice(0, 8)}`;
+}
+
 
 function parseGermanNumber(v: any): number {
   if (v == null) return 0;
@@ -30,53 +95,24 @@ function parseGermanNumber(v: any): number {
   return Number.isFinite(n) ? (neg ? -n : n) : 0;
 }
 
-
-type LineItem = {
-  productName: string;
-  productCode: string;
-  quantity: number;
-  unitPrice: number;
-  total: number;
-  uom: string;
-};
-
-function slug8(s: string) {
-    return (s || 'ITEM').toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,8) || 'ITEM';
-}
-
 function normalizeLineItems(items: any[] | undefined, fallbackTotal?: number): LineItem[] {
   const src = Array.isArray(items) ? items : [];
-  let out = src.map((it) => {
-    const name = it.productName ?? it.name ?? it.bezeichnung ?? 'ITEM';
-    const qty  = parseGermanNumber(it.qty ?? it.quantity ?? it.menge ?? 0);
-    let price  = parseGermanNumber(it.unitPrice ?? it.price ?? it.preis ?? it.rate ?? 0);
-    let total  = it.total != null ? parseGermanNumber(it.total) : 0;
+  let out: LineItem[] = src.map((it) => {
+    const qty   = parseGermanNumber(it.qty ?? it.quantity ?? it.menge ?? 1);
+    const price = parseGermanNumber(it.unitPrice ?? it.price ?? it.preis ?? it.rate ?? 0);
+    const name  = it.productName ?? it.name ?? it.bezeichnung ?? 'ITEM';
+    let code    = it.productCode ?? it.code ?? it.sku ?? '';
+    const total = it.total != null ? parseGermanNumber(it.total) : +(qty * price).toFixed(2);
+    const uom   = it.uom ?? it.einheit ?? 'Nos';
 
-    // derive if needed
-    if (total === 0 && qty > 0 && price > 0) total = +(qty * price).toFixed(2);
-    if (qty <= 0 && total > 0) {         // fix „cantitate zero”
-      return {
-        productName: name,
-        productCode: it.productCode ?? it.code ?? it.sku ?? slug8(name),
-        quantity: 1,
-        unitPrice: total,
-        total,
-        uom: it.uom ?? it.einheit ?? 'Nos',
-      };
+    let autogenSku = false;
+    if (!code) {
+      code = autoSku(name, it.lieferantName || it.supplier);
+      autogenSku = true;
     }
-    if (price === 0 && qty > 0 && total > 0) price = +(total / qty).toFixed(2);
 
-    return {
-      productName: name,
-      productCode: it.productCode ?? it.code ?? it.sku ?? slug8(name),
-      quantity: qty > 0 ? qty : 0,
-      unitPrice: price,
-      total,
-      uom: it.uom ?? it.einheit ?? 'Nos',
-    };
-  })
-  // elimină rânduri complet goale/zgomot
-  .filter(r => r.quantity > 0 || r.total > 0 || r.productName.length > 3);
+    return { productName: name, productCode: code, quantity: qty, unitPrice: price, total, uom, autogenSku };
+  }).filter(r => r.quantity > 0 || r.total > 0);
 
   if (out.length === 0 && (fallbackTotal ?? 0) > 0) {
     out = [{ productName: 'INVOICE TOTAL', productCode: 'TOTAL', quantity: 1, unitPrice: fallbackTotal!, total: fallbackTotal!, uom: 'Nos' }];
@@ -123,7 +159,6 @@ function extractJsonFromString(text: string): string | null {
     const raw = text.trim();
     if (raw.startsWith('{') && raw.endsWith('}')) return raw;
   
-    // căutăm primul obiect JSON echilibrat
     let depth = 0, start = -1;
     for (let i = 0; i < raw.length; i++) {
       if (raw[i] === '{') { if (!depth) start = i; depth++; }
@@ -155,7 +190,6 @@ export async function POST(req: Request) {
     const mimeMatch = meta.match(/^data:([^;]+);base64$/);
     const mimeType = mimeMatch?.[1] || 'application/pdf';
     
-    // Harden upload checks
     const approxBytes = Math.floor(base64Data.length * 3 / 4);
     if (approxBytes > 8 * 1024 * 1024) { // ~8MB PDF
         return NextResponse.json(safeErpFallback(filename, 'PDF is too large.'), { status: 200, headers: { 'Cache-Control': 'no-store' } });
@@ -191,11 +225,35 @@ If a value is not found, omit the key or set it to null. Ensure numbers are actu
     
     // Final normalization before sending to client
     safePayload.gesamtbetrag = parseGermanNumber(safePayload.gesamtbetrag ?? (parsed as any).brutto ?? (parsed as any).total ?? (parsed as any).summe ?? 0);
-    safePayload.rechnungspositionen = normalizeLineItems(safePayload.rechnungspositionen, safePayload.gesamtbetrag);
-    if (safePayload.mwstSatz != null) {
-        safePayload.mwstSatz = parseGermanNumber(safePayload.mwstSatz);
+    
+    // 1) Normalize items
+    let items = normalizeLineItems(safePayload.rechnungspositionen ?? parsed.items, safePayload.gesamtbetrag);
+
+    // 2) Separate VAT line
+    const { filtered, vatAmountFromLine } = separateVatLine(items);
+    items = filtered;
+
+    // 3) Calculate/validate VAT rate
+    let mwst = parseGermanNumber(safePayload.mwstSatz ?? parsed.mwstSatz);
+    if (!isFinite(mwst) || mwst <= 0 || mwst >= 100) {
+      const guessed = deriveVatFromTotals(safePayload.gesamtbetrag, items);
+      if (guessed != null) mwst = guessed;
+    }
+    mwst = snapVatRate(mwst);
+
+    // 4) Check for inconsistencies if a VAT line was found
+    const itemsSum = +sumLineTotals(items).toFixed(2);
+    const diff = +(safePayload.gesamtbetrag - itemsSum).toFixed(2);
+    const delta = Math.abs(diff - vatAmountFromLine);
+    if (vatAmountFromLine > 0 && delta <= 0.02) {
+      safePayload.anomalies = Array.from(new Set([...(safePayload.anomalies || []), 'VAT_LINE_REMOVED']));
+    } else if (vatAmountFromLine > 0 && delta > 0.02) {
+      safePayload.anomalies = Array.from(new Set([...(safePayload.anomalies || []), 'VAT_INCONSISTENT_ITEMS']));
     }
     
+    safePayload.mwstSatz = mwst;
+    safePayload.rechnungspositionen = items;
+
     const allZero = safePayload.rechnungspositionen.every((li: any) => parseGermanNumber(li.total) === 0);
     if (safePayload.gesamtbetrag > 0 && allZero) {
       safePayload.anomalies = Array.from(new Set([...(safePayload.anomalies || []), 'ZERO_LINES_WITH_TOTAL']));
@@ -210,3 +268,6 @@ If a value is not found, omit the key or set it to null. Ensure numbers are actu
     );
   }
 }
+
+
+    
