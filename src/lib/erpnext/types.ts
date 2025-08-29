@@ -62,14 +62,17 @@ export type ItemPayload = z.infer<typeof ItemPayloadSchema>;
 export const BankTransactionSchema = z.object({
   doctype: z.literal('Bank Transaction'),
   date: z.string(),
-  account: z.string(),
+  bank_account: z.string(),
   description: z.string().optional(),
   deposit: z.number().optional(),
   withdrawal: z.number().optional(),
   reference_number: z.string().optional(),
+  party_type: z.string().optional(),
   party: z.string().optional(),
+  external_id: z.string(),
 });
 export type BankTransaction = z.infer<typeof BankTransactionSchema>;
+
 
 export const JournalEntryAccountSchema = z.object({
     account: z.string(),
