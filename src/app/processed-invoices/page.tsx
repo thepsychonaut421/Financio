@@ -10,8 +10,10 @@ import { downloadFile } from '@/lib/export-helpers';
 import JSZip from 'jszip';
 import { incomingInvoicesToERPNextCSVComplete } from '@/lib/export-helpers';
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
+import { useAuth } from '@/contexts/AuthContext';
+import { db } from '@/lib/firebase';
+import { collection, query, where, orderBy, onSnapshot, doc, deleteDoc } from 'firebase/firestore';
 
-const REG_KEY = 'financio:processed-registry:v1';
 
 type RegistryEntry = {
   id: string;
@@ -19,26 +21,31 @@ type RegistryEntry = {
   status: 'OK' | 'WARN' | 'ERROR' | 'DUPLICATE';
   erpMode: boolean;
   payload: any;
-  createdAt: string;
+  createdAt: { seconds: number; nanoseconds: number; } | Date;
 };
 
 function ProcessedInvoicesPageContent() {
+  const { user } = useAuth();
   const [registry, setRegistry] = useState<RegistryEntry[]>([]);
-  const [query, setQuery] = useState('');
+  const [queryTerm, setQueryTerm] = useState('');
   const [busy, setBusy] = useState(false);
   const [selected, setSelected] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(REG_KEY);
-      setRegistry(raw ? JSON.parse(raw) : []);
-    } catch {
-      setRegistry([]);
-    }
-  }, []);
+    if (!user?.uid) return;
+    const q = query(
+      collection(db, "processed_invoices"),
+      where('userId', '==', user.uid),
+      orderBy('createdAt', 'desc'),
+    );
+    const unsub = onSnapshot(q, snap => {
+      setRegistry(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
+    });
+    return () => unsub();
+  }, [user?.uid]);
 
   const rows = useMemo(() => {
-    const q = query.trim().toLowerCase();
+    const q = queryTerm.trim().toLowerCase();
     if (!q) return registry;
     return registry.filter(r => {
       const p = r.payload || {};
@@ -48,7 +55,7 @@ function ProcessedInvoicesPageContent() {
         (p.lieferantName || '').toLowerCase().includes(q)
       );
     });
-  }, [registry, query]);
+  }, [registry, queryTerm]);
 
   const allSelectedIds = useMemo(
     () => Object.keys(selected).filter(k => selected[k]),
@@ -66,16 +73,19 @@ function ProcessedInvoicesPageContent() {
 
   const clearSelection = () => setSelected({});
 
-  const removeByIds = (ids: string[]) => {
-    const next = registry.filter(r => !ids.includes(r.id));
-    setRegistry(next);
-    localStorage.setItem(REG_KEY, JSON.stringify(next));
+  const removeByIds = async (ids: string[]) => {
+    if (!user) return;
+    for (const id of ids) {
+        await deleteDoc(doc(db, "processed_invoices", id));
+    }
     clearSelection();
   };
 
   const clearAll = () => {
-    setRegistry([]);
-    localStorage.removeItem(REG_KEY);
+    if (!user) return;
+    registry.forEach(r => {
+        deleteDoc(doc(db, "processed_invoices", r.id));
+    });
     clearSelection();
   };
 
@@ -94,8 +104,6 @@ function ProcessedInvoicesPageContent() {
         body: JSON.stringify({ invoices: payloads }),
       });
       const res = await resp.json();
-      // opțional: marchează ca OK pe cele reușite
-      // lăsăm notificările UI existente (toast) din backend
       console.log('ERP resend result', res);
     } catch (e) {
       console.error('Resend failed', e);
@@ -125,6 +133,13 @@ function ProcessedInvoicesPageContent() {
     downloadFile(blob, 'processed_invoices.zip', 'application/zip');
   };
 
+  const formatTimestamp = (ts: any) => {
+    if (!ts) return '-';
+    if (ts instanceof Date) return ts.toLocaleString();
+    if (ts.seconds) return new Date(ts.seconds * 1000).toLocaleString();
+    return '-';
+  }
+
   const badge = (s: RegistryEntry['status']) => {
     const tone =
       s === 'OK' ? 'bg-emerald-600' :
@@ -142,7 +157,7 @@ function ProcessedInvoicesPageContent() {
             <span>Processed Invoices Registry</span>
             <div className="flex gap-2">
               <Input placeholder="Search filename / supplier / invoice no."
-                     value={query} onChange={e=>setQuery(e.target.value)}
+                     value={queryTerm} onChange={e=>setQueryTerm(e.target.value)}
                      className="w-80" />
             </div>
           </CardTitle>
@@ -196,7 +211,7 @@ function ProcessedInvoicesPageContent() {
                     <td className="p-2">{r.payload?.datum || '-'}</td>
                     <td className="p-2">{r.payload?.gesamtbetrag ?? '-'}</td>
                     <td className="p-2">{r.filename}</td>
-                    <td className="p-2">{new Date(r.createdAt).toLocaleString()}</td>
+                    <td className="p-2">{formatTimestamp(r.createdAt)}</td>
                   </tr>
                 ))}
                 {rows.length === 0 && (

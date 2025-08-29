@@ -22,6 +22,9 @@ import { useToast } from '@/hooks/use-toast';
 import { erpInvoicesToSupplierCSV, downloadFile, incomingInvoicesToERPNextCSVComplete } from '@/lib/export-helpers';
 import JSZip from 'jszip';
 import Papa from 'papaparse';
+import { db } from '@/lib/firebase';
+import { useAuth } from '@/contexts/AuthContext';
+import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
 
 
 const CACHE_VERSION = 'v2';
@@ -112,6 +115,7 @@ function enforceErpSchemaSafety<T extends Record<string, any>>(x: T, filename: s
 
 export function IncomingInvoicesPageContent() {
   'use client';
+  const { user } = useAuth();
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [extractedInvoices, setExtractedInvoices] = useState<IncomingInvoiceItem[]>([]);
   const [erpProcessedInvoices, setErpProcessedInvoices] = useState<ERPIncomingInvoiceItem[]>([]);
@@ -339,31 +343,7 @@ export function IncomingInvoicesPageContent() {
     const currentMatcherInvoices = JSON.parse(localStorage.getItem(LOCAL_STORAGE_MATCHER_DATA_KEY) || '[]');
     const newFingerprints = { ...processedFileFingerprints };
     const duplicates: string[] = [];
-
-    // === registry mirror ===
-    const REG_KEY = 'financio:processed-registry:v1';
-    type RegistryEntry = {
-      id: string;               // `${filename}::${Date.now()}`
-      filename: string;
-      status: 'OK'|'WARN'|'ERROR'|'DUPLICATE';
-      erpMode: boolean;
-      payload: any;             // ERPIncomingInvoiceItem compat
-      createdAt: string;        // ISO
-    };
-
-    function pushToRegistry(entry: RegistryEntry) {
-      try {
-        const raw = localStorage.getItem(REG_KEY);
-        const arr = raw ? JSON.parse(raw) as RegistryEntry[] : [];
-        arr.unshift(entry);
-        // cap la 500
-        localStorage.setItem(REG_KEY, JSON.stringify(arr.slice(0, 500)));
-      } catch (e) {
-        console.error('pushToRegistry failed', e);
-      }
-    }
-
-
+    
     const filesToProcess = selectedFiles.filter(file => {
       const fingerprint = getFileFingerprint(file);
       if (newFingerprints[fingerprint]) {
@@ -380,15 +360,6 @@ export function IncomingInvoicesPageContent() {
             } else {
               currentRegularInvoices.unshift(cached as any);
             }
-
-            pushToRegistry({
-                id: `${file.name}::${Date.now()}`,
-                filename: file.name,
-                status: 'DUPLICATE',
-                erpMode: erpMode,
-                payload: cached,
-                createdAt: new Date().toISOString(),
-            });
           }
         }
         
@@ -522,17 +493,17 @@ export function IncomingInvoicesPageContent() {
           });
         }
         
-        const registryStatus: RegistryEntry['status'] =
+        const status: 'OK'|'WARN'|'ERROR'|'DUPLICATE' =
             (aiResult as any)?.error ? 'ERROR' :
             ((aiResult as any)?.anomalies?.length ? 'WARN' : 'OK');
 
-        pushToRegistry({
-            id: `${file.name}::${Date.now()}`,
-            filename: file.name,
-            status: registryStatus,
-            erpMode: true, // Always save ERP-compatible payload
-            payload: erpCompatibleInvoice,
-            createdAt: new Date().toISOString(),
+        await addDoc(collection(db, "processed_invoices"), {
+          userId: user?.uid ?? 'anon',
+          filename: file.name,
+          status,
+          erpMode: true,
+          payload: erpCompatibleInvoice,
+          createdAt: serverTimestamp(),
         });
 
         setProgressValue(Math.round(((i + 1) / filesToProcess.length) * 100));
