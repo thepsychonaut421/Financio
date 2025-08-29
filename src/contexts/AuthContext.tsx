@@ -31,7 +31,7 @@ if (getApps().length === 0) {
 // Initialize App Check
 if (typeof window !== 'undefined') {
     initializeAppCheck(app, {
-        provider: new ReCaptchaV3Provider('6Lc-7wQqAAAAAPdGg5ZCRt1r6w6-4w5a4a5s6q7r'), // Public reCAPTCHA site key
+        provider: new ReCaptchaV3Provider('6LeliwsqAAAAAHh1h5GkXlTzT_23n5L1hXgYjTWh'), // Public reCAPTCHA site key
         isTokenAutoRefreshEnabled: true
     });
 }
