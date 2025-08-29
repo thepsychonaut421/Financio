@@ -25,24 +25,34 @@ type RegistryEntry = {
 };
 
 function ProcessedInvoicesPageContent() {
-  const { user } = useAuth();
+  const { user, isLoading: isAuthLoading } = useAuth();
   const [registry, setRegistry] = useState<RegistryEntry[]>([]);
   const [queryTerm, setQueryTerm] = useState('');
   const [busy, setBusy] = useState(false);
   const [selected, setSelected] = useState<Record<string, boolean>>({});
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!user?.uid) return;
+    if (isAuthLoading) return;
+    if (!user) {
+      setRegistry([]);
+      setError("Please log in to view processed invoices.");
+      return;
+    }
+    setError(null);
     const q = query(
       collection(db, "processed_invoices"),
       where('userId', '==', user.uid),
-      orderBy('createdAt', 'desc'),
+      orderBy('createdAt', 'desc')
     );
     const unsub = onSnapshot(q, snap => {
       setRegistry(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
+    }, (err) => {
+        console.error("Firestore snapshot error:", err);
+        setError("Failed to load data from Firestore. Check console for details.");
     });
     return () => unsub();
-  }, [user?.uid]);
+  }, [user, isAuthLoading]);
 
   const rows = useMemo(() => {
     const q = queryTerm.trim().toLowerCase();
@@ -75,18 +85,30 @@ function ProcessedInvoicesPageContent() {
 
   const removeByIds = async (ids: string[]) => {
     if (!user) return;
-    for (const id of ids) {
-        await deleteDoc(doc(db, "processed_invoices", id));
+    setBusy(true);
+    try {
+        const deletePromises = ids.map(id => deleteDoc(doc(db, "processed_invoices", id)));
+        await Promise.all(deletePromises);
+    } catch(e) {
+        console.error("Failed to delete documents:", e);
+    } finally {
+        setBusy(false);
+        clearSelection();
     }
-    clearSelection();
   };
 
-  const clearAll = () => {
+  const clearAll = async () => {
     if (!user) return;
-    registry.forEach(r => {
-        deleteDoc(doc(db, "processed_invoices", r.id));
-    });
-    clearSelection();
+    setBusy(true);
+    try {
+        const deletePromises = registry.map(r => deleteDoc(doc(db, "processed_invoices", r.id)));
+        await Promise.all(deletePromises);
+    } catch(e) {
+        console.error("Failed to clear all documents:", e);
+    } finally {
+        setBusy(false);
+        clearSelection();
+    }
   };
 
   const resendToERP = async (ids: string[]) => {
@@ -164,21 +186,21 @@ function ProcessedInvoicesPageContent() {
         </CardHeader>
         <CardContent>
           <div className="flex gap-2 mb-3 flex-wrap">
-            <Button variant="secondary" onClick={selectAll}>Select All</Button>
-            <Button variant="secondary" onClick={clearSelection}>Clear Selection</Button>
+            <Button variant="secondary" onClick={selectAll} disabled={busy}>Select All</Button>
+            <Button variant="secondary" onClick={clearSelection} disabled={busy}>Clear Selection</Button>
             <Button onClick={()=>resendToERP(allSelectedIds)} disabled={busy || allSelectedIds.length===0}>
               Resend to ERPNext
             </Button>
-            <Button onClick={()=>downloadJSON(allSelectedIds)} variant="outline" disabled={allSelectedIds.length===0}>
+            <Button onClick={()=>downloadJSON(allSelectedIds)} variant="outline" disabled={busy || allSelectedIds.length===0}>
               Download JSON
             </Button>
-            <Button onClick={()=>exportZip(allSelectedIds)} variant="outline" disabled={allSelectedIds.length===0}>
+            <Button onClick={()=>exportZip(allSelectedIds)} variant="outline" disabled={busy || allSelectedIds.length===0}>
               Export ZIP (CSV)
             </Button>
-            <Button onClick={()=>removeByIds(allSelectedIds)} variant="destructive" disabled={allSelectedIds.length===0}>
+            <Button onClick={()=>removeByIds(allSelectedIds)} variant="destructive" disabled={busy || allSelectedIds.length===0}>
               Delete Selected
             </Button>
-            <Button onClick={clearAll} variant="destructive">Clear All</Button>
+            <Button onClick={clearAll} variant="destructive" disabled={busy}>Clear All</Button>
           </div>
 
           <div className="border rounded-md overflow-x-auto">
@@ -203,6 +225,7 @@ function ProcessedInvoicesPageContent() {
                         type="checkbox"
                         checked={!!selected[r.id]}
                         onChange={()=>toggle(r.id)}
+                        disabled={busy}
                       />
                     </td>
                     <td className="p-2">{badge(r.status)}</td>
@@ -214,10 +237,10 @@ function ProcessedInvoicesPageContent() {
                     <td className="p-2">{formatTimestamp(r.createdAt)}</td>
                   </tr>
                 ))}
-                {rows.length === 0 && (
+                {(rows.length === 0 || error) && (
                   <tr>
                     <td className="p-4 text-center text-muted-foreground" colSpan={8}>
-                      No processed invoices yet.
+                       {isAuthLoading ? "Loading..." : (error ? error : "No processed invoices yet.")}
                     </td>
                   </tr>
                 )}
