@@ -1,18 +1,38 @@
 import { NextResponse } from 'next/server';
 import { GoogleGenerativeAI } from '@google/generative-ai';
-// ideal: server-only import pentru file manager
-import { GoogleAIFileManager } from '@google/generative-ai/server';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const MODEL_NAME = process.env.GENAI_MODEL || 'gemini-1.5-flash';
 
-function extractJsonFromString(txt: string): string | null {
-  const m = txt.match(/```json\s*([\s\S]*?)\s*```/);
-  if (m?.[1]) return m[1].trim();
-  if (txt.trim().startsWith('{') && txt.trim().endsWith('}')) return txt.trim();
-  return null;
+// --- Utility Functions (moved from client-side) ---
+
+function parseGermanNumber(v: any): number {
+  if (v == null) return 0;
+  if (typeof v === 'number') return isFinite(v) ? v : 0;
+  const s = String(v).trim().replace(/\./g, '').replace(',', '.');
+  const n = Number(s);
+  return isFinite(n) ? n : 0;
+}
+
+type AnyLine = any;
+function normalizeLineItems(items: AnyLine[] | undefined, fallbackTotal?: number) {
+  const src = Array.isArray(items) ? items : [];
+  let out = src.map((it) => {
+    const name = it.productName ?? it.name ?? it.bezeichnung ?? 'ITEM';
+    const code = it.productCode ?? it.code ?? it.sku ?? '';
+    const qty  = parseGermanNumber(it.qty ?? it.quantity ?? it.menge ?? 1);
+    const price= parseGermanNumber(it.price ?? it.unitPrice ?? it.preis ?? it.rate ?? 0);
+    const total= it.total != null ? parseGermanNumber(it.total) : +(qty * price).toFixed(2);
+    const uom  = it.uom ?? it.einheit ?? 'Nos';
+    return { productName: name, productCode: code, qty, price, total, uom };
+  }).filter(r => r.qty > 0 || r.total > 0);
+
+  if (out.length === 0 && (fallbackTotal ?? 0) > 0) {
+    out = [{ productName: 'INVOICE TOTAL', productCode: 'TOTAL', qty: 1, price: fallbackTotal, total: fallbackTotal, uom: 'Nos' }];
+  }
+  return out;
 }
 
 function safeErpFallback(filename: string, errorMsg?: string) {
@@ -31,68 +51,88 @@ function safeErpFallback(filename: string, errorMsg?: string) {
   };
 }
 
+function enforceErpSchemaSafety(aiResult: any, filename: string) {
+    const today = new Date().toISOString().slice(0, 10);
+    return {
+        doctype: 'Purchase Invoice',
+        ...aiResult,
+        datum: aiResult?.datum || today,
+        posting_date: aiResult?.datum || today,
+        wahrung: (aiResult?.wahrung || aiResult?.currency || 'EUR').toString().toUpperCase() || 'EUR',
+        rechnungspositionen: aiResult?.rechnungspositionen || [],
+        custom_fields: {
+            ...(aiResult?.custom_fields || {}),
+            _source_filename: filename,
+        },
+    };
+}
+
+function extractJsonFromString(text: string): string | null {
+    const match = text.match(/```json\s*([\s\S]*?)\s*```/);
+    if (match && match[1]) {
+        return match[1];
+    }
+    if (text.trim().startsWith('{') && text.trim().endsWith('}')) {
+        return text.trim();
+    }
+    return null;
+}
+
+// --- API Route Handler ---
+
 export async function POST(req: Request) {
-  let uploadedName: string | undefined;
-
+  let filename = 'unknown.pdf';
   try {
-    // 🔧 Citește body-ul o singură dată
-    const { dataUri, filename = 'invoice.pdf' } = await req.json();
+    const body = await req.json();
+    const dataUri: string | undefined = body?.dataUri;
+    filename = (body?.filename as string) || filename;
 
-    if (!dataUri?.startsWith('data:application/pdf;base64,')) {
-      return NextResponse.json({ error: 'Invalid or missing PDF data URI.' }, { status: 400 });
+    if (!dataUri || !dataUri.startsWith('data:') || !dataUri.includes(';base64,')) {
+      return NextResponse.json(
+        { error: 'Invalid or missing data URI.' },
+        { status: 400 }
+      );
     }
 
+    const [meta, base64Data] = dataUri.split(',');
+    const mimeMatch = meta.match(/^data:([^;]+);base64$/);
+    const mimeType = mimeMatch?.[1] || 'application/pdf';
+
     const apiKey = process.env.GOOGLE_GENAI_API_KEY;
-    if (!apiKey) throw new Error('GOOGLE_GENAI_API_KEY is not set');
+    if (!apiKey) throw new Error('GOOGLE_GENAI_API_KEY is not set.');
 
     const genAI = new GoogleGenerativeAI(apiKey);
-    // ✅ Managerul de fișiere corect (NU genAI.getFileManager)
-    const fileManager = new GoogleAIFileManager({ apiKey });
-
-    const pdfBuffer = Buffer.from(dataUri.split(',')[1], 'base64');
-
-    const upload = await fileManager.uploadFile({
-      file: pdfBuffer,
-      mimeType: 'application/pdf',
-      displayName: filename,
-    });
-    uploadedName = upload.file.name;
-
     const model = genAI.getGenerativeModel({ model: MODEL_NAME });
 
-    const prompt = `You are a meticulous data extractor for accounting (German). Output ONLY a valid JSON object
-with keys: { rechnungsnummer, datum(YYYY-MM-DD), lieferantName, lieferantAdresse, zahlungsziel, zahlungsart,
-gesamtbetrag(number), mwstSatz(number), rechnungspositionen: [{ productName, productCode, quantity, unitPrice, total }], currency }.
-Omit fields you can't find or set null. Numbers must be real numbers, not strings.`;
+    const prompt = `You are a meticulous data extractor for accounting, specialized in German and cross-border invoices. Output ONLY a valid JSON object, no markdown, no prose.
+The target schema has these fields: { rechnungsnummer, datum (YYYY-MM-DD), lieferantName, lieferantAdresse, zahlungsziel, zahlungsart, gesamtbetrag (number), mwstSatz (number), rechnungspositionen: [{ productName, productCode, quantity, unitPrice, total }] }.
+If a value is not found, omit the key or set it to null. Ensure numbers are actual numbers, not strings.`;
 
-    const result = await model.generateContent([
-      { fileData: { fileUri: upload.file.uri, mimeType: upload.file.mimeType } },
+    const generation = await model.generateContent([
+      { inlineData: { data: base64Data, mimeType } },
       { text: prompt },
     ]);
 
-    const text = result.response.text();
-    const jsonStr = extractJsonFromString(text);
-    if (!jsonStr) throw new Error(`Model returned non-JSON. First 200 chars: ${text.slice(0,200)}…`);
-
-    const parsed = JSON.parse(jsonStr);
-
-    // (opțional) aici aplici normalizările tale server-side înainte să răspunzi…
-
-    return NextResponse.json(parsed);
-  } catch (e: any) {
-    const msg = e?.message || String(e);
-    console.error('[extract invoices] error:', msg);
-    // Dacă body-ul nu mai e disponibil aici, nu mai încercăm să-l citim din nou.
-    return NextResponse.json(safeErpFallback('unknown.pdf', msg), { status: 200 });
-  } finally {
-    if (uploadedName) {
-      try {
-        const apiKey = process.env.GOOGLE_GENAI_API_KEY!;
-        const fileManager = new GoogleAIFileManager({ apiKey });
-        await fileManager.deleteFile(uploadedName);
-      } catch (cleanupErr) {
-        console.warn('cleanup failed:', cleanupErr);
-      }
+    const responseText = generation.response.text();
+    const jsonString = extractJsonFromString(responseText);
+    if (!jsonString) {
+      throw new Error(`AI returned a non-JSON response. Raw text: ${responseText.slice(0, 200)}...`);
     }
+
+    const parsed = JSON.parse(jsonString);
+    const safePayload = enforceErpSchemaSafety(parsed, filename);
+    
+    // Final normalization before sending to client
+    const grandTotal = parseGermanNumber(safePayload.gesamtbetrag ?? safePayload.brutto ?? safePayload.total ?? safePayload.summe ?? 0);
+    safePayload.gesamtbetrag = grandTotal;
+    safePayload.rechnungspositionen = normalizeLineItems(safePayload.rechnungspositionen, grandTotal);
+
+    return NextResponse.json(safePayload);
+  } catch (e: any) {
+    console.error('[API /invoices/extract Error]', e);
+    return NextResponse.json(
+      safeErpFallback(filename, e?.message || String(e)),
+      { status: 200 }
+    );
   }
 }
