@@ -1,6 +1,6 @@
 
 import { NextResponse } from 'next/server';
-import { GoogleGenerativeAI, GoogleAIFileManager } from '@google/generative-ai';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -139,7 +139,7 @@ export async function POST(req: Request) {
         }
 
         const genAI = new GoogleGenerativeAI(apiKey);
-        const fileManager = new GoogleAIFileManager(apiKey);
+        const fileManager = genAI.getFileManager(apiKey);
 
         const uploadResult = await fileManager.uploadFile({
             file: pdfBuffer,
@@ -179,7 +179,8 @@ export async function POST(req: Request) {
         if (uploadedFileName) {
             try {
                 const apiKey = process.env.GOOGLE_GENAI_API_KEY!;
-                const fileManager = new GoogleAIFileManager(apiKey);
+                const genAI = new GoogleGenerativeAI(apiKey);
+                const fileManager = genAI.getFileManager(apiKey);
                 await fileManager.deleteFile(uploadedFileName);
             } catch (cleanupError) {
                 console.warn(`Failed to clean up uploaded file ${uploadedFileName}:`, cleanupError);
