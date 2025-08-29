@@ -1,7 +1,7 @@
 
 import { initializeApp, getApps, getApp, type FirebaseApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
-import { initializeAppCheck, ReCaptchaV3Provider } from 'firebase/app-check';
+import { initializeAppCheck, ReCaptchaEnterpriseProvider } from 'firebase/app-check';
 
 const firebaseConfig = {
   apiKey: "AIzaSyA7aXkeQUB1UCZtc_28szbBI6YV-w1dYl4",
@@ -21,7 +21,7 @@ const app: FirebaseApp = getApps().length === 0 ? initializeApp(firebaseConfig) 
 if (typeof window !== 'undefined') {
     try {
         initializeAppCheck(app, {
-            provider: new ReCaptchaV3Provider('6Ld5FbcrAAAAACkYWQDla0yJhXvSSHOVBUVAq6uv'),
+            provider: new ReCaptchaEnterpriseProvider('6Ld5FbcrAAAAACkYWQDla0yJhXvSSHOVBUVAq6uv'),
             isTokenAutoRefreshEnabled: true
         });
     } catch(e) {
