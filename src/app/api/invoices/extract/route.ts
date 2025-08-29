@@ -121,10 +121,10 @@ export async function POST(req: Request) {
     
     const MAX_B64_SIZE = 8 * 1024 * 1024 * 1.4; // ~8MB PDF
     if (base64Data.length > MAX_B64_SIZE) {
-        return NextResponse.json(safeErpFallback(filename, 'PDF is too large.'), { status: 200 });
+        return NextResponse.json(safeErpFallback(filename, 'PDF is too large.'), { status: 200, headers: { 'Cache-Control': 'no-store' } });
     }
     if (mimeType !== 'application/pdf') {
-        return NextResponse.json(safeErpFallback(filename, 'File is not a PDF.'), { status: 200 });
+        return NextResponse.json(safeErpFallback(filename, 'File is not a PDF.'), { status: 200, headers: { 'Cache-Control': 'no-store' } });
     }
 
     const apiKey = process.env.GOOGLE_GENAI_API_KEY;
@@ -168,3 +168,5 @@ If a value is not found, omit the key or set it to null. Ensure numbers are actu
     );
   }
 }
+
+    
