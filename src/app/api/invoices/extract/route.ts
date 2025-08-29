@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
 export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
+export const dynamic = 'force_dynamic';
 export const maxDuration = 60; // Allow up to 60s for extraction
 
 const MODEL_NAME = process.env.GENAI_MODEL || 'gemini-1.5-flash';
@@ -12,10 +12,10 @@ const MODEL_NAME = process.env.GENAI_MODEL || 'gemini-1.5-flash';
 
 function parseGermanNumber(v: any): number {
   if (v == null) return 0;
-  if (typeof v === 'number') return isFinite(v) ? v : 0;
-  const s = String(v).trim().replace(/\./g, '').replace(',', '.');
+  if (typeof v === 'number') return Number.isFinite(v) ? v : 0;
+  const s = String(v).trim().replace(/\./g, '').replace(/,/g, '.');
   const n = Number(s);
-  return isFinite(n) ? n : 0;
+  return Number.isFinite(n) ? n : 0;
 }
 
 type LineItem = {
@@ -72,7 +72,7 @@ function enforceErpSchemaSafety(aiResult: any, filename: string) {
         datum: aiResult?.datum || today,
         posting_date: aiResult?.datum || today,
         wahrung: (aiResult?.wahrung || aiResult?.currency || 'EUR').toString().toUpperCase() || 'EUR',
-        rechnungspositionen: aiResult?.rechnungspositionen || [],
+        rechnungspositionen: aiResult?.rechnungspositionen || aiResult?.items || [],
         custom_fields: {
             ...(aiResult?.custom_fields || {}),
             _source_filename: filename,
@@ -112,18 +112,19 @@ export async function POST(req: Request) {
     filename = (body?.filename as string) || filename;
 
     if (!dataUri || !dataUri.startsWith('data:') || !dataUri.includes(';base64,')) {
-      return NextResponse.json({ error: 'Invalid or missing data URI.' }, { status: 400 });
+      return NextResponse.json({ error: 'Invalid or missing data URI.' }, { status: 400, headers: { 'Cache-Control': 'no-store' } });
     }
 
     const [meta, base64Data] = dataUri.split(',');
     const mimeMatch = meta.match(/^data:([^;]+);base64$/);
     const mimeType = mimeMatch?.[1] || 'application/pdf';
     
-    const MAX_B64_SIZE = 8 * 1024 * 1024 * 1.4; // ~8MB PDF
-    if (base64Data.length > MAX_B64_SIZE) {
+    // Harden upload checks
+    const approxBytes = Math.floor(base64Data.length * 3 / 4);
+    if (approxBytes > 8 * 1024 * 1024) { // ~8MB PDF
         return NextResponse.json(safeErpFallback(filename, 'PDF is too large.'), { status: 200, headers: { 'Cache-Control': 'no-store' } });
     }
-    if (mimeType !== 'application/pdf') {
+    if (!/^application\/pdf$/i.test(mimeType.split(';')[0])) {
         return NextResponse.json(safeErpFallback(filename, 'File is not a PDF.'), { status: 200, headers: { 'Cache-Control': 'no-store' } });
     }
 
@@ -131,9 +132,12 @@ export async function POST(req: Request) {
     if (!apiKey) throw new Error('GOOGLE_GENAI_API_KEY is not set.');
 
     const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: MODEL_NAME });
+    const model = genAI.getGenerativeModel({ 
+        model: MODEL_NAME,
+        generationConfig: { responseMimeType: 'application/json' },
+    });
 
-    const prompt = `You are a meticulous data extractor for accounting, specialized in German and cross-border invoices. Output ONLY a valid JSON object, no markdown, no prose.
+    const prompt = `You are a meticulous data extractor for accounting, specialized in German and cross-border invoices. Return ONLY a valid JSON object.
 The target schema has these fields: { rechnungsnummer, datum (YYYY-MM-DD), lieferantName, lieferantAdresse, zahlungsziel, zahlungsart, gesamtbetrag (number), mwstSatz (number), rechnungspositionen: [{ productName, productCode, quantity, unitPrice, total }] }.
 If a value is not found, omit the key or set it to null. Ensure numbers are actual numbers (using dot as decimal separator), not strings.`;
 
@@ -141,20 +145,16 @@ If a value is not found, omit the key or set it to null. Ensure numbers are actu
       { inlineData: { data: base64Data, mimeType } },
       { text: prompt },
     ]);
-
+    
     const responseText = generation.response.text();
-    const jsonString = extractJsonFromString(responseText);
-    if (!jsonString) {
-      throw new Error(`AI returned a non-JSON response. Raw text: ${responseText.slice(0, 200)}...`);
-    }
-
-    const parsed = JSON.parse(jsonString);
+    if (!responseText?.trim().startsWith('{')) throw new Error('Model did not return valid JSON.');
+    
+    const parsed = JSON.parse(responseText);
     let safePayload = enforceErpSchemaSafety(parsed, filename);
     
     // Final normalization before sending to client
-    const grandTotal = parseGermanNumber(safePayload.gesamtbetrag ?? (parsed as any).brutto ?? (parsed as any).total ?? (parsed as any).summe ?? 0);
-    safePayload.gesamtbetrag = grandTotal;
-    safePayload.rechnungspositionen = normalizeLineItems(safePayload.rechnungspositionen ?? parsed.items, grandTotal);
+    safePayload.gesamtbetrag = parseGermanNumber(safePayload.gesamtbetrag ?? (parsed as any).brutto ?? (parsed as any).total ?? (parsed as any).summe ?? 0);
+    safePayload.rechnungspositionen = normalizeLineItems(safePayload.rechnungspositionen, safePayload.gesamtbetrag);
     if (safePayload.mwstSatz != null) {
         safePayload.mwstSatz = parseGermanNumber(safePayload.mwstSatz);
     }
