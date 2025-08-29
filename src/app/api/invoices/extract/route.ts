@@ -3,6 +3,9 @@ import { NextResponse } from 'next/server';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { getAdminDbSafe } from '@/lib/firebase-admin';
 import crypto from 'crypto';
+import type { Firestore } from 'firebase-admin/firestore';
+import { FieldValue } from 'firebase-admin/firestore';
+
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -29,49 +32,37 @@ function makeTranslationId(input: string, scope: string) {
   return h; // ex. "c0ffee..."
 }
 
-async function ensureTranslationDoc(input: string, scope: 'product'|'supplier'|'address') {
-  const adminDb = await getAdminDbSafe();
-  if (!adminDb) return null;
-
+async function ensureTranslationDoc(db: Firestore, input: string, scope: 'product'|'supplier'|'address') {
   const clean = (input ?? '').trim();
   if (!clean) return null;
 
   const id = makeTranslationId(clean, scope);
-  const ref = adminDb.collection('translations').doc(id);
+  const ref = db.collection('translations').doc(id);
 
   const snap = await ref.get();
   if (!snap.exists) {
     await ref.set({
       input: clean,
-      scope,                 // optional: to know where the text comes from
-      createdAt: adminDb.FieldValue?.serverTimestamp?.() ?? new Date(),
+      scope,
+      createdAt: FieldValue.serverTimestamp(),
     }, { merge: true });
   }
   return id;
 }
 
-async function ensureManyTranslations(texts: Array<{text:string, scope:'product'|'supplier'|'address'}>) {
-  const adminDb = await getAdminDbSafe();
-  if (!adminDb) return new Map<string, string>();
-
+async function ensureManyTranslations(db: Firestore, texts: Array<{text:string, scope:'product'|'supplier'|'address'}>) {
   const unique = new Map<string,{text:string,scope:'product'|'supplier'|'address'}>();
   for (const t of texts) {
-    const key = (t.scope + '|' + (t.text ?? '').trim().toLowerCase());
+    const key = `${t.scope}|${(t.text ?? '').trim().toLowerCase()}`;
     if (t.text && !unique.has(key)) unique.set(key, t);
   }
-  // run in parallel but catch any errors
-  const results = await Promise.allSettled(
-    Array.from(unique.values()).map(t => ensureTranslationDoc(t.text, t.scope))
-  );
-  // map text->id, useful if you want to put it in the payload
   const idMap = new Map<string,string>();
-  for (let i=0;i<results.length;i++){
-    const r = results[i];
-    const t = Array.from(unique.values())[i];
-    if (r.status === 'fulfilled' && r.value) {
-      idMap.set(t.scope + '|' + t.text.trim(), r.value);
-    }
-  }
+  await Promise.allSettled(
+    [...unique.values()].map(async t => {
+      const id = await ensureTranslationDoc(db, t.text, t.scope);
+      if (id) idMap.set(`${t.scope}|${t.text.trim()}`, id);
+    })
+  );
   return idMap;
 }
 
@@ -94,6 +85,7 @@ function sumLineTotals(items: { quantity:number; unitPrice:number; total:number 
 
 const VAT_NAME_RX = /\b(mwst\.?|mehrwertsteuer|umsatzsteuer|ust|u\.?st\.?|vat|tva)\b/i;
 const PCT_RX = /\b\d{1,2}(?:[.,]\d{1,2})?\s*%\b/;
+const VAT_ID_RX = /\b(ust-?id|vat-?id|steuer-?id)\b/i;
 
 function separateVatLine(items: LineItem[]) {
   let vatAmountFromLine = 0;
@@ -102,9 +94,9 @@ function separateVatLine(items: LineItem[]) {
   for (const it of items) {
     const name = String(it.productName || '').trim();
     const code = String(it.productCode || '').trim();
-    const looksVat =
-      VAT_NAME_RX.test(name) || PCT_RX.test(name) ||
-      /^(vat|mwst|ust)$/i.test(code);
+    const looksVat = !VAT_ID_RX.test(name) && (
+      VAT_NAME_RX.test(name) || PCT_RX.test(name) || /^(vat|mwst|ust)$/i.test(code)
+    );
 
     if (looksVat) {
       const amount = parseGermanNumber(it.total ?? (it.unitPrice * it.quantity));
@@ -307,7 +299,7 @@ If a value is not found, omit the key or set it to null. Ensure numbers are actu
         for (const li of items) {
           if (li.productName) translateInputs.push({ text: li.productName, scope: 'product' });
         }
-        const idMap = await ensureManyTranslations(translateInputs);
+        const idMap = await ensureManyTranslations(adminDb, translateInputs);
     
         (safePayload as any).translationRefs = {
           supplierNameId: idMap.get('supplier|' + (safePayload.lieferantName || '').trim()),
@@ -335,4 +327,3 @@ If a value is not found, omit the key or set it to null. Ensure numbers are actu
     );
   }
 }
-
