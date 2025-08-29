@@ -4,44 +4,8 @@
 import React, { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { getAuth, onAuthStateChanged, type User, signInWithEmailAndPassword, signOut, OAuthProvider, signInWithPopup } from 'firebase/auth';
-import { initializeApp, getApps, type FirebaseApp } from 'firebase/app';
-import { initializeAppCheck, ReCaptchaV3Provider } from 'firebase/app-check';
 import { useToast } from '@/hooks/use-toast';
-
-// Your web app's Firebase configuration
-const firebaseConfig = {
-  apiKey: "AIzaSyA7aXkeQUB1UCZtc_28szbBI6YV-w1dYl4",
-  authDomain: "pdf-data-extractor-3krns.firebaseapp.com",
-  databaseURL: "https://pdf-data-extractor-3krns-default-rtdb.europe-west1.firebasedatabase.app",
-  projectId: "pdf-data-extractor-3krns",
-  storageBucket: "pdf-data-extractor-3krns.appspot.com",
-  messagingSenderId: "792878021257",
-  appId: "1:792878021257:web:d5be381975efbb4a8da458"
-};
-
-
-// Lazy initialization for Firebase app
-let app: FirebaseApp;
-if (getApps().length === 0) {
-  app = initializeApp(firebaseConfig);
-} else {
-  app = getApps()[0];
-}
-
-// Initialize App Check
-if (typeof window !== 'undefined') {
-    try {
-        initializeAppCheck(app, {
-            provider: new ReCaptchaV3Provider('6Ld5FbcrAAAAACkYWQDla0yJhXvSSHOVBUVAq6uv'), // Public reCAPTCHA Enterprise site key
-            isTokenAutoRefreshEnabled: true
-        });
-    } catch(e) {
-        console.error("Error initializing App Check", e);
-    }
-}
-
-
-const auth = getAuth(app);
+import { auth } from '@/lib/firebase'; // Import auth from the new firebase config file
 
 
 interface AuthContextType {
@@ -88,7 +52,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signInWithMicrosoft = async () => {
     const provider = new OAuthProvider('microsoft.com');
-    // Forcing the "common" tenant endpoint often resolves internal errors
     provider.setCustomParameters({
         tenant: 'common',
     });
@@ -120,7 +83,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return auth.currentUser.getIdToken(true);
   };
   
-  // Effect to handle redirection if user is authenticated and tries to access auth pages
   useEffect(() => {
     if (!isLoading && user && (pathname === '/login' || pathname === '/signup')) {
       router.push('/incoming-invoices');
