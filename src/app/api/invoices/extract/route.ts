@@ -1,3 +1,4 @@
+
 import { NextResponse } from 'next/server';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
@@ -23,14 +24,14 @@ function normalizeLineItems(items: AnyLine[] | undefined, fallbackTotal?: number
     const name = it.productName ?? it.name ?? it.bezeichnung ?? 'ITEM';
     const code = it.productCode ?? it.code ?? it.sku ?? '';
     const qty  = parseGermanNumber(it.qty ?? it.quantity ?? it.menge ?? 1);
-    const price= parseGermanNumber(it.price ?? it.unitPrice ?? it.preis ?? it.rate ?? 0);
+    const price= parseGermanNumber(it.unitPrice ?? it.price ?? it.preis ?? it.rate ?? 0);
     const total= it.total != null ? parseGermanNumber(it.total) : +(qty * price).toFixed(2);
     const uom  = it.uom ?? it.einheit ?? 'Nos';
-    return { productName: name, productCode: code, qty, price, total, uom };
-  }).filter(r => r.qty > 0 || r.total > 0);
+    return { productName: name, productCode: code, quantity: qty, unitPrice: price, total, uom };
+  }).filter(r => r.quantity > 0 || r.total > 0);
 
   if (out.length === 0 && (fallbackTotal ?? 0) > 0) {
-    out = [{ productName: 'INVOICE TOTAL', productCode: 'TOTAL', qty: 1, price: fallbackTotal, total: fallbackTotal, uom: 'Nos' }];
+    out = [{ productName: 'INVOICE TOTAL', productCode: 'TOTAL', quantity: 1, unitPrice: fallbackTotal, total: fallbackTotal, uom: 'Nos' }];
   }
   return out;
 }
@@ -123,9 +124,9 @@ If a value is not found, omit the key or set it to null. Ensure numbers are actu
     const safePayload = enforceErpSchemaSafety(parsed, filename);
     
     // Final normalization before sending to client
-    const grandTotal = parseGermanNumber(safePayload.gesamtbetrag ?? safePayload.brutto ?? safePayload.total ?? safePayload.summe ?? 0);
+    const grandTotal = parseGermanNumber(safePayload.gesamtbetrag ?? (parsed as any).brutto ?? (parsed as any).total ?? (parsed as any).summe ?? 0);
     safePayload.gesamtbetrag = grandTotal;
-    safePayload.rechnungspositionen = normalizeLineItems(safePayload.rechnungspositionen, grandTotal);
+    safePayload.rechnungspositionen = normalizeLineItems(safePayload.rechnungspositionen ?? parsed.items, grandTotal);
 
     return NextResponse.json(safePayload);
   } catch (e: any) {
