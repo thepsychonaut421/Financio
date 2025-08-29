@@ -34,7 +34,7 @@ interface AuthContextType {
   user: User | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  login: () => Promise<void>;
+  login: (email: string, pass: string) => Promise<void>;
   logout: () => void;
   signInWithMicrosoft: () => Promise<void>;
   getIdToken: () => Promise<string | null>;
@@ -58,9 +58,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => unsubscribe();
   }, []);
 
-  const login = async () => {
+  const login = async (email: string, pass: string) => {
     try {
-      await signInWithEmailAndPassword(auth, "test@example.com", "password");
+      await signInWithEmailAndPassword(auth, email, pass);
       // On successful login, onAuthStateChanged will trigger and handle the redirect
     } catch (error: any) {
         console.error("Login failed:", error.message);

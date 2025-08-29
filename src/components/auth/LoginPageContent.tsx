@@ -1,7 +1,7 @@
 
 'use client';
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -26,6 +26,9 @@ export function LoginPageContent() {
   const { login, signInWithMicrosoft, isAuthenticated, isLoading } = useAuth();
   const router = useRouter();
   const { toast } = useToast();
+  const [email, setEmail] = useState('test@example.com');
+  const [password, setPassword] = useState('password');
+
 
   useEffect(() => {
     if (!isLoading && isAuthenticated) {
@@ -35,7 +38,7 @@ export function LoginPageContent() {
 
   const handleLogin = (event: React.FormEvent) => {
     event.preventDefault();
-    login();
+    login(email, password);
   };
 
   const handleForgotPassword = (e: React.MouseEvent) => {
@@ -99,7 +102,8 @@ export function LoginPageContent() {
                 placeholder="you@example.com"
                 required
                 className="h-12 text-base"
-                defaultValue="test@example.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
               />
             </div>
             <div className="space-y-2">
@@ -115,7 +119,8 @@ export function LoginPageContent() {
                 required
                 placeholder="Enter your password"
                 className="h-12 text-base"
-                defaultValue="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
               />
             </div>
             <Button type="submit" className="w-full font-semibold text-base py-6" size="lg">
