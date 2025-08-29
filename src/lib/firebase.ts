@@ -1,0 +1,41 @@
+
+import { initializeApp, getApps, getApp, type FirebaseApp } from 'firebase/app';
+import { getAuth } from 'firebase/auth';
+import { initializeAppCheck, ReCaptchaV3Provider } from 'firebase/app-check';
+import { getFirestore } from 'firebase/firestore';
+
+const firebaseConfig = {
+  apiKey: "AIzaSyA7aXkeQUB1UCZtc_28szbBI6YV-w1dYl4",
+  authDomain: "pdf-data-extractor-3krns.firebaseapp.com",
+  databaseURL: "https://pdf-data-extractor-3krns-default-rtdb.europe-west1.firebasedatabase.app",
+  projectId: "pdf-data-extractor-3krns",
+  storageBucket: "pdf-data-extractor-3krns.appspot.com",
+  messagingSenderId: "792878021257",
+  appId: "1:792878021257:web:d5be381975efbb4a8da458"
+};
+
+
+// Initialize Firebase
+const app: FirebaseApp = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
+const db = getFirestore(app);
+
+// Initialize App Check
+if (typeof window !== 'undefined') {
+    // Set the debug token if in development
+    if (process.env.NODE_ENV !== 'production') {
+        (window as any).FIREBASE_APPCHECK_DEBUG_TOKEN = "FD286712-FAC2-4627-910A-04A0208DCD76";
+    }
+    
+    try {
+        initializeAppCheck(app, {
+            provider: new ReCaptchaV3Provider('6LeeOLcrAAAAAJvzAaM-H3htVhwi6DR0bADVXnHj'),
+            isTokenAutoRefreshEnabled: true
+        });
+    } catch(e) {
+        console.error("Error initializing Firebase App Check:", e);
+    }
+}
+
+const auth = getAuth(app);
+
+export { app, auth, db };

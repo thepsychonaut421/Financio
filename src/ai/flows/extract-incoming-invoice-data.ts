@@ -1,287 +1,201 @@
+
 'use server';
 /**
  * @fileOverview Extracts detailed data from incoming invoices (Eingangsrechnungen).
- *
- * - extractIncomingInvoiceData - A function that extracts comprehensive details from an invoice PDF.
- * - ExtractIncomingInvoiceDataInput - The input type for the function.
- * - ExtractIncomingInvoiceDataOutput - The return type for the function.
+ * THIS FLOW IS NOW PRIMARILY FOR REFERENCE AND IS NOT CALLED DIRECTLY FROM THE CLIENT.
+ * The active extraction logic is in /api/invoices/extract/route.ts
  */
 
 import {ai} from '@/ai/genkit';
-import {z}from 'genkit';
-import { AILineItemSchema, type AppLineItem } from '@/ai/schemas/invoice-item-schema';
+import {z} from 'genkit';
+import { PurchaseInvoiceSchema, type PurchaseInvoice } from '@/ai/schemas/invoice-item-schema';
+
+
+function extractJsonFromString(text: string): string | null {
+    const match = text.match(/```json\s*([\s\S]*?)\s*```/);
+    if (match && match[1]) {
+        return match[1];
+    }
+    if (text.trim().startsWith('{') && text.trim().endsWith('}')) {
+        return text.trim();
+    }
+    let depth = 0;
+    let start = -1;
+    for (let i = 0; i < text.length; i++) {
+        if (text[i] === '{') {
+            if (depth === 0) start = i;
+            depth++;
+        } else if (text[i] === '}') {
+            depth--;
+            if (depth === 0 && start !== -1) {
+                const slice = text.slice(start, i + 1);
+                try {
+                    JSON.parse(slice);
+                    return slice; 
+                } catch {
+                    start = -1; 
+                }
+            }
+        }
+    }
+    return null;
+}
 
 const ExtractIncomingInvoiceDataInputSchema = z.object({
   invoiceDataUri: z
     .string()
     .describe(
-      "An invoice PDF, as a data URI that must include a MIME type and use Base64 encoding. Expected format: 'data:<mimetype>;base64,<encoded_data>'"
+      "An invoice PDF, as a data URI that must include a MIME type and use Base64 encoding. Expected format: 'data:<mimetype>;base64,<encoded_data>'."
     ),
 });
 export type ExtractIncomingInvoiceDataInput = z.infer<typeof ExtractIncomingInvoiceDataInputSchema>;
 
-// Schema for AI model output, aligned with the new robust prompt
-const AIOutputSchema = z.object({
-  supplier: z.string().nullable(),
-  invoiceNumber: z.string().nullable(),
-  invoiceDate: z.string().nullable().describe('The invoice date in YYYY-MM-DD format.'),
-  currency: z.string().nullable(),
-  items: z.array(AILineItemSchema).describe('An array of line items from the invoice.'),
-  netAmount: z.number().nullable(),
-  vatAmount: z.number().nullable(),
-  grossAmount: z.number().nullable(),
-  error: z.string().optional().describe('An error message if the operation failed.'),
-});
 
-
-// Type for the exported function's return value (uses AppLineItem for stricter line items)
-export type ExtractIncomingInvoiceDataOutput = {
-  rechnungsnummer?: string;
-  datum?: string;
-  lieferantName?: string;
-  lieferantAdresse?: string;
-  zahlungsziel?: string;
-  zahlungsart?: string;
-  gesamtbetrag?: number | null;
-  mwstSatz?: string;
-  rechnungspositionen: AppLineItem[];
-  kundenNummer?: string;
-  bestellNummer?: string;
-  isPaid?: boolean;
-  error?: string;
-  lieferdatum?: string;
-  kundenName?: string;
-  kundenAdresse?: string;
-  nettoBetrag?: number | null;
-  mwstBetrag?: number | null;
-  waehrung?: string;
-  steuersaetze?: { satz: string; basis: number; betrag: number }[];
-  sonstigeAnmerkungen?: string;
-}
-
-// Helper function for product code normalization
-function normalizeProductCode(code: any): string {
-  let strCode = String(code || '').trim().replace(/\n/g, ' ');
-  if (/^[-+]?[0-9]*\.?[0-9]+([eE][-+]?[0-9]+)?$/.test(strCode)) {
-    const num = Number(strCode);
-    if (!isNaN(num) && isFinite(num)) {
-      return num.toString();
-    }
-  }
-  return strCode;
-}
+export type ExtractIncomingInvoiceDataOutput = PurchaseInvoice & { error?: string };
 
 
 export async function extractIncomingInvoiceData(input: ExtractIncomingInvoiceDataInput): Promise<ExtractIncomingInvoiceDataOutput> {
-  const rawOutput = await extractIncomingInvoiceDataFlow(input);
-
-  if (!rawOutput || rawOutput.error) {
-    return { rechnungspositionen: [], error: rawOutput?.error || "The AI model returned no output." };
-  }
-
-  // Post-parse validation and normalization
-  let { netAmount, vatAmount, grossAmount } = rawOutput;
-
-    // Stricter validation and fallback calculation
-    if (
-      typeof vatAmount === 'number' &&
-      typeof grossAmount === 'number' &&
-      typeof netAmount !== 'number'
-    ) {
-      netAmount = (grossAmount as number) - (vatAmount as number);
-      console.warn(
-        `[Fallback Calculation] netAmount was calculated for invoice ${
-          rawOutput.invoiceNumber || 'N/A'
-        }`,
-      );
-    } else if (
-      typeof netAmount === 'number' &&
-      typeof grossAmount === 'number' &&
-      typeof vatAmount !== 'number'
-    ) {
-      vatAmount = (grossAmount as number) - (netAmount as number);
-      console.warn(
-        `[Fallback Calculation] vatAmount was calculated for invoice ${
-          rawOutput.invoiceNumber || 'N/A'
-        }`,
-      );
-    } else if (
-      typeof netAmount === 'number' &&
-      typeof vatAmount === 'number' &&
-      typeof grossAmount !== 'number'
-    ) {
-      grossAmount = (netAmount as number) + (vatAmount as number);
-      console.warn(
-        `[Fallback Calculation] grossAmount was calculated for invoice ${
-          rawOutput.invoiceNumber || 'N/A'
-        }`,
-      );
-    }
-
-  // Final validation check after computation
-  if (typeof netAmount !== 'number' || typeof vatAmount !== 'number' || typeof grossAmount !== 'number') {
-      return {
-          rechnungspositionen: [],
-          error: `Invoice amounts are incomplete. Net: ${netAmount}, VAT: ${vatAmount}, Gross: ${grossAmount}`
-      };
-  }
-  
-  // Validate that the totals add up, allowing for small rounding differences
-  if (Math.abs((netAmount + vatAmount) - grossAmount) > 0.02) {
-      return {
-          rechnungspositionen: [],
-          error: `Totals do not add up. Net (${netAmount}) + VAT (${vatAmount}) = ${netAmount + vatAmount}, but Gross is ${grossAmount}.`
-      };
-  }
-
-    const normalizedLineItems: AppLineItem[] = (rawOutput.items || []).map((item: any) => ({
-      productCode: normalizeProductCode(item.productCode),
-      productName: String(item.productName || item.description || '').trim().replace(/\n/g, ' '),
-      quantity: item.quantity ?? 0,
-      unitPrice: item.unitPrice ?? 0.0,
-    }));
-
-  // Simplified VAT rate calculation for display
-  let mainVatRate = "";
-  if (vatAmount > 0 && netAmount > 0) {
-      mainVatRate = `${((vatAmount / netAmount) * 100).toFixed(0)}%`;
-  }
-
-  const normalizedOutput: ExtractIncomingInvoiceDataOutput = {
-    rechnungsnummer: rawOutput.invoiceNumber ? String(rawOutput.invoiceNumber).trim() : undefined,
-    datum: rawOutput.invoiceDate ? String(rawOutput.invoiceDate).trim() : undefined,
-    lieferantName: rawOutput.supplier ? String(rawOutput.supplier).trim().replace(/\n/g, ' ') : undefined,
-    nettoBetrag: netAmount,
-    mwstBetrag: vatAmount,
-    gesamtbetrag: grossAmount,
-    waehrung: rawOutput.currency ? String(rawOutput.currency).trim() : 'EUR',
-    mwstSatz: mainVatRate,
-    rechnungspositionen: normalizedLineItems,
-    // Defaulting other fields
-    lieferantAdresse: "",
-    zahlungsziel: "",
-    zahlungsart: "",
-    kundenNummer: "",
-    bestellNummer: "",
-    isPaid: false,
-    lieferdatum: undefined,
-    kundenName: "",
-    kundenAdresse: "",
-    steuersaetze: [],
-    sonstigeAnmerkungen: "",
-  };
-  
-  return normalizedOutput;
+  // This function is now deprecated in favor of the /api/invoices/extract route.
+  // The implementation is kept for reference or potential future server-to-server use.
+  console.warn("DEPRECATED: Direct call to extractIncomingInvoiceData flow. Use /api/invoices/extract instead.");
+  return extractIncomingInvoiceDataFlow(input);
 }
 
 const prompt = ai.definePrompt({
   name: 'extractIncomingInvoiceDataPrompt',
   input: {schema: ExtractIncomingInvoiceDataInputSchema},
-  output: {schema: AIOutputSchema},
-  prompt: `
-You are an expert invoice parser. Output **only** valid JSON matching this schema:
+  prompt: `You are a meticulous data extractor for accounting, specialized in German and cross-border invoices. Output ONLY valid JSON, no prose.
+Your response MUST be a valid JSON object enclosed in a markdown code block (\`\`\`json ... \`\`\`).
+The target schema is based on ERPNext Purchase Invoice fields.
 
+Extraction Rules:
+- Dates: Must be in ISO format (YYYY-MM-DD). Convert from other formats like DD.MM.YYYY.
+- Numbers: Must be floats with a dot as the decimal separator (e.g., 1234.56).
+- Supplier: Extract full name, full address, and any tax ID (USt-IdNr., NIP). The tax ID should be placed in 'custom_fields.supplier_vat_id'.
+- Order Reference: Capture any order numbers (Bestellnummer, ZK, etc.) and place them in 'custom_fields.order_reference'.
+- Currency: The primary currency of the invoice should be set in the 'currency' field.
+- **Multi-currency Invoices**: If the invoice shows totals in a secondary currency (e.g., PLN alongside EUR), extract the main currency (EUR) for the structured fields. Put the secondary currency details in 'currency_secondary', 'totals_secondary', and add a note in the "remarks" field.
+- **Anomalies**: You MUST identify and flag special cases in an 'anomalies' array. Supported values are 'MULTI_CURRENCY', 'NO_ITEMS_EXTRACTED', 'ORDER_REFERENCE_DETECTED'.
+- Credit Notes: If the document is a Gutschrift or Credit Note, set 'is_return' to true.
+- Totals Check: Mentally verify that net + taxes is close to the grand total.
+- **No Items Fallback**: CRITICAL: If you cannot extract any line items, you MUST return a fallback item: \`"items": [{"item_name":"UNKNOWN ITEM","qty":1,"rate":0,"amount":0}]\` and add 'NO_ITEMS_EXTRACTED' to the 'anomalies' array.
+- Missing Data: NEVER return an object with an "error" key. If a required field is missing, use null for optional fields and empty strings "" for required string fields. Explain any major ambiguities or missing critical data in the "remarks" field. Always include doctype, supplier, posting_date, bill_no, and bill_date.
+
+Target Fields Structure (including new fields):
+\`\`\`json
 {
-  "supplier": string | null,
-  "invoiceNumber": string | null,
-  "invoiceDate": "YYYY-MM-DD" | null,
-  "currency": string | null,
-  "items": [
-    {
-      "productCode": string | null,
-      "productName": string | null,
-      "quantity": number | null,
-      "unitPrice": number | null,
-      "totalPrice": number | null
-    }, ...
-  ],
-  "netAmount": number | null,
-  "vatAmount": number | null,
-  "grossAmount": number | null
-}
-
-IMPORTANT:
-- Extract all amounts as numbers (e.g., 1.234,56 becomes 1234.56).
-- If one of the totals (netAmount, vatAmount, grossAmount) is missing, but the other two are present, CALCULATE the missing one.
-  - netAmount = grossAmount - vatAmount
-  - vatAmount = grossAmount - netAmount
-  - grossAmount = netAmount + vatAmount
-- Always return all three total fields, even if calculated.
-
-### EXAMPLE 1
-INPUT:
-“Rechnung Nr.: 12345, Datum: 01.12.2024, Pos 1: Teppich (Code: TEP-01) 5 Stk à €28,59 = €142,95, Pos 2: Versandpauschale 1 Stk à €5,95 = €5,95, Zwischensumme: €148,90, MwSt 19%: €28,29, Gesamtbetrag: €177,19”
-OUTPUT:
-{
-  "supplier": "Unknown Supplier",
-  "invoiceNumber": "12345",
-  "invoiceDate": "2024-12-01",
+  "doctype": "Purchase Invoice",
+  "supplier": "string (Full Supplier Name)",
+  "supplier_address": "string (Full Address)",
+  "posting_date": "YYYY-MM-DD",
+  "due_date": "YYYY-MM-DD|null",
+  "bill_no": "string (Invoice Number)",
+  "bill_date": "YYYY-MM-DD",
   "currency": "EUR",
-  "items": [
-    {"productCode":"TEP-01","productName":"Teppich","quantity":5,"unitPrice":28.59,"totalPrice":142.95},
-    {"productCode":"VERSAND","productName":"Versandpauschale","quantity":1,"unitPrice":5.95,"totalPrice":5.95}
-  ],
-  "netAmount":148.90,
-  "vatAmount":28.29,
-  "grossAmount":177.19
+  "currency_main": "EUR",
+  "currency_secondary": "PLN|null",
+  "totals_main": { "net": 309.48, "vat": 58.80, "gross": 368.28 },
+  "totals_secondary": { "net": 1319.03, "vat": 250.62, "gross": 1569.65 },
+  "items": [{ "item_code": "string|null", "item_name": "string", "qty": 1, "uom": "string", "rate": 0, "amount": 0, "tax_rate": 19, "tax_amount": 0 }],
+  "taxes": [{ "charge_type": "On Net Total", "account_head": "Input Tax 19%", "rate": 19, "tax_amount": 0 }],
+  "remarks": "string (Note special conditions here. Example: 'Order Ref: ZK 1216853... Secondary currency totals in PLN.')",
+  "custom_fields": { "order_reference": "string|null", "payment_method": "string|null", "supplier_vat_id": "string|null" },
+  "is_return": false,
+  "anomalies": ["MULTI_CURRENCY", "ORDER_REFERENCE_DETECTED"],
+  "extraction_confidence": 0.95,
+  "missing_fields": ["iban"]
 }
+\`\`\`
 
-### EXAMPLE 2 (grossAmount is missing, so it's calculated)
-INPUT:
-“Rechnung
-Kunde: Max Mustermann
-Rechnungsnummer: R-9876
-Datum: 15.07.2024
-Nettobetrag: 2525.00
-Mehrwertsteuer (19%): 479.75”
-OUTPUT:
-{
-  "supplier": "Unknown Supplier",
-  "invoiceNumber": "R-9876",
-  "invoiceDate": "2024-07-15",
-  "currency": "EUR",
-  "items": [],
-  "netAmount":2525.00,
-  "vatAmount":479.75,
-  "grossAmount":3004.75
-}
-
-### NOW PARSE:
-INPUT:
+Source document is between <DOC> tags. Focus on the main content and ignore headers/footers.
+<DOC>
 {{media url=invoiceDataUri}}
-OUTPUT:
-`.trim(),
+</DOC>
+`,
 });
+
+const getErrorPayload = (message: string): PurchaseInvoice & { error: string } => {
+  const now = new Date().toISOString().slice(0, 10);
+  return {
+    doctype: 'Purchase Invoice',
+    supplier: 'ERROR',
+    posting_date: now,
+    bill_no: `ERROR-${Date.now()}`,
+    bill_date: now,
+    items: [{item_name: 'ERROR', qty: 1, uom: 'Nos', rate: 0, amount: 0}],
+    error: message,
+    anomalies: ['EXTRACTION_FAILED'],
+  };
+};
 
 
 const extractIncomingInvoiceDataFlow = ai.defineFlow(
   {
     name: 'extractIncomingInvoiceDataFlow',
     inputSchema: ExtractIncomingInvoiceDataInputSchema,
-    outputSchema: AIOutputSchema,
+    outputSchema: PurchaseInvoiceSchema.extend({ error: z.string().optional() }),
   },
   async (input) => {
+    let rawResponseText: string | undefined;
     try {
-        const {output} = await prompt(input, {model: 'googleai/gemini-1.5-flash-latest'});
-        if (!output) {
-            return {
-                supplier: null, invoiceNumber: null, invoiceDate: null, currency: null,
-                items: [], netAmount: null, vatAmount: null, grossAmount: null,
-                error: "The AI model returned no output."
-            };
+        const { output } = await prompt(input, {model: 'googleai/gemini-1.5-flash-latest'});
+        rawResponseText = output;
+        
+        if (!rawResponseText) {
+            return getErrorPayload('The AI model returned an empty response.');
         }
-        return output;
-    } catch (e: any) {
-        console.error("Critical error in extractIncomingInvoiceDataFlow:", e);
-        const errorMessage = e.message && (e.message.includes('503') || e.message.includes('overloaded'))
-            ? "The AI service is currently busy or unavailable. Please try again in a few moments."
-            : `An unexpected error occurred during invoice extraction: ${e.message}`;
 
-        return {
-            supplier: null, invoiceNumber: null, invoiceDate: null, currency: null,
-            items: [], netAmount: null, vatAmount: null, grossAmount: null,
-            error: errorMessage
-        };
+        const jsonString = extractJsonFromString(rawResponseText);
+        
+        if (!jsonString) {
+            console.error("AI output did not contain a valid JSON block. Raw output:", rawResponseText);
+            return getErrorPayload('The AI model returned a non-JSON response.');
+        }
+        
+        let parsedJson;
+        try {
+            parsedJson = JSON.parse(jsonString);
+        } catch (e: any) {
+            console.error("Failed to parse JSON from AI output. JSON string:", jsonString, "Error:", e.message);
+            return getErrorPayload(`Failed to parse the AI's JSON response: ${e.message}`);
+        }
+
+        if (parsedJson && typeof parsedJson === 'object' && 'error' in parsedJson) {
+            const errorMessage = (parsedJson as {error: string}).error || 'Unknown error from AI model.';
+            console.error("AI returned an error object:", errorMessage);
+            return getErrorPayload(`AI Model Error: ${errorMessage}`);
+        }
+        
+        if (!parsedJson.items || !Array.isArray(parsedJson.items) || parsedJson.items.length === 0) {
+            parsedJson.items = [{ item_name: 'UNKNOWN ITEM', qty: 1, rate: 0, amount: 0, uom: 'Nos' }];
+            if (!parsedJson.anomalies) parsedJson.anomalies = [];
+            if (!parsedJson.anomalies.includes('NO_ITEMS_EXTRACTED')) {
+                parsedJson.anomalies.push('NO_ITEMS_EXTRACTED');
+            }
+        }
+
+        const validationResult = PurchaseInvoiceSchema.safeParse(parsedJson);
+
+        if (!validationResult.success) {
+            console.error("AI output failed Zod validation:", validationResult.error.flatten());
+            return getErrorPayload(`AI data has an unexpected format: ${validationResult.error.flatten().formErrors.join(', ')}`);
+        }
+        
+        const doc = validationResult.data;
+        doc.items = doc.items.map(it => ({
+            ...it,
+            amount: Number((it.qty * it.rate).toFixed(2)),
+            tax_amount: it.tax_rate ? Number(((it.qty * it.rate) * it.tax_rate / 100).toFixed(2)) : (it.tax_amount ?? 0),
+        }));
+
+        return doc;
+
+    } catch (e: any) {
+        if (e.message && (e.message.includes('503') || e.message.includes('overloaded'))) {
+            return getErrorPayload("The AI service is currently busy or unavailable. Please try again in a few moments.");
+        }
+        console.error("Critical error in extractIncomingInvoiceDataFlow:", e);
+        return getErrorPayload("An unexpected critical error occurred during invoice extraction.");
     }
   }
 );

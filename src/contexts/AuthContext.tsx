@@ -3,68 +3,94 @@
 
 import React, { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
+import { onAuthStateChanged, type User, signInWithEmailAndPassword, signOut, OAuthProvider, signInWithPopup } from 'firebase/auth';
+import { useToast } from '@/hooks/use-toast';
+import { auth } from '@/lib/firebase'; // Import auth from the new firebase config file
+
 
 interface AuthContextType {
+  user: User | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  login: () => void;
+  login: (email: string, pass: string) => Promise<void>;
   logout: () => void;
+  signInWithMicrosoft: () => Promise<void>;
+  getIdToken: () => Promise<string | null>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const AUTH_TOKEN_KEY = 'financio_auth_token';
-
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+  const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const router = useRouter();
   const pathname = usePathname();
+  const { toast } = useToast();
 
   useEffect(() => {
-    try {
-      const token = localStorage.getItem(AUTH_TOKEN_KEY);
-      if (token) {
-        setIsAuthenticated(true);
-      }
-    } catch (error) {
-      console.error("Failed to access localStorage:", error);
-    } finally {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setUser(user);
       setIsLoading(false);
-    }
+    });
+
+    return () => unsubscribe();
   }, []);
 
-  const login = () => {
+  const login = async (email: string, pass: string) => {
     try {
-      localStorage.setItem(AUTH_TOKEN_KEY, 'dummy_token_simulated_login');
-      setIsAuthenticated(true);
-      router.push('/incoming-invoices'); // Default redirect after login
-    } catch (error) {
-      console.error("Failed to set auth token in localStorage:", error);
-      // Handle error, maybe show a toast
+      await signInWithEmailAndPassword(auth, email, pass);
+      // On successful login, onAuthStateChanged will trigger and handle the redirect
+    } catch (error: any) {
+        console.error("Login failed:", error.message);
+        toast({
+          title: "Login Failed",
+          description: error.message,
+          variant: "destructive"
+        });
     }
   };
 
-  const logout = () => {
+  const signInWithMicrosoft = async () => {
+    const provider = new OAuthProvider('microsoft.com');
+    provider.setCustomParameters({
+        tenant: 'common',
+    });
+
     try {
-      localStorage.removeItem(AUTH_TOKEN_KEY);
-      setIsAuthenticated(false);
+        await signInWithPopup(auth, provider);
+        // onAuthStateChanged will handle the user state update and redirect
+    } catch (error: any) {
+        console.error("Microsoft Sign-In failed:", error);
+        toast({
+            title: "Microsoft Sign-In Failed",
+            description: error.message || "An unknown error occurred.",
+            variant: "destructive"
+        });
+    }
+  };
+
+  const logout = async () => {
+    try {
+      await signOut(auth);
       router.push('/login');
     } catch (error) {
-      console.error("Failed to remove auth token from localStorage:", error);
-      // Handle error
+      console.error("Logout failed:", error);
     }
   };
+
+  const getIdToken = async (): Promise<string | null> => {
+    if (!auth.currentUser) return null;
+    return auth.currentUser.getIdToken(true);
+  };
   
-  // Effect to handle redirection if user is authenticated and tries to access /login
   useEffect(() => {
-    if (!isLoading && isAuthenticated && pathname === '/login') {
+    if (!isLoading && user && (pathname === '/login' || pathname === '/signup')) {
       router.push('/incoming-invoices');
     }
-  }, [isLoading, isAuthenticated, pathname, router]);
+  }, [isLoading, user, pathname, router]);
 
   return (
-    <AuthContext.Provider value={{ isAuthenticated, isLoading, login, logout }}>
+    <AuthContext.Provider value={{ user, isAuthenticated: !!user, isLoading, login, logout, signInWithMicrosoft, getIdToken }}>
       {children}
     </AuthContext.Provider>
   );

@@ -1,84 +1,31 @@
 
 'use client';
 
-import React, { useState, useCallback, useEffect, ChangeEvent, useMemo } from 'react';
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import { IncomingInvoiceUploadForm } from '@/components/incoming-invoices/IncomingInvoiceUploadForm';
 import { IncomingInvoiceCard } from '@/components/incoming-invoices/IncomingInvoiceCard';
 import { ERPInvoiceTable } from '@/components/incoming-invoices/ERPInvoiceTable';
 import { IncomingInvoiceActionButtons } from '@/components/incoming-invoices/IncomingInvoiceActionButtons';
 import { Progress } from '@/components/ui/progress';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { AlertCircle, Info, Settings2, FileCog, UploadCloud, CheckSquare } from 'lucide-react';
+import { AlertCircle, Info, Settings2, FileCog } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { readFileAsDataURL } from '@/lib/file-helpers';
-import { extractIncomingInvoiceData, type ExtractIncomingInvoiceDataOutput } from '@/ai/flows/extract-incoming-invoice-data';
 import type { IncomingInvoiceItem, ERPIncomingInvoiceItem, IncomingProcessingStatus, ERPSortKey, SortOrder } from '@/types/incoming-invoice';
 import { addDays, parseISO, isValid, format as formatDateFns } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
 import { erpInvoicesToSupplierCSV, downloadFile, incomingInvoicesToERPNextCSVComplete } from '@/lib/export-helpers';
 import JSZip from 'jszip';
-import Papa from 'papaparse';
+import { db } from '@/lib/firebase';
+import { useAuth } from '@/contexts/AuthContext';
+import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
 
-
-const LOCAL_STORAGE_PAGE_CACHE_KEY = 'incomingInvoicesPageCache';
+const CACHE_VERSION = 'v2';
+const LOCAL_STORAGE_PAGE_CACHE_KEY = `incomingInvoicesPageCache:${CACHE_VERSION}`;
 const LOCAL_STORAGE_MATCHER_DATA_KEY = 'processedIncomingInvoicesForMatcher';
-
-interface DiscrepancyError {
-    filename: string;
-    reason: string;
-}
-
-// This is the output from the AI flow after normalization in that file.
-// We receive this shape in the component.
-interface AIInvoice extends ExtractIncomingInvoiceDataOutput {
-  // It already contains all the necessary fields, but we redefine for clarity
-  // nettoBetrag, mwstBetrag, gesamtbetrag can be number or null
-}
-
-function validateAndCompleteTotals(data: { nettoBetrag?: number | null, mwstBetrag?: number | null, gesamtbetrag?: number | null }): {
-  valid: boolean;
-  reason: string;
-  net: number | null;
-  vat: number | null;
-  gross: number | null;
-} {
-  let { nettoBetrag: net, mwstBetrag: vat, gesamtbetrag: gross } = data;
-
-  const netIsNum = typeof net === 'number';
-  const vatIsNum = typeof vat === 'number';
-  const grossIsNum = typeof gross === 'number';
-
-  // Attempt to calculate a missing field if exactly two are present
-    if (!netIsNum && vatIsNum && grossIsNum) {
-      net = parseFloat(((gross as number) - (vat as number)).toFixed(2));
-    } else if (netIsNum && !vatIsNum && grossIsNum) {
-      vat = parseFloat(((gross as number) - (net as number)).toFixed(2));
-    } else if (netIsNum && vatIsNum && !grossIsNum) {
-      gross = parseFloat(((net as number) + (vat as number)).toFixed(2));
-    }
-
-  // After potential calculation, check again if all are numbers
-  if (typeof net !== 'number' || typeof vat !== 'number' || typeof gross !== 'number') {
-    return { valid: false, reason: 'One or more amounts are missing and could not be calculated.', net: null, vat: null, gross: null };
-  }
-  
-  // Final check for consistency
-  const sum = parseFloat((net + vat).toFixed(2));
-  if (Math.abs(sum - gross) > 0.015) { // Allow a small tolerance for rounding
-    return {
-      valid: false,
-      reason: `Totals do not add up. Net (${net}) + VAT (${vat}) = ${sum}, but Gross is ${gross}.`,
-      net, vat, gross
-    };
-  }
-
-  return { valid: true, reason: '', net, vat, gross };
-}
-
 
 interface IncomingInvoicesPageCache {
   extractedInvoices: IncomingInvoiceItem[];
@@ -89,6 +36,7 @@ interface IncomingInvoicesPageCache {
   erpSortKey?: ERPSortKey | null;
   erpSortOrder?: SortOrder;
   kontenrahmen?: string;
+  processedFileFingerprints?: { [key: string]: string };
 }
 
 const erpTableSortOptions: { key: ERPSortKey; label: string }[] = [
@@ -98,6 +46,28 @@ const erpTableSortOptions: { key: ERPSortKey; label: string }[] = [
   { key: 'gesamtbetrag', label: 'Total' },
   { key: 'pdfFileName', label: 'PDF Name' },
 ];
+
+function cap<T>(arr: T[], max = 200) {
+  return Array.isArray(arr) && arr.length > max ? arr.slice(0, max) : arr;
+}
+
+// elimină recursiv undefined (și NaN), convertește Date -> Timestamp ISO
+function pruneForFirestore<T>(obj: T): T {
+  if (obj === null || typeof obj !== 'object') return obj;
+  if (Array.isArray(obj)) {
+    // curățăm elementele din array
+    return obj
+      .map((v) => pruneForFirestore(v))
+      .filter((v) => v !== undefined) as unknown as T;
+  }
+  const out: any = {};
+  for (const [k, v] of Object.entries(obj as any)) {
+    if (v === undefined || Number.isNaN(v)) continue;
+    if (v instanceof Date) { out[k] = v.toISOString(); continue; }
+    out[k] = pruneForFirestore(v as any);
+  }
+  return out;
+}
 
 function compareERPValues(valA: any, valB: any, order: SortOrder): number {
   const aIsNil = valA === null || valA === undefined || valA === '';
@@ -116,16 +86,24 @@ function compareERPValues(valA: any, valB: any, order: SortOrder): number {
   return order === 'asc' ? comparison : -comparison;
 }
 
-// Helper to sanitize text fields for UI and ERP export
-const sanitizeText = (text: string | undefined | null): string => {
-    if (!text) return '';
-    // Basic cleaning, can be expanded
-    return text.replace(/[\uFFFD]/g, '').trim();
+const getFileFingerprint = (file: File): string => {
+    return `${file.name}-${file.size}-${file.lastModified}`;
 };
 
 
+function findCachedInvoiceByFilename(name: string, erpMode: boolean) {
+  try {
+    const cachedStr = localStorage.getItem(LOCAL_STORAGE_PAGE_CACHE_KEY);
+    if (!cachedStr) return null;
+    const cached = JSON.parse(cachedStr) as IncomingInvoicesPageCache;
+    const list = erpMode ? cached.erpProcessedInvoices : cached.extractedInvoices;
+    return Array.isArray(list) ? list.find(inv => inv.pdfFileName === name) : null;
+  } catch { return null; }
+}
+
+
 export function IncomingInvoicesPageContent() {
-  'use client';
+  const { user, isLoading: isAuthLoading } = useAuth();
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [extractedInvoices, setExtractedInvoices] = useState<IncomingInvoiceItem[]>([]);
   const [erpProcessedInvoices, setErpProcessedInvoices] = useState<ERPIncomingInvoiceItem[]>([]);
@@ -133,13 +111,15 @@ export function IncomingInvoicesPageContent() {
   const [progressValue, setProgressValue] = useState(0);
   const [currentFileProgress, setCurrentFileProgress] = useState('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [discrepancyErrors, setDiscrepancyErrors] = useState<DiscrepancyError[]>([]);
   const [erpMode, setErpMode] = useState(false);
   const [isExportingToERPNext, setIsExportingToERPNext] = useState(false);
+  const [isExportingSuppliers, setIsExportingSuppliers] = useState(false);
+  const [isSubmittingItems, setIsSubmittingItems] = useState(false);
   const [isExportingZip, setIsExportingZip] = useState(false);
   const { toast } = useToast();
   const [currentYear, setCurrentYear] = useState<string>('');
   const [kontenrahmen, setKontenrahmen] = useState('20000 - Verbindlichkeiten Lief Inland');
+  const [processedFileFingerprints, setProcessedFileFingerprints] = useState<Record<string, string>>({});
 
 
   const [erpExportFile, setErpExportFile] = useState<File | null>(null);
@@ -158,121 +138,111 @@ export function IncomingInvoicesPageContent() {
   useEffect(() => {
     try {
       const cachedDataString = localStorage.getItem(LOCAL_STORAGE_PAGE_CACHE_KEY);
-      if (cachedDataString) {
-        const parsedJson = JSON.parse(cachedDataString);
-        if (
-          parsedJson &&
-          typeof parsedJson === 'object' &&
-          'status' in parsedJson 
-        ) {
-          const cachedData = parsedJson as IncomingInvoicesPageCache;
-
-          setExtractedInvoices(Array.isArray(cachedData.extractedInvoices) ? cachedData.extractedInvoices : []);
-          setErpProcessedInvoices(Array.isArray(cachedData.erpProcessedInvoices) ? cachedData.erpProcessedInvoices : []);
-          setErpMode(typeof cachedData.erpMode === 'boolean' ? cachedData.erpMode : false);
-          setKontenrahmen(cachedData.kontenrahmen || '20000 - Verbindlichkeiten Lief Inland');
-          if (Array.isArray(cachedData.existingErpInvoiceKeys)) {
-            setExistingErpInvoiceKeys(new Set(cachedData.existingErpInvoiceKeys));
-          }
-           setErpSortKey(cachedData.erpSortKey || 'datum');
-           setErpSortOrder(cachedData.erpSortOrder || 'desc');
-
-          if (cachedData.extractedInvoices.length > 0 || cachedData.erpProcessedInvoices.length > 0 || (cachedData.existingErpInvoiceKeys && cachedData.existingErpInvoiceKeys.length > 0)) {
-             setStatus(cachedData.status as IncomingProcessingStatus);
-          } else {
-             setStatus('idle');
-          }
-        } else {
-          localStorage.removeItem(LOCAL_STORAGE_PAGE_CACHE_KEY);
+      if (!cachedDataString) {
+        return;
+      }
+  
+      const parsedJson = JSON.parse(cachedDataString) as Partial<IncomingInvoicesPageCache>;
+  
+      if (parsedJson && typeof parsedJson === 'object' && 'status' in parsedJson) {
+        setExtractedInvoices(Array.isArray(parsedJson.extractedInvoices) ? parsedJson.extractedInvoices : []);
+        setErpProcessedInvoices(Array.isArray(parsedJson.erpProcessedInvoices) ? parsedJson.erpProcessedInvoices : []);
+        setErpMode(typeof parsedJson.erpMode === 'boolean' ? parsedJson.erpMode : false);
+        setKontenrahmen(parsedJson.kontenrahmen || '20000 - Verbindlichkeiten Lief Inland');
+  
+        if (Array.isArray(parsedJson.existingErpInvoiceKeys)) {
+          setExistingErpInvoiceKeys(new Set(parsedJson.existingErpInvoiceKeys));
         }
+  
+        setErpSortKey((parsedJson.erpSortKey as any) || 'datum');
+        setErpSortOrder((parsedJson.erpSortOrder as any) || 'desc');
+        setProcessedFileFingerprints(parsedJson.processedFileFingerprints || {});
+  
+        const hasAny =
+          (parsedJson.extractedInvoices && parsedJson.extractedInvoices.length > 0) ||
+          (parsedJson.erpProcessedInvoices && parsedJson.erpProcessedInvoices.length > 0) ||
+          (parsedJson.existingErpInvoiceKeys && parsedJson.existingErpInvoiceKeys.length > 0);
+  
+        setStatus(hasAny ? (parsedJson.status as any) : 'idle');
+      } else {
+        localStorage.removeItem(LOCAL_STORAGE_PAGE_CACHE_KEY);
       }
     } catch (error) {
-      console.error("Failed to load or parse incoming invoices page cache from localStorage:", error);
-      localStorage.removeItem(LOCAL_STORAGE_PAGE_CACHE_KEY); 
+      console.error('Failed to load or parse incoming invoices page cache from localStorage:', error);
+      localStorage.removeItem(LOCAL_STORAGE_PAGE_CACHE_KEY);
     }
   }, []);
 
   useEffect(() => {
-    if (status !== 'processing' && status !== 'idle') { // Avoid saving during processing or if truly idle
+    const v = localStorage.getItem('financio:kontenrahmen');
+    if (v) setKontenrahmen(v);
+  }, []);
+  
+  useEffect(() => {
+    localStorage.setItem('financio:kontenrahmen', kontenrahmen);
+  }, [kontenrahmen]);
+
+  useEffect(() => {
+    if (status !== 'processing' && status !== 'idle') {
       try {
         const cacheToSave: IncomingInvoicesPageCache = {
-          extractedInvoices,
-          erpProcessedInvoices,
+          extractedInvoices: cap(extractedInvoices),
+          erpProcessedInvoices: cap(erpProcessedInvoices),
           erpMode,
           status,
           existingErpInvoiceKeys: Array.from(existingErpInvoiceKeys),
           erpSortKey,
           erpSortOrder,
           kontenrahmen,
+          processedFileFingerprints,
         };
-        localStorage.setItem(LOCAL_STORAGE_PAGE_CACHE_KEY, JSON.stringify(cacheToSave));
-      } catch (error) {
-        console.error("Failed to save incoming invoices page cache to localStorage:", error);
+        localStorage.setItem(
+          LOCAL_STORAGE_PAGE_CACHE_KEY,
+          JSON.stringify(cacheToSave)
+        );
+      } catch (err) {
+        console.error('Failed to save incoming invoices page cache:', err);
       }
     }
-  }, [extractedInvoices, erpProcessedInvoices, erpMode, status, existingErpInvoiceKeys, erpSortKey, erpSortOrder, kontenrahmen]);
+  }, [
+    extractedInvoices,
+    erpProcessedInvoices,
+    erpMode,
+    status,
+    existingErpInvoiceKeys,
+    erpSortKey,
+    erpSortOrder,
+    kontenrahmen,
+    processedFileFingerprints,
+  ]);
   
-  const getERPNextSupplierName = (extractedName: string | null): string => {
-    if (!extractedName) return "UNBEKANNT_SUPPLIER_PLACEHOLDER";
-    const nameUpper = extractedName.toUpperCase();
-    
-    // This logic is now deterministic in code, not in the AI prompt.
-    const supplierMap: Record<string, string> = {
-      "LIDL": "Lidl",
-      "LIDL DIGITAL DEUTSCHLAND GMBH & CO. KG": "Lidl",
-      "GD ARTLANDS ETRADING GMBH": "GD Artlands eTrading GmbH",
-      "RETOURA": "RETOURA",
-      "DOITBAU GMBH & CO.KG": "doitBau",
-      "KAUFLAND": "Kaufland",
-      "ALDI": "ALDI E-Commerce",
-      "FIRMA HANDLOWA KABIS BOZENA KEDZIORA": "FIRMA HANDLOWA KABIS BOZENA KEDZIORA",
-      "ZWECO UG": "Zweco UG",
-      "FAVORIO C/O HATRACO GMBH": "Favorio c/o Hatraco GmbH",
-      "HATRACO GMBH": "Hatraco GmbH",
-      "CUMO GMBH": "CUMO GmbH",
-      "SELLIXX GMBH": "SELLIXX GmbH",
-      "SELLIX": "SELLIXX GmbH",
-    };
-
-    for (const key in supplierMap) {
-        if (nameUpper.includes(key)) {
-            return supplierMap[key];
-        }
-    }
-    
-    if (nameUpper === "UNBEKANNT" || nameUpper === "UNBEKANNT_SUPPLIER_AI_EXTRACTED") {
-      return "UNBEKANNT_SUPPLIER_PLACEHOLDER";
-    }
-
-    return extractedName;
+  const supplierMap: Record<string, string> = {
+    "LIDL": "Lidl",
+    "LIDL DIGITAL DEUTSCHLAND GMBH & CO. KG": "Lidl",
+    "KAUFLAND MARKETPLACE GMBH": "Kaufland",
+    "GD ARTLANDS ETRADING GMBH": "GD Artlands eTrading GmbH", 
+    "RETOURA": "RETOURA",
+    "DOITBAU GMBH & CO.KG": "doitBau", 
+    "KAUFLAND": "Kaufland",
+    "ALDI": "ALDI E-Commerce", 
+    "FIRMA HANDLOWA KABIS BOZENA KEDZIORA": "FIRMA HANDLOWA KABIS BOZENA KEDZIORA",
+    "ZWECO UG": "Zweco UG", 
+    "FAVORIO C/O HATRACO GMBH": "Favorio c/o Hatraco GmbH", 
+    "HATRACO GMBH": "Hatraco GmbH", 
+    "CUMO GMBH": "CUMO GmbH", 
+    "SELLIXX GMBH": "SELLIXX GmbH", 
+    "UNBEKANNT": "UNBEKANNT_SUPPLIER_PLACEHOLDER", 
+    "UNBEKANNT_SUPPLIER_AI_EXTRACTED": "UNBEKANNT_SUPPLIER_PLACEHOLDER",
   };
   
-
-  const formatDateForERP = (dateString?: string | null): string | undefined => {
+  // This logic is now on the server
+  const formatDateForERP = (dateString?: string): string | undefined => {
     if (!dateString || dateString.trim() === '') return undefined;
     if (/^\d{4}-\d{2}-\d{2}$/.test(dateString)) { 
         const d = parseISO(dateString); 
         return isValid(d) ? dateString : undefined;
     }
-    const datePatterns = [
-      { regex: /^(\d{1,2})\.(\d{1,2})\.(\d{4})$/, dayIdx: 1, monthIdx: 2, yearIdx: 3 }, 
-      { regex: /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/, dayIdx: 1, monthIdx: 2, yearIdx: 3 }, 
-      { regex: /^(\d{4})\.(\d{1,2})\.(\d{1,2})$/, yearIdx: 1, monthIdx: 2, dayIdx: 3 }, 
-      { regex: /^(\d{4})\/(\d{1,2})\/(\d{1,2})$/, yearIdx: 1, monthIdx: 2, dayIdx: 3 }, 
-    ];
-
-    for (const pattern of datePatterns) {
-      const match = dateString.match(pattern.regex);
-      if (match) {
-        const day = match[pattern.dayIdx].padStart(2, '0');
-        const month = match[pattern.monthIdx].padStart(2, '0');
-        const year = match[pattern.yearIdx];
-        const isoDate = `${year}-${month}-${day}`;
-        const d = parseISO(isoDate); 
-        if (isValid(d)) return isoDate;
-      }
-    }
-    
+    // Other parsing logic is now server-side, but keep a basic fallback.
     try {
         const d = new Date(dateString);
         if (isValid(d)) {
@@ -281,10 +251,8 @@ export function IncomingInvoicesPageContent() {
             return formatDateFns(d, 'yyyy-MM-dd');
           }
         }
-    } catch (e) { /* ignore error from new Date() */ }
-
-    console.warn(`Could not parse date "${dateString}" to YYYY-MM-DD for ERP. Returning undefined.`);
-    return undefined; 
+    } catch (e) { /* ignore */ }
+    return dateString;
   };
 
   const calculateDueDate = (invoiceDateStr?: string, paymentTerm?: string): string | undefined => {
@@ -312,19 +280,7 @@ export function IncomingInvoicesPageContent() {
 
   const handleFilesSelected = useCallback((files: File[]) => {
     setSelectedFiles(files);
-    if (files.length > 0) {
-      setExtractedInvoices([]); 
-      setErpProcessedInvoices([]);
-      setStatus('idle'); // Ready to process new files
-      setErrorMessage(null);
-      setDiscrepancyErrors([]);
-      setProgressValue(0);
-      setCurrentFileProgress('');
-    } else {
-      // If no files are selected, keep existing data unless cleared by "Clear All"
-      setStatus(extractedInvoices.length > 0 || erpProcessedInvoices.length > 0 ? 'success' : 'idle');
-    }
-  }, [extractedInvoices.length, erpProcessedInvoices.length]);
+  }, []);
 
 
   const resetStateOnModeChange = () => {
@@ -338,84 +294,120 @@ export function IncomingInvoicesPageContent() {
     setCurrentFileProgress('');
     setProgressValue(0);
     setErrorMessage(null);
-    setDiscrepancyErrors([]);
   }
 
   const handleProcessFiles = async () => {
+    setErrorMessage(null);
     if (selectedFiles.length === 0) {
       setErrorMessage("No files selected. Please select PDF files to process.");
       setStatus('error');
       return;
     }
     setStatus('processing');
-    setErrorMessage(null);
-    setDiscrepancyErrors([]);
     setProgressValue(0);
+
+    const currentRegularInvoices = [...extractedInvoices];
+    const currentErpInvoices = [...erpProcessedInvoices];
+    const newFingerprints = { ...processedFileFingerprints };
+    const duplicates: string[] = [];
     
-    let allProcessedForMatcher: ERPIncomingInvoiceItem[] = [];
-    let regularResultsDisplay: IncomingInvoiceItem[] = [];
-    let erpResultsDisplay: ERPIncomingInvoiceItem[] = [];
-    
+    const filesToProcess = selectedFiles.filter(file => {
+      const fingerprint = getFileFingerprint(file);
+      if (newFingerprints[fingerprint]) {
+        duplicates.push(file.name);
+        
+        const existsInUi = (erpMode ? currentErpInvoices : currentRegularInvoices)
+          .some(inv => inv.pdfFileName === file.name);
+        
+        if (!existsInUi) {
+          const cached = findCachedInvoiceByFilename(file.name, erpMode);
+          if (cached) {
+            if (erpMode) {
+              currentErpInvoices.unshift(cached as ERPIncomingInvoiceItem);
+            } else {
+              currentRegularInvoices.unshift(cached as any);
+            }
+          }
+        }
+        
+        return false;
+      }
+      return true;
+    });
+
+    if (duplicates.length > 0) {
+        toast({
+            title: "Duplicate Files Skipped",
+            description: `${duplicates.length} already processed. If they weren’t visible, I restored them from cache.`,
+            variant: "default",
+        });
+        setExtractedInvoices(currentRegularInvoices);
+        setErpProcessedInvoices(currentErpInvoices);
+    }
+
+    if (filesToProcess.length === 0) {
+        setStatus('success');
+        setCurrentFileProgress('No new files to process. Duplicates were skipped.');
+        return;
+    }
+
     const yearCounters: Record<string, number> = {};
-    const localDiscrepancyErrors: DiscrepancyError[] = [];
-    let filesWithErrors: string[] = [];
-    const processedInvoiceNumbers = new Set<string>(); // For duplicate detection
+    const accumulatedErrors: string[] = [];
 
     try {
-      for (let i = 0; i < selectedFiles.length; i++) {
-        const file = selectedFiles[i];
-        setCurrentFileProgress(`Processing file ${i + 1} of ${selectedFiles.length}: ${file.name}`);
+      for (let i = 0; i < filesToProcess.length; i++) {
+        const file = filesToProcess[i];
+        setCurrentFileProgress(`Processing file ${i + 1} of ${filesToProcess.length}: ${file.name}`);
         
         const dataUri = await readFileAsDataURL(file);
-        const aiResult = (await extractIncomingInvoiceData({ invoiceDataUri: dataUri }));
-        
-        if (!aiResult) {
-            filesWithErrors.push(`${file.name}: The AI flow returned null.`);
-            setProgressValue(Math.round(((i + 1) / selectedFiles.length) * 100));
-            continue;
-        }
-
-        if (aiResult.error) {
-          filesWithErrors.push(`${file.name}: ${aiResult.error}`);
-          setProgressValue(Math.round(((i + 1) / selectedFiles.length) * 100));
-          continue;
-        }
-        
-        if (aiResult.rechnungsnummer && processedInvoiceNumbers.has(aiResult.rechnungsnummer)) {
-            continue; // Skip duplicate invoice number
-        }
-        if (aiResult.rechnungsnummer) {
-            processedInvoiceNumbers.add(aiResult.rechnungsnummer);
-        }
-        
-        // NEW VALIDATION AND COMPLETION LOGIC
-        const { valid, reason, net, vat, gross } = validateAndCompleteTotals({
-          nettoBetrag: aiResult.nettoBetrag,
-          mwstBetrag: aiResult.mwstBetrag,
-          gesamtbetrag: aiResult.gesamtbetrag
+        const response = await fetch('/api/invoices/extract', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ dataUri, filename: file.name }),
         });
 
-        if (!valid) {
-            localDiscrepancyErrors.push({ filename: file.name, reason: reason || 'Unknown discrepancy' });
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`Server responded with ${response.status}: ${errorText.substring(0, 300)}`);
         }
         
-        const finalLieferantName = getERPNextSupplierName(aiResult.lieferantName || 'UNBEKANNT');
-        const postingDateERP = formatDateForERP(aiResult.datum);
-        const billDateERP = postingDateERP; 
-        const dueDateERP = calculateDueDate(postingDateERP, ""); // paymentTerm is not in AI result
+        const aiResult = await response.json();
         
-        let remarks = '';
-        let istBezahltStatus: 0 | 1 = 0;
+        const fingerprint = getFileFingerprint(file);
+        newFingerprints[fingerprint] = file.name;
 
+        if (aiResult.error) {
+          accumulatedErrors.push(`${file.name}: ${aiResult.error}`);
+        }
+
+        let finalLieferantName = (aiResult.lieferantName || "").trim();
+        const upperCaseExtractedName = finalLieferantName.toUpperCase();
+
+        if (supplierMap[upperCaseExtractedName]) {
+            finalLieferantName = supplierMap[upperCaseExtractedName];
+        } else if (finalLieferantName === "" || finalLieferantName === "UNBEKANNT" || finalLieferantName === "UNBEKANNT_SUPPLIER_AI_EXTRACTED") {
+            finalLieferantName = "UNBEKANNT_SUPPLIER_PLACEHOLDER"; 
+        }
+
+        let remarks = (aiResult.remarks || '');
+        if (aiResult.kundenNummer) remarks += `${remarks ? ' / ' : ''}Kunden-Nr.: ${aiResult.kundenNummer}`;
+        if (aiResult.bestellNummer) remarks += `${remarks ? ' / ' : ''}Bestell-Nr.: ${aiResult.bestellNummer}`;
+        
+        let istBezahltStatus: 0 | 1 = 0;
+        if (aiResult.isPaid === true) {
+          istBezahltStatus = 1;
+        } else {
+            const zahlungszielLower = (aiResult.zahlungsziel || '').toLowerCase();
+            const zahlungsartLower = (aiResult.zahlungsart || '').toLowerCase();
+            if (zahlungszielLower.includes('sofort') || zahlungsartLower === 'sofort' || zahlungsartLower === 'lastschrift' || zahlungsartLower.includes('paypal') || zahlungsartLower.includes('paid') || zahlungsartLower.includes('klarna')) {
+              istBezahltStatus = 1;
+            }
+        }
+        
         let yearToUse = new Date().getFullYear().toString();
-        if (postingDateERP) {
-            const parsedYear = postingDateERP.substring(0,4);
+        if (aiResult.datum) {
+            const parsedYear = aiResult.datum.substring(0,4);
             if (!isNaN(parseInt(parsedYear))) yearToUse = parsedYear;
-        } else if (aiResult.datum) { 
-            try {
-              const parsedFallbackDate = new Date(aiResult.datum); 
-              if(isValid(parsedFallbackDate)) yearToUse = parsedFallbackDate.getFullYear().toString();
-            } catch (e) { /* ignore */ }
         }
         
         if (!yearCounters[yearToUse]) { yearCounters[yearToUse] = 0; }
@@ -423,83 +415,85 @@ export function IncomingInvoicesPageContent() {
         const internalRefId = `INTERNAL-${yearToUse}-${String(yearCounters[yearToUse]).padStart(5, '0')}`;
         const rechnungsnummerToUse = aiResult.rechnungsnummer || internalRefId;
 
-        let normalizedCurrency = 'EUR';
-        if (aiResult.waehrung) {
-            const currencyUpper = aiResult.waehrung.toUpperCase();
-            if (currencyUpper.includes('€') || currencyUpper === 'EURO') {
-                normalizedCurrency = 'EUR';
-            } else if (currencyUpper === 'RON' || currencyUpper === 'LEI') {
-                normalizedCurrency = 'RON';
-            } else if (currencyUpper.length === 3) {
-                normalizedCurrency = currencyUpper;
-            }
-        }
-
-
         const erpCompatibleInvoice: ERPIncomingInvoiceItem = {
           pdfFileName: file.name,
-          rechnungsnummer: sanitizeText(rechnungsnummerToUse),
-          datum: postingDateERP, 
-          lieferantName: sanitizeText(finalLieferantName),
-          lieferantAdresse: "", // Not available
-          zahlungsziel: "", // Not available
-          zahlungsart: "", // Not available
-          gesamtbetrag: gross ?? undefined,
-          mwstSatz: aiResult.mwstSatz,
+          rechnungsnummer: rechnungsnummerToUse,
+          datum: aiResult.datum, 
+          lieferantName: finalLieferantName,
+          lieferantAdresse: aiResult.lieferantAdresse,
+          zahlungsziel: aiResult.zahlungsziel,
+          zahlungsart: aiResult.zahlungsart,
+          gesamtbetrag: aiResult.gesamtbetrag,
+          mwstSatz: aiResult.mwstSatz != null ? String(aiResult.mwstSatz) : undefined,
           rechnungspositionen: aiResult.rechnungspositionen,
-          kundenNummer: "", // Not available
-          bestellNummer: "", // Not available
-          isPaidByAI: false, // Not available
-          erpNextInvoiceName: sanitizeText(internalRefId), 
-          billDate: billDateERP, 
-          dueDate: dueDateERP,   
-          wahrung: normalizedCurrency, 
+          kundenNummer: aiResult.kundenNummer,
+          bestellNummer: aiResult.bestellNummer,
+          isPaidByAI: aiResult.isPaid,
+          erpNextInvoiceName: internalRefId, 
+          billDate: aiResult.bill_date,
+          dueDate: calculateDueDate(aiResult.datum, aiResult.zahlungsziel),
+          wahrung: aiResult.currency, 
           istBezahlt: istBezahltStatus, 
-          kontenrahmen: sanitizeText(kontenrahmen), 
-          remarks: sanitizeText(remarks),
-            nettoBetrag: net ?? undefined,
-            mwstBetrag: vat ?? undefined,
+          kontenrahmen: kontenrahmen.trim(), 
+          remarks: remarks.trim(),
         };
-        allProcessedForMatcher.push(erpCompatibleInvoice);
 
         if (erpMode) {
-          erpResultsDisplay.push(erpCompatibleInvoice);
+          currentErpInvoices.unshift(erpCompatibleInvoice);
         } else {
-          regularResultsDisplay.push({
-              pdfFileName: file.name,
-              rechnungsnummer: sanitizeText(rechnungsnummerToUse),
-              datum: sanitizeText(aiResult.datum), 
-              lieferantName: sanitizeText(finalLieferantName),
-              lieferantAdresse: "",
-              zahlungsziel: "",
-              zahlungsart: "",
-              gesamtbetrag: gross ?? undefined,
-              mwstSatz: aiResult.mwstSatz,
-              rechnungspositionen: aiResult.rechnungspositionen,
-              kundenNummer: "",
-              bestellNummer: "",
-              isPaidByAI: false,
-                nettoBetrag: net ?? undefined,
-                mwstBetrag: vat ?? undefined,
-              wahrung: normalizedCurrency,
-          });
+          currentRegularInvoices.unshift(erpCompatibleInvoice); // Save ERP compatible even in standard mode
         }
-        setProgressValue(Math.round(((i + 1) / selectedFiles.length) * 100));
+        
+        const statusForDoc: 'OK'|'WARN'|'ERROR' = aiResult?.anomalies?.includes('AI_CRASH_FALLBACK')
+          ? 'ERROR'
+          : (aiResult?.anomalies?.length ? 'WARN' : 'OK');
+        
+        try {
+          if (!isAuthLoading && user?.uid) {
+              const erpDoc = {
+                userId: user.uid,
+                filename: file.name,
+                status: statusForDoc,
+                erpMode: true, 
+                payload: {
+                  ...erpCompatibleInvoice,
+                  lieferantAdresse: erpCompatibleInvoice.lieferantAdresse ?? '',
+                  zahlungsziel: erpCompatibleInvoice.zahlungsziel ?? '',
+                  zahlungsart: erpCompatibleInvoice.zahlungsart ?? '',
+                  rechnungspositionen: erpCompatibleInvoice.rechnungspositionen ?? [],
+                },
+                createdAt: serverTimestamp(),
+              };
+              await addDoc(collection(db, "processed_invoices"), pruneForFirestore(erpDoc));
+          }
+        } catch (e) {
+          console.error('Failed to persist invoice to Firestore:', e);
+        }
+
+        setProgressValue(Math.round(((i + 1) / filesToProcess.length) * 100));
       }
 
-      setExtractedInvoices(regularResultsDisplay);
-      setErpProcessedInvoices(erpResultsDisplay);
-      setDiscrepancyErrors(localDiscrepancyErrors);
-      localStorage.setItem(LOCAL_STORAGE_MATCHER_DATA_KEY, JSON.stringify(allProcessedForMatcher));
+      setExtractedInvoices(currentRegularInvoices);
+      setErpProcessedInvoices(currentErpInvoices);
+      setProcessedFileFingerprints(newFingerprints);
       
-      const successfulCount = selectedFiles.length - filesWithErrors.length;
-      if (filesWithErrors.length > 0) {
-        setErrorMessage(`Processing summary: ${successfulCount} of ${selectedFiles.length} files succeeded. Errors occurred on: ${filesWithErrors.join('; ')}`);
-        setStatus(successfulCount > 0 ? 'success' : 'error');
-      } else {
-        setStatus('success'); 
+      const previousMatcherInvoices = JSON.parse(localStorage.getItem(LOCAL_STORAGE_MATCHER_DATA_KEY) || '[]');
+      const justProcessedForMatcher = (erpMode ? currentErpInvoices : currentRegularInvoices).map(inv => ({
+        pdfFileName: inv.pdfFileName,
+        rechnungsnummer: inv.rechnungsnummer,
+        datum: formatDateForERP(inv.datum),
+        lieferantName: inv.lieferantName,
+        gesamtbetrag: inv.gesamtbetrag,
+        rechnungspositionen: inv.rechnungspositionen,
+      }));
+      localStorage.setItem(LOCAL_STORAGE_MATCHER_DATA_KEY, JSON.stringify([...justProcessedForMatcher, ...previousMatcherInvoices]));
+      
+      if (accumulatedErrors.length > 0) {
+        setErrorMessage(accumulatedErrors.join('\n'));
       }
       
+      const producedSomething = (erpMode ? currentErpInvoices.length > 0 : currentRegularInvoices.length > 0);
+      setStatus(producedSomething ? 'success' : (accumulatedErrors.length ? 'error' : 'success'));
       setCurrentFileProgress('Processing complete!');
 
     } catch (error) {
@@ -523,31 +517,21 @@ export function IncomingInvoicesPageContent() {
     }
     setIsExportingToERPNext(true);
     try {
-      const response = await fetch('/api/erpnext/export-invoice', {
+      const response = await fetch('/api/erpnext/invoices', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ invoices: invoicesToExport }),
       });
+
+      const result = await response.json();
+
       if (!response.ok) {
-        let detailedErrorMessage = `Server Error: ${response.status} ${response.statusText || ''}`.trim();
-        try {
-          const errorResult = await response.json();
-          if (errorResult.error) detailedErrorMessage = errorResult.error;
-          else if (errorResult.message) detailedErrorMessage = errorResult.message;
-        } catch (jsonError) { /* ignore */ }
-        toast({ title: `Export Error (${response.status})`, description: detailedErrorMessage, variant: "destructive" });
+        toast({ title: `Export Error (${response.status})`, description: result.error || result.message || "An unknown server error occurred.", variant: "destructive" });
         return;
       }
-      if (response.status === 204) { 
-        toast({ title: "Export Submitted", description: "Invoices submitted to ERPNext (server returned no content, assuming success)." });
-      } else {
-        const result = await response.json();
-        if (result.message) {
-          toast({ title: "Export Status", description: result.message, variant: response.status === 207 ? "default" : "default" }); 
-        } else {
-           toast({ title: "Export Submitted", description: "Invoices submitted to ERPNext." });
-        }
-      }
+      
+      toast({ title: "Export Status", description: result.message || "Invoices submitted successfully.", variant: response.status === 207 ? "default" : "default" });
+
     } catch (error: any) {
       const message = error instanceof Error ? error.message : "Unknown client-side error during ERPNext export.";
       toast({ title: "ERPNext Export Failed", description: message, variant: "destructive" });
@@ -556,25 +540,155 @@ export function IncomingInvoicesPageContent() {
     }
   };
 
-  const handleExportSuppliersERPNext = () => {
+  const handleExportSuppliersERPNext = async () => {
     const invoicesToUse = erpMode ? sortedErpProcessedInvoices : erpProcessedInvoices;
     if (invoicesToUse.length === 0) {
-      toast({
-        title: "No Data for Suppliers",
-        description: "No processed invoice data in ERP Mode to extract suppliers from.",
-        variant: "destructive",
-      });
+        toast({
+            title: "No Data for Suppliers",
+            description: "No processed invoice data in ERP Mode to extract suppliers from.",
+            variant: "destructive",
+        });
+        return;
+    }
+
+    const uniqueSuppliersMap = new Map<string, ERPIncomingInvoiceItem>();
+    invoicesToUse.forEach(invoice => {
+        const supplierKey = (invoice.lieferantName || '').trim().toUpperCase();
+        if (supplierKey && supplierKey !== "UNBEKANNT_SUPPLIER_PLACEHOLDER" && supplierKey !== "UNBEKANNT") {
+            if (!uniqueSuppliersMap.has(supplierKey)) {
+                uniqueSuppliersMap.set(supplierKey, invoice);
+            }
+        }
+    });
+
+    const supplierPayloads = Array.from(uniqueSuppliersMap.values()).map(invoice => ({
+        name: invoice.lieferantName,
+        type: "Unternehmen",
+        group: "All Suppliers",
+        country: "Deutschland",
+        address: {
+            line1: invoice.lieferantAdresse,
+        }
+    }));
+
+
+    if (supplierPayloads.length === 0) {
+        toast({ title: "No New Suppliers", description: "No unique suppliers found to export." });
+        return;
+    }
+
+    setIsExportingSuppliers(true);
+    try {
+        const response = await fetch('/api/erpnext/suppliers', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ suppliers: supplierPayloads }),
+        });
+
+        const result = await response.json();
+
+        if (!response.ok) {
+            throw new Error(result.error || result.message || "An unknown server error occurred.");
+        }
+        
+        const feedbackLines = (result.results || []).map((r:any) => r.ok ? `✅ ${r.name} (${r.status})` : `❌ ${r.name} — ${r.error}`).join("\n");
+        toast({
+            title: `Suppliers API: ${result.succeeded}/${result.total} succeeded`,
+            description: <pre className="mt-2 w-full max-w-sm rounded-md bg-slate-950 p-4 whitespace-pre-wrap"><code className="text-white">{feedbackLines}</code></pre>,
+        });
+
+    } catch (error: any) {
+        toast({ title: "Supplier Export Failed", description: error.message, variant: "destructive" });
+    } finally {
+      setIsExportingSuppliers(false);
+    }
+  };
+
+  const handleExportSuppliersCSV = async () => {
+    const invoicesToUse = erpMode ? sortedErpProcessedInvoices : erpProcessedInvoices;
+    if (invoicesToUse.length === 0) {
+      toast({ title: "No Data", description: "No processed ERP data to export suppliers from.", variant: "destructive" });
       return;
     }
-    const csvData = erpInvoicesToSupplierCSV(invoicesToUse);
-    downloadFile(csvData, 'erpnext_suppliers_for_import.csv', 'text/csv;charset=utf-8;');
     
-    const uniqueSupplierNames = new Set(invoicesToUse.map(inv => (inv.lieferantName || '').trim()).filter(name => name && name !== "UNBEKANNT_SUPPLIER_PLACEHOLDER"));
-    toast({
-      title: "Suppliers CSV Exported",
-      description: `Supplier data for ${uniqueSupplierNames.size} unique supplier(s) ready for ERPNext import.`,
-    });
+    try {
+      const response = await fetch('/api/csv/export', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          doctype: 'Supplier',
+          payload: invoicesToUse,
+          filename: 'erpnext_suppliers.csv'
+        }),
+      });
+
+      if (!response.ok) {
+        const result = await response.json();
+        throw new Error(result.error || 'Failed to generate CSV on server.');
+      }
+      
+      const blob = await response.blob();
+      downloadFile(blob, 'erpnext_suppliers.csv', 'text/csv;charset=utf-8');
+      toast({ title: "Suppliers Exported", description: "Supplier data has been exported to CSV." });
+
+    } catch (error: any) {
+       toast({ title: "Export Failed", description: error.message, variant: "destructive" });
+    }
   };
+
+    const handleSubmitItemsAPI = async () => {
+      const invoicesToUse = erpMode ? sortedErpProcessedInvoices : erpProcessedInvoices;
+      if (invoicesToUse.length === 0) {
+        toast({ title: 'No Invoices', description: 'No processed invoices to submit items from.', variant: 'destructive'});
+        return;
+      }
+
+      const itemsPayload = invoicesToUse
+        .flatMap(inv => inv.rechnungspositionen || [])
+        .map(item => ({
+            item_code: item.productCode || item.productName,
+            item_name: item.productName || item.productCode,
+            stock_uom: 'Stk',
+        }))
+        .filter(item => item.item_code);
+
+        const uniqueItems = Array.from(new Map(itemsPayload.map(item => [item.item_code, item])).values());
+
+
+      if(uniqueItems.length === 0) {
+        toast({ title: 'No Items', description: 'No valid items with product codes found to submit.', variant: 'destructive'});
+        return;
+      }
+
+      setIsSubmittingItems(true);
+      try {
+        const response = await fetch('/api/erpnext/items', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ items: uniqueItems }),
+        });
+        if (!response.ok) {
+          const result = await response.json();
+          throw new Error(result.error || 'Failed to submit items');
+        }
+        const result = await response.json();
+        const feedbackLines = (result.results || []).map((r:any) => r.success ? `✅ ${r.data?.item_code || r.original.item_code} (${r.status})` : `❌ ${r.original?.item_code} — ${r.error}`).join("\n");
+
+        toast({
+          title: 'Items Submitted',
+          description:  <pre className="mt-2 w-full max-w-sm rounded-md bg-slate-950 p-4 whitespace-pre-wrap"><code className="text-white">{result.message}\n\n{feedbackLines}</code></pre>,
+        });
+      } catch (error: any) {
+        toast({
+          title: 'Items API Failed',
+          description: error.message,
+          variant: 'destructive',
+        });
+      } finally {
+        setIsSubmittingItems(false);
+      }
+    };
+
 
   const handleExportInvoicesAsZip = async () => {
     const invoicesToZip = erpMode ? sortedErpProcessedInvoices : erpProcessedInvoices;
@@ -604,7 +718,7 @@ export function IncomingInvoicesPageContent() {
 
       if (fileCount > 0) {
         const zipBlob = await zip.generateAsync({ type: "blob" });
-        downloadFile(zipBlob as any, "erpnext_individual_invoices.zip", "application/zip"); 
+        downloadFile(zipBlob, "erpnext_individual_invoices.zip", "application/zip"); 
         toast({
           title: "ZIP Export Successful",
           description: `${fileCount} invoice(s) exported as individual CSVs in a ZIP file.`,
@@ -627,97 +741,12 @@ export function IncomingInvoicesPageContent() {
       setIsExportingZip(false);
     }
   };
-
-  const handleErpExportFileChange = (event: ChangeEvent<HTMLInputElement>) => {
-    if (event.target.files && event.target.files[0]) {
-      setErpExportFile(event.target.files[0]);
-      setErrorMessage(null); 
-    } else {
-      setErpExportFile(null);
-    }
-  };
-
-  const handleProcessErpExport = () => {
-    if (!erpExportFile) {
-      setErrorMessage("Please select an ERPNext export CSV file first.");
-      return;
-    }
-    setIsCheckingDuplicates(true);
-    setErrorMessage(null);
-
-    Papa.parse(erpExportFile, {
-      header: true,
-      skipEmptyLines: true,
-      complete: (results) => {
-        const newKeys = new Set<string>();
-        const headers = (results.meta.fields || []).map(h => h.toLowerCase().trim());
-        
-        const supplierColVariations = ["supplier", "supplier name", "lieferant", "lieferantenname", "supplier_name"];
-        const billNoColVariations = ["bill no", "bill_no", "invoice no", "invoice_no", "rechnungsnummer", "name", "id"]; 
-        const dateColVariations = ["posting date", "posting_date", "invoice date", "invoice_date", "rechnungsdatum", "datum", "bill date", "bill_date"];
-
-        let actualSupplierCol = headers.find(h => supplierColVariations.includes(h));
-        let actualBillNoCol = headers.find(h => billNoColVariations.includes(h));
-        let actualDateCol = headers.find(h => dateColVariations.includes(h));
-        
-        if (!actualSupplierCol || !actualBillNoCol || !actualDateCol) {
-            const missing = [
-                !actualSupplierCol ? "Supplier" : null,
-                !actualBillNoCol ? "Invoice Number" : null,
-                !actualDateCol ? "Invoice Date" : null
-            ].filter(Boolean).join(', ');
-            setErrorMessage(`Could not find required columns in ERPNext export: ${missing}. Found headers: ${(results.meta.fields || []).join(', ')}`);
-            setIsCheckingDuplicates(false);
-            setExistingErpInvoiceKeys(new Set()); 
-            return;
-        }
-        
-        // Get original case headers for data access
-        const originalHeaders = results.meta.fields!;
-        const supplierHeader = originalHeaders[headers.indexOf(actualSupplierCol)];
-        const billNoHeader = originalHeaders[headers.indexOf(actualBillNoCol)];
-        const dateHeader = originalHeaders[headers.indexOf(actualDateCol)];
-
-
-        results.data.forEach((row: any) => {
-          const rawSupplierNameFromErp = (row[supplierHeader] || '').trim();
-          let normalizedSupplierNameForErpKey = getERPNextSupplierName(rawSupplierNameFromErp).toLowerCase();
-          
-          const invoiceNumberFromErp = (row[billNoHeader] || '').trim().toLowerCase();
-          const rawDateFromErp = (row[dateHeader] || '').trim();
-          const parsedAndFormattedDate = formatDateForERP(rawDateFromErp); 
-
-          if (normalizedSupplierNameForErpKey && invoiceNumberFromErp && parsedAndFormattedDate) {
-            const key = `${normalizedSupplierNameForErpKey}||${invoiceNumberFromErp}||${parsedAndFormattedDate}`;
-            newKeys.add(key);
-          } else {
-            // console.warn("Skipping row for ERP key generation due to missing supplier, invoice number, or unparsable date:", row);
-          }
-        });
-
-        setExistingErpInvoiceKeys(newKeys);
-        toast({
-          title: "ERPNext Data Processed",
-          description: `Found ${newKeys.size} unique invoice keys (Supplier + Number + Date) from your ERPNext export.`,
-        });
-        setIsCheckingDuplicates(false);
-        setStatus(prev => prev === 'idle' && (extractedInvoices.length > 0 || erpProcessedInvoices.length > 0) ? 'success' : prev);
-
-      },
-      error: (error: Error) => {
-        console.error("Error parsing ERPNext export CSV:", error);
-        setErrorMessage(`Error parsing ERPNext export: ${error.message}`);
-        setExistingErpInvoiceKeys(new Set()); 
-        setIsCheckingDuplicates(false);
-      }
-    });
-  };
   
   const createInvoiceKey = (invoice: ERPIncomingInvoiceItem | IncomingInvoiceItem): string => {
     let dateToUse: string | undefined;
-    if ('datum' in invoice && invoice.datum) { // ERPIncomingInvoiceItem or IncomingInvoiceItem with YYYY-MM-DD
+    if ('datum' in invoice && invoice.datum) {
         dateToUse = invoice.datum;
-    } else if ('datum' in invoice) { // IncomingInvoiceItem with potentially other date format
+    } else if ('datum' in invoice) { 
         dateToUse = formatDateForERP(invoice.datum);
     }
     
@@ -735,18 +764,19 @@ export function IncomingInvoicesPageContent() {
     setProgressValue(0);
     setCurrentFileProgress('');
     setErrorMessage(null);
-    setDiscrepancyErrors([]);
     setErpExportFile(null);
     setExistingErpInvoiceKeys(new Set());
-    setErpSortKey('datum'); // Reset sort
+    setErpSortKey('datum'); 
     setErpSortOrder('desc');
+    setProcessedFileFingerprints({});
+
 
     localStorage.removeItem(LOCAL_STORAGE_PAGE_CACHE_KEY);
     localStorage.removeItem(LOCAL_STORAGE_MATCHER_DATA_KEY);
 
     toast({
       title: "Invoices Cleared",
-      description: "All processed invoices, selected files, and duplicate check data have been cleared.",
+      description: "All processed invoices, selected files, and duplicate check data have been cleared. Local cache removed.",
     });
   };
 
@@ -775,7 +805,7 @@ export function IncomingInvoicesPageContent() {
           Upload German PDF invoices (Eingangsrechnungen) to extract comprehensive details. Switch to ERP Vorlage Mode for ERPNext-compatible data.
         </p>
       </header>
-
+      
       <main className="space-y-8">
         <IncomingInvoiceUploadForm
           onFilesSelected={handleFilesSelected}
@@ -783,43 +813,7 @@ export function IncomingInvoicesPageContent() {
           isProcessing={status === 'processing'}
           selectedFileCount={selectedFiles.length}
         />
-
-        <Card className="w-full max-w-2xl mx-auto shadow-lg">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 font-headline">
-              <CheckSquare className="w-6 h-6 text-green-600" />
-              Check Duplicates with ERPNext Export (Optional)
-            </CardTitle>
-            <CardDescription>Upload a CSV export from ERPNext (containing Supplier, Invoice No, and Date) to flag invoices possibly already in your system.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div>
-              <Label htmlFor={erpExportInputId} className="text-sm font-medium">ERPNext CSV Export File</Label>
-              <Input
-                id={erpExportInputId}
-                type="file"
-                accept=".csv,text/csv"
-                onChange={handleErpExportFileChange}
-                disabled={isCheckingDuplicates}
-                className="mt-1 block w-full text-sm text-slate-500
-                  file:mr-4 file:py-2 file:px-4
-                  file:rounded-full file:border-0
-                  file:text-sm file:font-semibold
-                  file:bg-primary/10 file:text-primary
-                  hover:file:bg-primary/20"
-              />
-            </div>
-            <Button
-              onClick={handleProcessErpExport}
-              disabled={isCheckingDuplicates || !erpExportFile}
-              className="w-full"
-            >
-              {isCheckingDuplicates ? 'Processing ERP Export...' : 'Load & Check ERP Data'}
-            </Button>
-          </CardContent>
-        </Card>
-
-
+        
         <div className="flex flex-col sm:flex-row items-center justify-center gap-4 p-4 bg-card border rounded-lg shadow-sm">
           <div className="flex items-center space-x-3">
             <Switch
@@ -881,28 +875,11 @@ export function IncomingInvoicesPageContent() {
             <p className="text-sm text-center text-muted-foreground">{currentFileProgress}</p>
           </div>
         )}
-        
-        {discrepancyErrors.length > 0 && (
-            <Alert variant="destructive" className="my-6">
-                <AlertCircle className="h-4 w-4" />
-                <AlertTitle>Invoices with Discrepancies</AlertTitle>
-                <AlertDescription>
-                    <ul className="list-disc pl-5 space-y-1">
-                        {discrepancyErrors.map((e, index) => (
-                            <li key={index}>
-                                <strong>{e.filename}:</strong> {e.reason}
-                            </li>
-                        ))}
-                    </ul>
-                    <p className="mt-2">Please manually check these invoices before exporting.</p>
-                </AlertDescription>
-            </Alert>
-        )}
 
         {errorMessage && (
           <Alert variant="destructive" className="my-6 whitespace-pre-wrap">
             <AlertCircle className="h-4 w-4" />
-            <AlertTitle>Error / Status</AlertTitle>
+            <AlertTitle>Error</AlertTitle>
             <AlertDescription>{errorMessage}</AlertDescription>
           </Alert>
         )}
@@ -912,7 +889,7 @@ export function IncomingInvoicesPageContent() {
             <Info className="h-4 w-4 text-primary" />
             <AlertTitle className="text-primary font-semibold">Get Started</AlertTitle>
             <AlertDescription className="text-primary/80">
-              Upload one or more PDF files. Extracted details for each invoice will be shown below. Toggle ERP Vorlage Mode for ERPNext specific processing. Processed data is saved for the Bank Matcher. You can also upload an ERPNext CSV export to check for duplicates.
+              Upload one or more PDF files. Extracted details for each invoice will be shown below. Toggle ERP Vorlage Mode for ERPNext specific processing. Processed data is saved for the Bank Matcher.
             </AlertDescription>
           </Alert>
         )}
@@ -925,9 +902,13 @@ export function IncomingInvoicesPageContent() {
               onExportToERPNext={handleExportToERPNext}
               isExportingToERPNext={isExportingToERPNext}
               onExportSuppliersERPNext={handleExportSuppliersERPNext}
+              isExportingSuppliers={isExportingSuppliers}
+              onSubmitItemsAPI={handleSubmitItemsAPI}
+              isSubmittingItems={isSubmittingItems}
               onExportInvoicesAsZip={handleExportInvoicesAsZip} 
               isExportingZip={isExportingZip} 
               onClearAllInvoices={handleClearAllInvoices}
+              onExportSuppliersCSV={handleExportSuppliersCSV}
             />
             {erpMode ? (
               <ERPInvoiceTable 
@@ -966,5 +947,3 @@ export function IncomingInvoicesPageContent() {
     </div>
   );
 }
-
-    

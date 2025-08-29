@@ -200,4 +200,3 @@ export function ERPInvoiceTable({ invoices, existingErpInvoiceKeys, sortKey, sor
     </Card>
   );
 }
-

@@ -12,7 +12,7 @@ import {
   downloadFile 
 } from '@/lib/export-helpers';
 import type { IncomingInvoiceItem, ERPIncomingInvoiceItem } from '@/types/incoming-invoice';
-import { Copy, FileJson, FileSpreadsheet, ExternalLink, Users, FileArchive, Trash2 } from 'lucide-react'; // Added FileArchive, Trash2
+import { Copy, FileJson, FileSpreadsheet, ExternalLink, Users, FileArchive, Trash2, Send, Package } from 'lucide-react'; // Removed Landmark
 
 interface IncomingInvoiceActionButtonsProps {
   invoices: IncomingInvoiceItem[] | ERPIncomingInvoiceItem[];
@@ -20,9 +20,13 @@ interface IncomingInvoiceActionButtonsProps {
   onExportToERPNext: () => void;
   isExportingToERPNext: boolean;
   onExportSuppliersERPNext: () => void;
+  isExportingSuppliers: boolean;
+  onSubmitItemsAPI: () => void;
+  isSubmittingItems: boolean;
   onExportInvoicesAsZip: () => void; 
   isExportingZip: boolean; 
-  onClearAllInvoices: () => void; // New prop for clearing invoices
+  onClearAllInvoices: () => void;
+  onExportSuppliersCSV: () => void;
 }
 
 export function IncomingInvoiceActionButtons({ 
@@ -31,9 +35,13 @@ export function IncomingInvoiceActionButtons({
   onExportToERPNext,
   isExportingToERPNext,
   onExportSuppliersERPNext,
+  isExportingSuppliers,
+  onSubmitItemsAPI,
+  isSubmittingItems,
   onExportInvoicesAsZip, 
   isExportingZip,
-  onClearAllInvoices // Consuming new prop
+  onClearAllInvoices,
+  onExportSuppliersCSV
 }: IncomingInvoiceActionButtonsProps) {
   const { toast } = useToast();
 
@@ -104,6 +112,32 @@ export function IncomingInvoiceActionButtons({
       {erpMode && (
         <>
           <Button 
+            onClick={onExportSuppliersCSV}
+            variant="secondary"
+            className="w-full sm:w-auto"
+            disabled={invoices.length === 0}
+          >
+             <Users className="mr-2 h-4 w-4" />
+             Export Suppliers (CSV)
+          </Button>
+          <Button 
+            onClick={onExportSuppliersERPNext}
+            variant="secondary"
+            className="w-full sm:w-auto"
+            disabled={isExportingSuppliers || invoices.length === 0}
+          >
+             <Send className="mr-2 h-4 w-4" />
+             {isExportingSuppliers ? 'Submitting...' : 'Submit Suppliers (API)'}
+          </Button>
+           <Button
+              variant="secondary"
+              onClick={onSubmitItemsAPI}
+              disabled={isSubmittingItems || invoices.length === 0}
+            >
+              <Package className="mr-2 h-4 w-4" />
+              {isSubmittingItems ? 'Submitting...' : 'Submit Items (API)'}
+            </Button>
+          <Button 
             onClick={onExportInvoicesAsZip}
             variant="secondary"
             className="w-full sm:w-auto"
@@ -113,21 +147,12 @@ export function IncomingInvoiceActionButtons({
             {isExportingZip ? 'Zipping...' : 'Export Invoices (ZIP)'}
           </Button>
           <Button 
-            onClick={onExportSuppliersERPNext}
-            variant="secondary"
-            className="w-full sm:w-auto"
-            disabled={isExportingToERPNext || invoices.length === 0} 
-          >
-            <Users className="mr-2 h-4 w-4" />
-            Export Suppliers (ERP)
-          </Button>
-          <Button 
             onClick={onExportToERPNext} 
             className="w-full sm:w-auto"
             disabled={isExportingToERPNext || invoices.length === 0}
           >
             <ExternalLink className="mr-2 h-4 w-4" />
-            {isExportingToERPNext ? 'Exporting...' : 'Submit to ERPNext API'}
+            {isExportingToERPNext ? 'Exporting...' : 'Submit Invoices to ERPNext'}
           </Button>
         </>
       )}
@@ -143,3 +168,5 @@ export function IncomingInvoiceActionButtons({
     </div>
   );
 }
+
+    

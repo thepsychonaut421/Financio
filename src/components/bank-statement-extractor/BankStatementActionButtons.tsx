@@ -7,17 +7,27 @@ import {
   bankTransactionsToCSV,
   bankTransactionsToTSV,
   bankTransactionsToJSON,
-  bankTransactionsToERPNextBankRecCSV, // Added new export function
+  bankTransactionsToERPNextBankRecCSV,
   downloadFile 
 } from '@/lib/exportBankStatementData'; 
 import type { BankTransactionAI } from '@/ai/flows/extract-bank-statement-data';
-import { Copy, FileJson, FileSpreadsheet, Landmark } from 'lucide-react'; // Added Landmark
+import { Copy, FileJson, FileSpreadsheet, Landmark, Send, Trash2 } from 'lucide-react';
 
 interface BankStatementActionButtonsProps {
   transactions: BankTransactionAI[];
+  isSubmitting: boolean;
+  erpBankAccountName: string;
+  onSubmitToERPNext: () => void;
+  onClearAllData: () => void;
 }
 
-export function BankStatementActionButtons({ transactions }: BankStatementActionButtonsProps) {
+export function BankStatementActionButtons({ 
+    transactions, 
+    isSubmitting,
+    erpBankAccountName, 
+    onSubmitToERPNext, 
+    onClearAllData 
+}: BankStatementActionButtonsProps) {
   const { toast } = useToast();
 
   const handleCopyToClipboard = async () => {
@@ -64,7 +74,11 @@ export function BankStatementActionButtons({ transactions }: BankStatementAction
       toast({ title: "No data", description: "There are no transactions to export for ERPNext Bank Rec.", variant: "destructive" });
       return;
     }
-    const csvData = bankTransactionsToERPNextBankRecCSV(transactions);
+    if (!erpBankAccountName.trim()) {
+      toast({ title: "Missing Bank Account", description: "Please enter the ERPNext Bank Account name before exporting.", variant: "destructive" });
+      return;
+    }
+    const csvData = bankTransactionsToERPNextBankRecCSV(transactions, erpBankAccountName);
     const fileName = 'erpnext_bank_reconciliation.csv';
     downloadFile(csvData, fileName, 'text/csv;charset=utf-8;');
     toast({ title: "ERPNext Bank Rec. CSV Exported", description: `Data for ${transactions.length} transaction(s) exported.` });
@@ -76,21 +90,37 @@ export function BankStatementActionButtons({ transactions }: BankStatementAction
 
   return (
     <div className="my-6 flex flex-col sm:flex-row flex-wrap justify-center items-center gap-3 sm:gap-4">
-      <Button onClick={handleCopyToClipboard} variant="outline" className="w-full sm:w-auto">
+      <Button onClick={handleCopyToClipboard} variant="outline" className="w-full sm:w-auto" disabled={isSubmitting}>
         <Copy className="mr-2 h-4 w-4" />
         Copy All (TSV)
       </Button>
-      <Button onClick={handleExportJSON} variant="outline" className="w-full sm:w-auto">
+      <Button onClick={handleExportJSON} variant="outline" className="w-full sm:w-auto" disabled={isSubmitting}>
         <FileJson className="mr-2 h-4 w-4" />
         Export All as JSON
       </Button>
-      <Button onClick={handleExportCSV} className="w-full sm:w-auto">
+      <Button onClick={handleExportCSV} className="w-full sm:w-auto" disabled={isSubmitting}>
         <FileSpreadsheet className="mr-2 h-4 w-4" />
         Export All as CSV
       </Button>
-      <Button onClick={handleExportERPNextBankRec} variant="secondary" className="w-full sm:w-auto">
+      <Button onClick={handleExportERPNextBankRec} variant="secondary" className="w-full sm:w-auto" disabled={isSubmitting}>
         <Landmark className="mr-2 h-4 w-4" />
         Export ERPNext Bank Rec.
+      </Button>
+      <Button
+        variant="default"
+        onClick={onSubmitToERPNext}
+        disabled={isSubmitting || transactions.length === 0}
+      >
+        <Send className="mr-2 h-4 w-4" />
+        {isSubmitting ? 'Submitting...' : 'Submit to ERPNext (API)'}
+      </Button>
+      <Button 
+        variant="destructive"
+        onClick={onClearAllData}
+        disabled={isSubmitting}
+      >
+          <Trash2 className="mr-2 h-4 w-4" />
+          Clear All Data
       </Button>
     </div>
   );
