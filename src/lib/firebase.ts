@@ -19,6 +19,11 @@ const app: FirebaseApp = getApps().length === 0 ? initializeApp(firebaseConfig) 
 
 // Initialize App Check
 if (typeof window !== 'undefined') {
+    // Set the debug token if in development
+    if (process.env.NODE_ENV !== 'production') {
+        (window as any).FIREBASE_APPCHECK_DEBUG_TOKEN = "FD286712-FAC2-4627-910A-04A0208DCD76";
+    }
+    
     try {
         initializeAppCheck(app, {
             provider: new ReCaptchaV3Provider('6LeeOLcrAAAAAJvzAaM-H3htVhwi6DR0bADVXnHj'),
