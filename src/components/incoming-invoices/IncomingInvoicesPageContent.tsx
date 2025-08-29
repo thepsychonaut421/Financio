@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { useState, useCallback, useEffect, ChangeEvent, useMemo } from 'react';
@@ -746,7 +745,7 @@ export function IncomingInvoicesPageContent() {
 
       if (fileCount > 0) {
         const zipBlob = await zip.generateAsync({ type: "blob" });
-        downloadFile(zipBlob as any, "erpnext_individual_invoices.zip", "application/zip"); 
+        downloadFile(zipBlob, "erpnext_individual_invoices.zip", "application/zip"); 
         toast({
           title: "ZIP Export Successful",
           description: `${fileCount} invoice(s) exported as individual CSVs in a ZIP file.`,
