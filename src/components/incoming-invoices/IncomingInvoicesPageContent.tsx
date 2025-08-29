@@ -1,14 +1,14 @@
 
 'use client';
 
-import React, { useState, useCallback, useEffect, ChangeEvent, useMemo } from 'react';
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import { IncomingInvoiceUploadForm } from '@/components/incoming-invoices/IncomingInvoiceUploadForm';
 import { IncomingInvoiceCard } from '@/components/incoming-invoices/IncomingInvoiceCard';
 import { ERPInvoiceTable } from '@/components/incoming-invoices/ERPInvoiceTable';
 import { IncomingInvoiceActionButtons } from '@/components/incoming-invoices/IncomingInvoiceActionButtons';
 import { Progress } from '@/components/ui/progress';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { AlertCircle, Info, Settings2, FileCog, UploadCloud, CheckSquare } from 'lucide-react';
+import { AlertCircle, Info, Settings2, FileCog } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
@@ -21,7 +21,6 @@ import { addDays, parseISO, isValid, format as formatDateFns } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
 import { erpInvoicesToSupplierCSV, downloadFile, incomingInvoicesToERPNextCSVComplete } from '@/lib/export-helpers';
 import JSZip from 'jszip';
-import Papa from 'papaparse';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
 import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
@@ -95,17 +94,22 @@ function safeErpFallback(filename: string) {
     zahlungsziel: '',
     zahlungsart: '',
     gesamtbetrag: 0,
-    mwstSatz: undefined,
-    rechnungspositionen: [{
-      productName: 'UNKNOWN ITEM',
-      productCode: 'UNKNOWN',
-      quantity: 1,
-      unitPrice: 0,
-    }],
+    rechnungspositionen: [{ productName: 'UNKNOWN ITEM', productCode: 'UNKNOWN', qty: 1, unitPrice: 0 }],
     isPaid: false,
     anomalies: ['AI_CRASH_FALLBACK'],
     pdfFileName: filename,
+    wahrung: 'EUR',
   };
+}
+
+function normalizeLineItems(items: any[] | undefined) {
+  const arr = Array.isArray(items) ? items : [];
+  return arr.map(it => ({
+    productName: it.productName ?? it.name ?? 'UNKNOWN ITEM',
+    productCode: it.productCode ?? it.code ?? 'UNKNOWN',
+    quantity: it.qty ?? it.quantity ?? 1,
+    unitPrice: it.price ?? it.unitPrice ?? 0,
+  }));
 }
 
 export function IncomingInvoicesPageContent() {
@@ -125,8 +129,7 @@ export function IncomingInvoicesPageContent() {
   const { toast } = useToast();
   const [currentYear, setCurrentYear] = useState<string>('');
   const [kontenrahmen, setKontenrahmen] = useState('20000 - Verbindlichkeiten Lief Inland');
-  const [processedFileFingerprints, setProcessedFileFingerprints] =
-  useState<Record<string, string>>({});
+  const [processedFileFingerprints, setProcessedFileFingerprints] = useState<Record<string, string>>({});
 
 
   const [erpExportFile, setErpExportFile] = useState<File | null>(null);
@@ -364,7 +367,7 @@ export function IncomingInvoicesPageContent() {
     if (duplicates.length > 0) {
         toast({
             title: "Duplicate Files Skipped",
-            description: `${duplicates.length} file(s) already processed; restored in list if missing: ${duplicates.join(', ')}`,
+            description: `${duplicates.length} already processed. If they weren’t visible, I restored them from cache.`,
             variant: "default",
         });
     }
@@ -376,7 +379,8 @@ export function IncomingInvoicesPageContent() {
     }
 
     const yearCounters: Record<string, number> = {};
-    let accumulatedErrors: string[] = [];
+    const accumulatedErrors: string[] = [];
+    const toNumber = (v:any) => typeof v === 'number' ? v : Number(String(v).replace(',', '.')) || 0;
 
 
     try {
@@ -403,9 +407,7 @@ export function IncomingInvoicesPageContent() {
           ...aiResult,
           doctype: 'Purchase Invoice',
           datum: aiResult?.datum || today,
-          rechnungspositionen: Array.isArray(aiResult?.rechnungspositionen) && aiResult.rechnungspositionen.length
-            ? aiResult.rechnungspositionen
-            : safeErpFallback(file.name).rechnungspositionen,
+          rechnungspositionen: normalizeLineItems(aiResult?.rechnungspositionen),
           wahrung: aiResult?.wahrung || 'EUR',
         };
 
@@ -468,9 +470,9 @@ export function IncomingInvoicesPageContent() {
           lieferantAdresse: aiResult.lieferantAdresse,
           zahlungsziel: aiResult.zahlungsziel,
           zahlungsart: aiResult.zahlungsart,
-          gesamtbetrag: aiResult.gesamtbetrag,
-          mwstSatz: aiResult.mwstSatz,
-          rechnungspositionen: aiResult.rechnungspositionen || [],
+          gesamtbetrag: toNumber(aiResult.gesamtbetrag),
+          mwstSatz: aiResult.mwstSatz != null ? aiResult.mwstSatz : undefined,
+          rechnungspositionen: aiResult.rechnungspositionen,
           kundenNummer: aiResult.kundenNummer,
           bestellNummer: aiResult.bestellNummer,
           isPaidByAI: aiResult.isPaid,
@@ -494,9 +496,9 @@ export function IncomingInvoicesPageContent() {
               lieferantAdresse: aiResult.lieferantAdresse,
               zahlungsziel: aiResult.zahlungsziel,
               zahlungsart: aiResult.zahlungsart,
-              gesamtbetrag: aiResult.gesamtbetrag,
+              gesamtbetrag: toNumber(aiResult.gesamtbetrag),
               mwstSatz: aiResult.mwstSatz,
-              rechnungspositionen: aiResult.rechnungspositionen || [],
+              rechnungspositionen: aiResult.rechnungspositionen,
               kundenNummer: aiResult.kundenNummer,
               bestellNummer: aiResult.bestellNummer,
               isPaidByAI: aiResult.isPaid,
@@ -507,14 +509,21 @@ export function IncomingInvoicesPageContent() {
           ? 'ERROR'
           : (aiResult?.anomalies?.length ? 'WARN' : 'OK');
         
-        await addDoc(collection(db, "processed_invoices"), {
-          userId: user?.uid ?? 'anon',
-          filename: file.name,
-          status: statusForDoc,
-          erpMode: true,
-          payload: erpCompatibleInvoice,
-          createdAt: serverTimestamp(),
-        });
+        try {
+          const uid = (!isAuthLoading && user?.uid) ? user.uid : 'anon';
+          if (uid !== 'anon') { // Only save if a user is logged in
+            await addDoc(collection(db, "processed_invoices"), {
+              userId: uid,
+              filename: file.name,
+              status: statusForDoc,
+              erpMode: erpMode,
+              payload: erpCompatibleInvoice,
+              createdAt: serverTimestamp(),
+            });
+          }
+        } catch (e) {
+          console.error('Failed to persist invoice to Firestore:', e);
+        }
 
         setProgressValue(Math.round(((i + 1) / filesToProcess.length) * 100));
       }
@@ -523,16 +532,23 @@ export function IncomingInvoicesPageContent() {
       setErpProcessedInvoices(currentErpInvoices);
       setProcessedFileFingerprints(newFingerprints);
       
-      const matcherInvoices = JSON.parse(localStorage.getItem(LOCAL_STORAGE_MATCHER_DATA_KEY) || '[]')
-      localStorage.setItem(LOCAL_STORAGE_MATCHER_DATA_KEY, JSON.stringify([...erpProcessedInvoices, ...matcherInvoices]));
+      const previousMatcherInvoices = JSON.parse(localStorage.getItem(LOCAL_STORAGE_MATCHER_DATA_KEY) || '[]');
+      const justProcessedForMatcher = erpMode ? currentErpInvoices : currentRegularInvoices.map(inv => ({
+        pdfFileName: inv.pdfFileName,
+        rechnungsnummer: inv.rechnungsnummer,
+        datum: formatDateForERP(inv.datum),
+        lieferantName: inv.lieferantName,
+        gesamtbetrag: inv.gesamtbetrag,
+        rechnungspositionen: normalizeLineItems(inv.rechnungspositionen),
+      }));
+      localStorage.setItem(LOCAL_STORAGE_MATCHER_DATA_KEY, JSON.stringify([...justProcessedForMatcher, ...previousMatcherInvoices]));
       
       if (accumulatedErrors.length > 0) {
         setErrorMessage(accumulatedErrors.join('\n'));
-        setStatus('success');
-      } else {
-        setStatus('success'); 
       }
       
+      const producedSomething = (erpMode ? currentErpInvoices.length : currentRegularInvoices.length) > 0;
+      setStatus(producedSomething ? 'success' : (accumulatedErrors.length ? 'error' : 'success'));
       setCurrentFileProgress('Processing complete!');
 
     } catch (error) {
