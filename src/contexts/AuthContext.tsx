@@ -5,6 +5,7 @@ import React, { createContext, useContext, useState, useEffect, type ReactNode }
 import { useRouter, usePathname } from 'next/navigation';
 import { getAuth, onAuthStateChanged, type User, signInWithEmailAndPassword, signOut, OAuthProvider, signInWithPopup } from 'firebase/auth';
 import { initializeApp, getApps, type FirebaseApp } from 'firebase/app';
+import { initializeAppCheck, ReCaptchaV3Provider } from 'firebase/app-check';
 import { useToast } from '@/hooks/use-toast';
 
 // Your web app's Firebase configuration
@@ -26,6 +27,15 @@ if (getApps().length === 0) {
 } else {
   app = getApps()[0];
 }
+
+// Initialize App Check
+if (typeof window !== 'undefined') {
+    initializeAppCheck(app, {
+        provider: new ReCaptchaV3Provider('6Lc-7wQqAAAAAPdGg5ZCRt1r6w6-4w5a4a5s6q7r'), // Public reCAPTCHA site key
+        isTokenAutoRefreshEnabled: true
+    });
+}
+
 
 const auth = getAuth(app);
 
