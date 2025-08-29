@@ -1,3 +1,4 @@
+
 import { z } from 'zod';
 
 // Base schema for line items, used in both Purchase and Sales Invoices
@@ -28,6 +29,7 @@ export const PurchaseInvoicePayloadSchema = z.object({
   set_posting_time: z.number().optional().default(1),
   update_stock: z.number().optional().default(0), // Default to not updating stock
   items: z.array(ErpInvoiceItemSchema),
+  error: z.string().optional(),
 });
 export type PurchaseInvoicePayload = z.infer<typeof PurchaseInvoicePayloadSchema>;
 
@@ -55,6 +57,7 @@ export const ItemPayloadSchema = z.object({
   item_group: z.string().optional().default("All Item Groups"),
   stock_uom: z.string().optional().default("Nos"),
   is_stock_item: z.union([z.number(), z.boolean()]).optional().default(1),
+  error: z.string().optional(),
 });
 export type ItemPayload = z.infer<typeof ItemPayloadSchema>;
 

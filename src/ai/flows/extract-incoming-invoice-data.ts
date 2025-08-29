@@ -182,6 +182,20 @@ Source document is between <DOC> tags. Focus on the main content and ignore head
 `,
 });
 
+const getErrorPayload = (message: string): PurchaseInvoice & { error: string } => {
+  const now = new Date().toISOString().slice(0, 10);
+  return {
+    doctype: 'Purchase Invoice',
+    supplier: 'ERROR',
+    posting_date: now,
+    bill_no: `ERROR-${Date.now()}`,
+    bill_date: now,
+    items: [],
+    error: message,
+  };
+};
+
+
 const extractIncomingInvoiceDataFlow = ai.defineFlow(
   {
     name: 'extractIncomingInvoiceDataFlow',
@@ -195,14 +209,14 @@ const extractIncomingInvoiceDataFlow = ai.defineFlow(
         rawResponseText = output;
         
         if (!rawResponseText) {
-            return { error: 'The AI model returned an empty response.' };
+            return getErrorPayload('The AI model returned an empty response.');
         }
 
         const jsonString = extractJsonFromString(rawResponseText);
         
         if (!jsonString) {
             console.error("AI output did not contain a valid JSON block. Raw output:", rawResponseText);
-            return { error: 'The AI model returned a non-JSON response.' };
+            return getErrorPayload('The AI model returned a non-JSON response.');
         }
         
         let parsedJson;
@@ -210,21 +224,21 @@ const extractIncomingInvoiceDataFlow = ai.defineFlow(
             parsedJson = JSON.parse(jsonString);
         } catch (e: any) {
             console.error("Failed to parse JSON from AI output. JSON string:", jsonString, "Error:", e.message);
-            return { error: `Failed to parse the AI's JSON response: ${e.message}` };
+            return getErrorPayload(`Failed to parse the AI's JSON response: ${e.message}`);
         }
 
         // IMPORTANT: Check for an "error" property in the AI's JSON response *before* validation.
         if (parsedJson && typeof parsedJson === 'object' && 'error' in parsedJson) {
             const errorMessage = (parsedJson as {error: string}).error || 'Unknown error from AI model.';
             console.error("AI returned an error object:", errorMessage);
-            return { error: `AI Model Error: ${errorMessage}` };
+            return getErrorPayload(`AI Model Error: ${errorMessage}`);
         }
         
         const validationResult = PurchaseInvoiceSchema.safeParse(parsedJson);
 
         if (!validationResult.success) {
             console.error("AI output failed Zod validation:", validationResult.error.flatten());
-            return { error: `AI data has an unexpected format: ${validationResult.error.flatten().formErrors.join(', ')}` };
+            return getErrorPayload(`AI data has an unexpected format: ${validationResult.error.flatten().formErrors.join(', ')}`);
         }
         
         // Final sanity check on item amounts
@@ -239,10 +253,10 @@ const extractIncomingInvoiceDataFlow = ai.defineFlow(
 
     } catch (e: any) {
         if (e.message && (e.message.includes('503') || e.message.includes('overloaded'))) {
-            return { error: "The AI service is currently busy or unavailable. Please try again in a few moments." };
+            return getErrorPayload("The AI service is currently busy or unavailable. Please try again in a few moments.");
         }
         console.error("Critical error in extractIncomingInvoiceDataFlow:", e);
-        return { error: "An unexpected critical error occurred during invoice extraction." };
+        return getErrorPayload("An unexpected critical error occurred during invoice extraction.");
     }
   }
 );
