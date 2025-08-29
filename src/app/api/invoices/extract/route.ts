@@ -1,7 +1,7 @@
 
 import { NextResponse } from 'next/server';
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import { adminDb } from '@/lib/firebase-admin';
+import { getAdminDbSafe } from '@/lib/firebase-admin';
 import crypto from 'crypto';
 
 export const runtime = 'nodejs';
@@ -30,6 +30,9 @@ function makeTranslationId(input: string, scope: string) {
 }
 
 async function ensureTranslationDoc(input: string, scope: 'product'|'supplier'|'address') {
+  const adminDb = await getAdminDbSafe();
+  if (!adminDb) return null;
+
   const clean = (input ?? '').trim();
   if (!clean) return null;
 
@@ -48,6 +51,9 @@ async function ensureTranslationDoc(input: string, scope: 'product'|'supplier'|'
 }
 
 async function ensureManyTranslations(texts: Array<{text:string, scope:'product'|'supplier'|'address'}>) {
+  const adminDb = await getAdminDbSafe();
+  if (!adminDb) return new Map<string, string>();
+
   const unique = new Map<string,{text:string,scope:'product'|'supplier'|'address'}>();
   for (const t of texts) {
     const key = (t.scope + '|' + (t.text ?? '').trim().toLowerCase());
@@ -68,7 +74,6 @@ async function ensureManyTranslations(texts: Array<{text:string, scope:'product'
   }
   return idMap;
 }
-
 
 // --- VAT & SKU Helpers ---
 const LIKELY_VAT_RATES = [0, 5, 7, 10, 16, 19, 20, 21, 22, 23, 24, 25];
@@ -171,7 +176,7 @@ function normalizeLineItems(items: any[] | undefined, fallbackTotal?: number): L
   }).filter(r => r.quantity > 0 || r.total > 0 || r.productName.length > 3);
 
   if (out.length === 0 && (fallbackTotal ?? 0) > 0) {
-    out = [{ productName: 'INVOICE TOTAL', productCode: 'TOTAL', originalProductCode: null, quantity: 1, unitPrice: fallbackTotal!, total: fallbackTotal!, uom: 'Nos' }];
+    out = [{ productName: 'INVOICE TOTAL', productCode: 'TOTAL', originalProductCode: null, quantity: 1, unitPrice: fallbackTotal!, total: fallbackTotal!, uom: 'Nos', autogenSku: true }];
   }
   return out;
 }
@@ -293,22 +298,32 @@ If a value is not found, omit the key or set it to null. Ensure numbers are actu
     }
 
     // Translation logic
-    const translateInputs: Array<{text:string, scope:'product'|'supplier'|'address'}> = [];
-    if (safePayload.lieferantName) translateInputs.push({ text: safePayload.lieferantName, scope: 'supplier' });
-    if (safePayload.lieferantAdresse) translateInputs.push({ text: safePayload.lieferantAdresse, scope: 'address' });
-    for (const li of items) {
-      if (li.productName) translateInputs.push({ text: li.productName, scope: 'product' });
+    const adminDb = await getAdminDbSafe();
+    if(adminDb) {
+      try {
+        const translateInputs: Array<{text:string, scope:'product'|'supplier'|'address'}> = [];
+        if (safePayload.lieferantName) translateInputs.push({ text: safePayload.lieferantName, scope: 'supplier' });
+        if (safePayload.lieferantAdresse) translateInputs.push({ text: safePayload.lieferantAdresse, scope: 'address' });
+        for (const li of items) {
+          if (li.productName) translateInputs.push({ text: li.productName, scope: 'product' });
+        }
+        const idMap = await ensureManyTranslations(translateInputs);
+    
+        (safePayload as any).translationRefs = {
+          supplierNameId: idMap.get('supplier|' + (safePayload.lieferantName || '').trim()),
+          supplierAddrId: idMap.get('address|' + (safePayload.lieferantAdresse || '').trim()),
+        };
+        safePayload.rechnungspositionen = items.map(li => ({
+          ...li,
+          productNameTranslationId: idMap.get('product|' + (li.productName || '').trim()) || null,
+        }));
+      } catch (e: any) {
+         console.warn('[extract] translation write skipped:', e.message);
+         safePayload.anomalies = Array.from(new Set([...(safePayload.anomalies||[]), 'TRANSLATION_WRITE_FAILED']));
+      }
+    } else {
+       safePayload.anomalies = Array.from(new Set([...(safePayload.anomalies||[]), 'TRANSLATIONS_SKIPPED_NO_ADMIN']));
     }
-    const idMap = await ensureManyTranslations(translateInputs);
-
-    (safePayload as any).translationRefs = {
-      supplierNameId: idMap.get('supplier|' + (safePayload.lieferantName || '').trim()),
-      supplierAddrId: idMap.get('address|' + (safePayload.lieferantAdresse || '').trim()),
-    };
-    safePayload.rechnungspositionen = items.map(li => ({
-      ...li,
-      productNameTranslationId: idMap.get('product|' + (li.productName || '').trim()) || null,
-    }));
 
 
     return NextResponse.json(safePayload, { headers: { 'Cache-Control': 'no-store' }});
@@ -320,3 +335,4 @@ If a value is not found, omit the key or set it to null. Ensure numbers are actu
     );
   }
 }
+
