@@ -1,13 +1,13 @@
 
 'use client';
 
-import React, { useEffect } from 'react'; 
+import React, { useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import Link from 'next/link';
-import { LogIn, ShieldCheck } from 'lucide-react';
+import { LogIn, ShieldCheck, Github, Chrome } from 'lucide-react';
 import Image from 'next/image';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
@@ -20,15 +20,15 @@ export function LoginPageContent() {
 
   useEffect(() => {
     if (!isLoading && isAuthenticated) {
-      router.push('/incoming-invoices'); 
+      router.push('/incoming-invoices');
     }
   }, [isLoading, isAuthenticated, router]);
 
   const handleLogin = (event: React.FormEvent) => {
     event.preventDefault();
-    login(); 
+    login();
   };
-  
+
   const handleForgotPassword = (e: React.MouseEvent) => {
     e.preventDefault();
     toast({
@@ -36,6 +36,14 @@ export function LoginPageContent() {
         description: "Password reset functionality is not yet implemented in this demo.",
         variant: "default"
     });
+  }
+  
+  const handleSocialLogin = (provider: 'Google' | 'GitHub') => {
+      toast({
+          title: `${provider} Sign-In`,
+          description: `Sign-in with ${provider} is not yet implemented in this demo.`,
+          variant: 'default'
+      });
   }
 
   if (isLoading || (!isLoading && isAuthenticated)) {
@@ -46,19 +54,18 @@ export function LoginPageContent() {
     );
   }
 
-
   return (
     <div className="flex flex-col items-center justify-center min-h-[calc(100vh-4rem)] bg-gradient-to-br from-primary/5 via-background to-background p-4">
       <Card className="w-full max-w-md shadow-2xl border-t-4 border-primary rounded-xl overflow-hidden">
         <CardHeader className="space-y-3 text-center bg-card p-8">
            <Link href="/" className="inline-block mx-auto">
-            <Image 
-                src="https://placehold.co/120x40.png?text=Financio&font=roboto" 
+            <Image
+                src="https://placehold.co/120x40.png?text=Financio&font=roboto"
                 alt="Financio Logo"
                 width={120}
                 height={40}
                 className="mx-auto mb-4"
-                data-ai-hint="modern minimalist logo" 
+                data-ai-hint="modern minimalist logo"
                 priority
             />
           </Link>
@@ -68,14 +75,14 @@ export function LoginPageContent() {
           </CardDescription>
         </CardHeader>
         <CardContent className="p-6 sm:p-8 space-y-6">
-          <form onSubmit={handleLogin} className="space-y-6">
+          <form onSubmit={handleLogin} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="email" className="font-medium">Email Address</Label>
-              <Input 
-                id="email" 
-                type="email" 
-                placeholder="you@example.com" 
-                required 
+              <Input
+                id="email"
+                type="email"
+                placeholder="you@example.com"
+                required
                 className="h-12 text-base"
                 defaultValue="test@example.com"
               />
@@ -87,11 +94,11 @@ export function LoginPageContent() {
                   Forgot password?
                 </a>
               </div>
-              <Input 
-                id="password" 
-                type="password" 
-                required 
-                placeholder="Enter your password" 
+              <Input
+                id="password"
+                type="password"
+                required
+                placeholder="Enter your password"
                 className="h-12 text-base"
                 defaultValue="password"
               />
@@ -100,6 +107,27 @@ export function LoginPageContent() {
               <LogIn className="mr-2 h-5 w-5" /> Sign In
             </Button>
           </form>
+
+          <div className="relative">
+            <div className="absolute inset-0 flex items-center">
+              <span className="w-full border-t" />
+            </div>
+            <div className="relative flex justify-center text-xs uppercase">
+              <span className="bg-card px-2 text-muted-foreground">
+                Or continue with
+              </span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <Button variant="outline" className="py-6 text-base" onClick={() => handleSocialLogin('Google')}>
+              <Chrome className="mr-2 h-5 w-5" /> Google
+            </Button>
+            <Button variant="outline" className="py-6 text-base" onClick={() => handleSocialLogin('GitHub')}>
+              <Github className="mr-2 h-5 w-5" /> GitHub
+            </Button>
+          </div>
+
         </CardContent>
         <CardFooter className="flex flex-col items-center space-y-3 p-6 bg-muted/50">
           <p className="text-sm text-muted-foreground">
