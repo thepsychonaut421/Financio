@@ -1,15 +1,14 @@
+
 'use server';
 /**
  * @fileOverview Extracts detailed data from incoming invoices (Eingangsrechnungen).
- *
- * - extractIncomingInvoiceData - A function that extracts comprehensive details from an invoice PDF.
- * - ExtractIncomingInvoiceDataInput - The input type for the function.
- * - ExtractIncomingInvoiceDataOutput - The return type for the function.
+ * THIS FLOW IS NOW PRIMARILY FOR REFERENCE AND IS NOT CALLED DIRECTLY FROM THE CLIENT.
+ * The active extraction logic is in /api/invoices/extract/route.ts
  */
 
 import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
-import { AILineItemSchema, type AppLineItem, PurchaseInvoiceSchema, type PurchaseInvoice } from '@/ai/schemas/invoice-item-schema';
+import { PurchaseInvoiceSchema, type PurchaseInvoice } from '@/ai/schemas/invoice-item-schema';
 
 
 function extractJsonFromString(text: string): string | null {
@@ -20,7 +19,6 @@ function extractJsonFromString(text: string): string | null {
     if (text.trim().startsWith('{') && text.trim().endsWith('}')) {
         return text.trim();
     }
-    // Fallback for finding the first balanced JSON object
     let depth = 0;
     let start = -1;
     for (let i = 0; i < text.length; i++) {
@@ -53,88 +51,14 @@ const ExtractIncomingInvoiceDataInputSchema = z.object({
 export type ExtractIncomingInvoiceDataInput = z.infer<typeof ExtractIncomingInvoiceDataInputSchema>;
 
 
-// Type for the exported function's return value
-export type ExtractIncomingInvoiceDataOutput = {
-  rechnungsnummer?: string;
-  datum?: string;
-  lieferantName?: string;
-  lieferantAdresse?: string;
-  zahlungsziel?: string; // Can be derived from due_date
-  zahlungsart?: string;
-  gesamtbetrag?: number; // Can be calculated from items and taxes
-  mwstSatz?: string; // Can be derived from taxes
-  rechnungspositionen: AppLineItem[];
-  kundenNummer?: string; // Part of custom_fields or remarks
-  bestellNummer?: string;
-  isPaid?: boolean; // Can be inferred from payment_method or remarks
-  error?: string;
-  // Exposing new fields
-  dueDate?: string;
-  taxes?: { charge_type?: string; account_head?: string; rate?: number; tax_amount?: number; }[];
-  remarks?: string;
-  isReturn?: boolean;
-}
-
-// Helper function for product code normalization
-function normalizeProductCode(code: any): string {
-  let strCode = String(code || '').trim().replace(/\n/g, ' ');
-  if (/^[-+]?[0-9]*\.?[0-9]+([eE][-+]?[0-9]+)$/.test(strCode)) {
-    const num = Number(strCode);
-    if (!isNaN(num) && isFinite(num)) {
-      return num.toString();
-    }
-  }
-  return strCode;
-}
+export type ExtractIncomingInvoiceDataOutput = PurchaseInvoice & { error?: string };
 
 
 export async function extractIncomingInvoiceData(input: ExtractIncomingInvoiceDataInput): Promise<ExtractIncomingInvoiceDataOutput> {
-  let rawOutput: PurchaseInvoice & { error?: string};
-
-  try {
-    rawOutput = await extractIncomingInvoiceDataFlow(input);
-  } catch(e: any) {
-    console.error("[extractIncomingInvoiceData] Flow failed:", e);
-    return { rechnungspositionen: [], error: e.message || "The AI flow encountered a critical error." };
-  }
-
-
-  if (rawOutput.error) {
-    return { rechnungspositionen: [], error: rawOutput.error };
-  }
-
-  const normalizedLineItems: AppLineItem[] = (rawOutput.items || []).map(item => ({
-    productCode: normalizeProductCode(item.item_code),
-    productName: String(item.item_name || '').trim().replace(/\n/g, ' '),
-    quantity: item.qty ?? 0,
-    unitPrice: item.rate ?? 0.0,
-  }));
-
-  const totalAmountFromItems = normalizedLineItems.reduce((acc, item) => acc + (item.quantity * item.unitPrice), 0);
-  const totalTaxAmount = (rawOutput.taxes || []).reduce((acc, tax) => acc + (tax.tax_amount || 0), 0);
-
-  const normalizedOutput: ExtractIncomingInvoiceDataOutput = {
-    rechnungsnummer: rawOutput.bill_no,
-    datum: rawOutput.posting_date,
-    lieferantName: String(rawOutput.supplier || '').trim().replace(/\n/g, ' '),
-    lieferantAdresse: String(rawOutput.supplier_address || '').trim().replace(/\n/g, ' '),
-    zahlungsziel: rawOutput.due_date, // Directly use due_date
-    zahlungsart: rawOutput.custom_fields?.payment_method,
-    gesamtbetrag: totalAmountFromItems + totalTaxAmount,
-    mwstSatz: rawOutput.taxes?.[0]?.rate?.toString() ? `${rawOutput.taxes[0].rate}%` : undefined,
-    rechnungspositionen: normalizedLineItems,
-    bestellNummer: rawOutput.custom_fields?.order_reference,
-    // Infer isPaid, can be improved
-    isPaid: rawOutput.custom_fields?.payment_method?.toLowerCase().includes('klarna') || rawOutput.custom_fields?.payment_method?.toLowerCase().includes('paypal'),
-    error: rawOutput.error,
-    // New fields
-    dueDate: rawOutput.due_date,
-    taxes: rawOutput.taxes,
-    remarks: rawOutput.remarks,
-    isReturn: !!rawOutput.is_return,
-  };
-  
-  return normalizedOutput;
+  // This function is now deprecated in favor of the /api/invoices/extract route.
+  // The implementation is kept for reference or potential future server-to-server use.
+  console.warn("DEPRECATED: Direct call to extractIncomingInvoiceData flow. Use /api/invoices/extract instead.");
+  return extractIncomingInvoiceDataFlow(input);
 }
 
 const prompt = ai.definePrompt({
@@ -198,7 +122,7 @@ const getErrorPayload = (message: string): PurchaseInvoice & { error: string } =
     posting_date: now,
     bill_no: `ERROR-${Date.now()}`,
     bill_date: now,
-    items: [{item_name: 'ERROR', qty: 1, rate: 0, amount: 0}], // Satisfy minItems:1
+    items: [{item_name: 'ERROR', qty: 1, uom: 'Nos', rate: 0, amount: 0}],
     error: message,
     anomalies: ['EXTRACTION_FAILED'],
   };
@@ -236,16 +160,14 @@ const extractIncomingInvoiceDataFlow = ai.defineFlow(
             return getErrorPayload(`Failed to parse the AI's JSON response: ${e.message}`);
         }
 
-        // IMPORTANT: Check for an "error" property in the AI's JSON response *before* validation.
         if (parsedJson && typeof parsedJson === 'object' && 'error' in parsedJson) {
             const errorMessage = (parsedJson as {error: string}).error || 'Unknown error from AI model.';
             console.error("AI returned an error object:", errorMessage);
             return getErrorPayload(`AI Model Error: ${errorMessage}`);
         }
         
-        // Add fallback for items if AI fails to provide it
         if (!parsedJson.items || !Array.isArray(parsedJson.items) || parsedJson.items.length === 0) {
-            parsedJson.items = [{ item_name: 'UNKNOWN ITEM', qty: 1, rate: 0, amount: 0 }];
+            parsedJson.items = [{ item_name: 'UNKNOWN ITEM', qty: 1, rate: 0, amount: 0, uom: 'Nos' }];
             if (!parsedJson.anomalies) parsedJson.anomalies = [];
             if (!parsedJson.anomalies.includes('NO_ITEMS_EXTRACTED')) {
                 parsedJson.anomalies.push('NO_ITEMS_EXTRACTED');
@@ -259,7 +181,6 @@ const extractIncomingInvoiceDataFlow = ai.defineFlow(
             return getErrorPayload(`AI data has an unexpected format: ${validationResult.error.flatten().formErrors.join(', ')}`);
         }
         
-        // Final sanity check on item amounts
         const doc = validationResult.data;
         doc.items = doc.items.map(it => ({
             ...it,

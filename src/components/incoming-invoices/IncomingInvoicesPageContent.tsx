@@ -49,6 +49,29 @@ const erpTableSortOptions: { key: ERPSortKey; label: string }[] = [
   { key: 'pdfFileName', label: 'PDF Name' },
 ];
 
+function cap<T>(arr: T[], max = 200) {
+  return Array.isArray(arr) && arr.length > max ? arr.slice(0, max) : arr;
+}
+
+
+// elimină recursiv undefined (și NaN), convertește Date -> Timestamp ISO
+function pruneForFirestore<T>(obj: T): T {
+  if (obj === null || typeof obj !== 'object') return obj;
+  if (Array.isArray(obj)) {
+    // curățăm elementele din array
+    return obj
+      .map((v) => pruneForFirestore(v))
+      .filter((v) => v !== undefined) as unknown as T;
+  }
+  const out: any = {};
+  for (const [k, v] of Object.entries(obj as any)) {
+    if (v === undefined || Number.isNaN(v)) continue;
+    if (v instanceof Date) { out[k] = v.toISOString(); continue; }
+    out[k] = pruneForFirestore(v as any);
+  }
+  return out;
+}
+
 
 function parseGermanNumber(v: any): number {
   if (v == null) return 0;
@@ -59,7 +82,7 @@ function parseGermanNumber(v: any): number {
 }
 
 type AnyLine = any;
-function normalizeLineItems(items: AnyLine[] | undefined, fallbackTotal?: number) {
+function normalizeLineItems(items: AnyLine[] | undefined, fallbackTotal?: number): any[] {
   const src = Array.isArray(items) ? items : [];
   let out = src.map((it) => {
     const name = it.productName ?? it.name ?? it.bezeichnung ?? 'ITEM';
@@ -69,26 +92,10 @@ function normalizeLineItems(items: AnyLine[] | undefined, fallbackTotal?: number
     const total= it.total != null ? parseGermanNumber(it.total) : +(qty * price).toFixed(2);
     const uom  = it.uom ?? it.einheit ?? 'Nos';
     return { productName: name, productCode: code, quantity: qty, unitPrice: price, total, uom };
-  }).filter(r => r.qty > 0 || r.total > 0);
+  }).filter(r => r.quantity > 0 || r.total > 0);
 
   if (out.length === 0 && (fallbackTotal ?? 0) > 0) {
     out = [{ productName: 'INVOICE TOTAL', productCode: 'TOTAL', quantity: 1, unitPrice: fallbackTotal, total: fallbackTotal, uom: 'Nos' }];
-  }
-  return out;
-}
-
-function pruneForFirestore<T>(obj: T): T {
-  if (obj === null || typeof obj !== 'object') return obj;
-  if (Array.isArray(obj)) {
-    return obj
-      .map((v) => pruneForFirestore(v))
-      .filter((v) => v !== undefined) as unknown as T;
-  }
-  const out: any = {};
-  for (const [k, v] of Object.entries(obj as any)) {
-    if (v === undefined || Number.isNaN(v)) continue;
-    if (v instanceof Date) { out[k] = v.toISOString(); continue; }
-    out[k] = pruneForFirestore(v as any);
   }
   return out;
 }
@@ -115,9 +122,6 @@ const getFileFingerprint = (file: File): string => {
     return `${file.name}-${file.size}-${file.lastModified}`;
 };
 
-function cap<T>(arr: T[], max = 200) {
-  return Array.isArray(arr) && arr.length > max ? arr.slice(0, max) : arr;
-}
 
 function findCachedInvoiceByFilename(name: string, erpMode: boolean) {
   try {
@@ -127,24 +131,6 @@ function findCachedInvoiceByFilename(name: string, erpMode: boolean) {
     const list = erpMode ? cached.erpProcessedInvoices : cached.extractedInvoices;
     return Array.isArray(list) ? list.find(inv => inv.pdfFileName === name) : null;
   } catch { return null; }
-}
-
-function safeErpFallback(filename: string) {
-  const today = new Date().toISOString().slice(0,10);
-  return {
-    rechnungsnummer: `INTERNAL-${today}-${Math.random().toString(36).slice(2,7).toUpperCase()}`,
-    datum: today,
-    lieferantName: 'UNBEKANNT_SUPPLIER_PLACEHOLDER',
-    lieferantAdresse: '',
-    zahlungsziel: '',
-    zahlungsart: '',
-    gesamtbetrag: 0,
-    rechnungspositionen: [{ productName: 'UNKNOWN ITEM', productCode: 'UNKNOWN', quantity: 1, unitPrice: 0 }],
-    isPaid: false,
-    anomalies: ['AI_CRASH_FALLBACK'],
-    pdfFileName: filename,
-    wahrung: 'EUR',
-  };
 }
 
 
@@ -265,6 +251,7 @@ export function IncomingInvoicesPageContent() {
   const supplierMap: Record<string, string> = {
     "LIDL": "Lidl",
     "LIDL DIGITAL DEUTSCHLAND GMBH & CO. KG": "Lidl",
+    "KAUFLAND MARKETPLACE GMBH": "Kaufland",
     "GD ARTLANDS ETRADING GMBH": "GD Artlands eTrading GmbH", 
     "RETOURA": "RETOURA",
     "DOITBAU GMBH & CO.KG": "doitBau", 
@@ -427,17 +414,32 @@ export function IncomingInvoicesPageContent() {
         let aiResult: ExtractIncomingInvoiceDataOutput | any;
         try {
             const dataUri = await readFileAsDataURL(file);
-            aiResult = await extractIncomingInvoiceData({ invoiceDataUri: dataUri });
+            const response = await fetch('/api/invoices/extract', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ dataUri, filename: file.name }),
+            });
+
+            if (!response.ok) {
+              const errorText = await response.text();
+              throw new Error(`Server responded with ${response.status}: ${errorText}`);
+            }
+
+            aiResult = await response.json();
+
         } catch (e: any) {
-            console.error('AI extraction crashed:', e);
+            console.error('API call or extraction crashed:', e);
             toast({
-                title: 'AI extraction failed',
+                title: 'Extraction failed',
                 description: (e?.message || String(e)).slice(0, 300),
                 variant: 'destructive',
             });
-            aiResult = safeErpFallback(file.name);
+            // Use a safe fallback from the server-side logic in the API route
+            aiResult = e.fallbackData || {
+                anomalies: ['CLIENT_SIDE_FETCH_FALLBACK'],
+                rechnungspositionen: [],
+            };
         }
-        
         
         const grandTotal = parseGermanNumber(aiResult.brutto ?? aiResult.gesamtbetrag ?? aiResult.total ?? aiResult.summe ?? 0);
         const items = normalizeLineItems(aiResult.rechnungspositionen, grandTotal);
@@ -464,8 +466,8 @@ export function IncomingInvoicesPageContent() {
         }
 
         
-        let remarks = '';
-        if (aiResult.kundenNummer) remarks += `Kunden-Nr.: ${aiResult.kundenNummer}`;
+        let remarks = (aiResult.remarks || '');
+        if (aiResult.kundenNummer) remarks += `${remarks ? ' / ' : ''}Kunden-Nr.: ${aiResult.kundenNummer}`;
         if (aiResult.bestellNummer) remarks += `${remarks ? ' / ' : ''}Bestell-Nr.: ${aiResult.bestellNummer}`;
         
         let istBezahltStatus: 0 | 1 = 0;
@@ -474,7 +476,7 @@ export function IncomingInvoicesPageContent() {
         } else {
             const zahlungszielLower = (aiResult.zahlungsziel || '').toLowerCase();
             const zahlungsartLower = (aiResult.zahlungsart || '').toLowerCase();
-            if (zahlungszielLower.includes('sofort') || zahlungsartLower === 'sofort' || zahlungsartLower === 'lastschrift' || zahlungsartLower.includes('paypal') || zahlungsartLower.includes('paid')) {
+            if (zahlungszielLower.includes('sofort') || zahlungsartLower === 'sofort' || zahlungsartLower === 'lastschrift' || zahlungsartLower.includes('paypal') || zahlungsartLower.includes('paid') || zahlungsartLower.includes('klarna')) {
               istBezahltStatus = 1;
             }
         }
@@ -504,7 +506,7 @@ export function IncomingInvoicesPageContent() {
           zahlungsziel: aiResult.zahlungsziel,
           zahlungsart: aiResult.zahlungsart,
           gesamtbetrag: grandTotal,
-          mwstSatz: aiResult.mwstSatz != null ? aiResult.mwstSatz : undefined,
+          mwstSatz: aiResult.mwstSatz != null ? String(aiResult.mwstSatz) : undefined,
           rechnungspositionen: items,
           kundenNummer: aiResult.kundenNummer,
           bestellNummer: aiResult.bestellNummer,
@@ -572,7 +574,7 @@ export function IncomingInvoicesPageContent() {
       setProcessedFileFingerprints(newFingerprints);
       
       const previousMatcherInvoices = JSON.parse(localStorage.getItem(LOCAL_STORAGE_MATCHER_DATA_KEY) || '[]');
-      const justProcessedForMatcher = erpMode ? currentErpInvoices : currentRegularInvoices.map(inv => ({
+      const justProcessedForMatcher = (erpMode ? currentErpInvoices : currentRegularInvoices).map(inv => ({
         pdfFileName: inv.pdfFileName,
         rechnungsnummer: inv.rechnungsnummer,
         datum: formatDateForERP(inv.datum),
