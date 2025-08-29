@@ -24,7 +24,8 @@ import JSZip from 'jszip';
 import Papa from 'papaparse';
 
 
-const LOCAL_STORAGE_PAGE_CACHE_KEY = 'incomingInvoicesPageCache';
+const CACHE_VERSION = 'v2';
+const LOCAL_STORAGE_PAGE_CACHE_KEY = `incomingInvoicesPageCache:${CACHE_VERSION}`;
 const LOCAL_STORAGE_MATCHER_DATA_KEY = 'processedIncomingInvoicesForMatcher';
 
 interface IncomingInvoicesPageCache {
@@ -67,6 +68,10 @@ function compareERPValues(valA: any, valB: any, order: SortOrder): number {
 const getFileFingerprint = (file: File): string => {
     return `${file.name}-${file.size}-${file.lastModified}`;
 };
+
+function cap<T>(arr: T[], max = 200) {
+  return Array.isArray(arr) && arr.length > max ? arr.slice(0, max) : arr;
+}
 
 
 export function IncomingInvoicesPageContent() {
@@ -141,25 +146,38 @@ export function IncomingInvoicesPageContent() {
   }, []);
 
   useEffect(() => {
-    if (status !== 'processing' && status !== 'idle') { // Avoid saving during processing or if truly idle
+    if (status !== 'processing' && status !== 'idle') {
       try {
         const cacheToSave: IncomingInvoicesPageCache = {
-          extractedInvoices,
-          erpProcessedInvoices,
+          extractedInvoices: cap(extractedInvoices),
+          erpProcessedInvoices: cap(erpProcessedInvoices),
           erpMode,
           status,
           existingErpInvoiceKeys: Array.from(existingErpInvoiceKeys),
           erpSortKey,
           erpSortOrder,
           kontenrahmen,
-          processedFileFingerprints: processedFileFingerprints,
+          processedFileFingerprints,
         };
-        localStorage.setItem(LOCAL_STORAGE_PAGE_CACHE_KEY, JSON.stringify(cacheToSave));
-      } catch (error) {
-        console.error("Failed to save incoming invoices page cache to localStorage:", error);
+        localStorage.setItem(
+          LOCAL_STORAGE_PAGE_CACHE_KEY,
+          JSON.stringify(cacheToSave)
+        );
+      } catch (err) {
+        console.error('Failed to save incoming invoices page cache:', err);
       }
     }
-  }, [extractedInvoices, erpProcessedInvoices, erpMode, status, existingErpInvoiceKeys, erpSortKey, erpSortOrder, kontenrahmen, processedFileFingerprints]);
+  }, [
+    extractedInvoices,
+    erpProcessedInvoices,
+    erpMode,
+    status,
+    existingErpInvoiceKeys,
+    erpSortKey,
+    erpSortOrder,
+    kontenrahmen,
+    processedFileFingerprints,
+  ]);
   
   const supplierMap: Record<string, string> = {
     "LIDL": "Lidl",
@@ -288,7 +306,7 @@ export function IncomingInvoicesPageContent() {
     if (duplicates.length > 0) {
         toast({
             title: "Duplicate Files Skipped",
-            description: `${duplicates.length} file(s) were already processed and are in the current list: ${duplicates.join(', ')}`,
+            description: `${duplicates.length} file(s) already processed; restored in list if missing: ${duplicates.join(', ')}`,
             variant: "default",
         });
     }
@@ -705,7 +723,7 @@ export function IncomingInvoicesPageContent() {
 
     toast({
       title: "Invoices Cleared",
-      description: "All processed invoices, selected files, and duplicate check data have been cleared.",
+      description: "All processed invoices, selected files, and duplicate check data have been cleared. Local cache removed.",
     });
   };
 
