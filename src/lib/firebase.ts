@@ -19,13 +19,11 @@ const app: FirebaseApp = getApps().length === 0 ? initializeApp(firebaseConfig) 
 
 // Initialize App Check
 if (typeof window !== 'undefined') {
-    // self.FIREBASE_APPCHECK_DEBUG_TOKEN = true; // Uncomment for local debug if needed
     try {
         initializeAppCheck(app, {
-            provider: new ReCaptchaV3Provider('6Ld5FbcrAAAAACkYWQDla0yJhXvSSHOVBUVAq6uv'), // Public reCAPTCHA Enterprise site key
+            provider: new ReCaptchaV3Provider('6Ld5FbcrAAAAACkYWQDla0yJhXvSSHOVBUVAq6uv'),
             isTokenAutoRefreshEnabled: true
         });
-        console.log("Firebase App Check initialized successfully.");
     } catch(e) {
         console.error("Error initializing Firebase App Check:", e);
     }
