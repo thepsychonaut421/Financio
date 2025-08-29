@@ -4,10 +4,11 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+export const maxDuration = 60; // Allow up to 60s for extraction
 
 const MODEL_NAME = process.env.GENAI_MODEL || 'gemini-1.5-flash';
 
-// --- Utility Functions (moved from client-side) ---
+// --- Utility Functions ---
 
 function parseGermanNumber(v: any): number {
   if (v == null) return 0;
@@ -17,17 +18,28 @@ function parseGermanNumber(v: any): number {
   return isFinite(n) ? n : 0;
 }
 
-type AnyLine = any;
-function normalizeLineItems(items: AnyLine[] | undefined, fallbackTotal?: number) {
+type LineItem = {
+  productName: string;
+  productCode: string;
+  quantity: number;
+  unitPrice: number;
+  total: number;
+  uom: string;
+};
+
+function normalizeLineItems(items: any[] | undefined, fallbackTotal?: number): LineItem[] {
   const src = Array.isArray(items) ? items : [];
-  let out = src.map((it) => {
-    const name = it.productName ?? it.name ?? it.bezeichnung ?? 'ITEM';
-    const code = it.productCode ?? it.code ?? it.sku ?? '';
-    const qty  = parseGermanNumber(it.qty ?? it.quantity ?? it.menge ?? 1);
-    const price= parseGermanNumber(it.unitPrice ?? it.price ?? it.preis ?? it.rate ?? 0);
-    const total= it.total != null ? parseGermanNumber(it.total) : +(qty * price).toFixed(2);
-    const uom  = it.uom ?? it.einheit ?? 'Nos';
-    return { productName: name, productCode: code, quantity: qty, unitPrice: price, total, uom };
+  let out: LineItem[] = src.map((it) => {
+    const qty = parseGermanNumber(it.qty ?? it.quantity ?? it.menge ?? 1);
+    const price = parseGermanNumber(it.unitPrice ?? it.price ?? it.preis ?? it.rate ?? 0);
+    return {
+      productName: it.productName ?? it.name ?? it.bezeichnung ?? 'ITEM',
+      productCode: it.productCode ?? it.code ?? it.sku ?? '',
+      quantity: qty,
+      unitPrice: price,
+      total: it.total != null ? parseGermanNumber(it.total) : +(qty * price).toFixed(2),
+      uom: it.uom ?? it.einheit ?? 'Nos',
+    };
   }).filter(r => r.quantity > 0 || r.total > 0);
 
   if (out.length === 0 && (fallbackTotal ?? 0) > 0) {
@@ -73,8 +85,19 @@ function extractJsonFromString(text: string): string | null {
     if (match && match[1]) {
         return match[1];
     }
-    if (text.trim().startsWith('{') && text.trim().endsWith('}')) {
-        return text.trim();
+    const raw = text.trim();
+    if (raw.startsWith('{') && raw.endsWith('}')) return raw;
+
+    let depth = 0, start = -1;
+    for (let i = 0; i < raw.length; i++) {
+        if (raw[i] === '{') { if (!depth) start = i; depth++; }
+        else if (raw[i] === '}') {
+            depth--;
+            if (!depth && start !== -1) {
+                const slice = raw.slice(start, i + 1);
+                try { JSON.parse(slice); return slice; } catch {}
+            }
+        }
     }
     return null;
 }
@@ -89,15 +112,20 @@ export async function POST(req: Request) {
     filename = (body?.filename as string) || filename;
 
     if (!dataUri || !dataUri.startsWith('data:') || !dataUri.includes(';base64,')) {
-      return NextResponse.json(
-        { error: 'Invalid or missing data URI.' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'Invalid or missing data URI.' }, { status: 400 });
     }
 
     const [meta, base64Data] = dataUri.split(',');
     const mimeMatch = meta.match(/^data:([^;]+);base64$/);
     const mimeType = mimeMatch?.[1] || 'application/pdf';
+    
+    const MAX_B64_SIZE = 8 * 1024 * 1024 * 1.4; // ~8MB PDF
+    if (base64Data.length > MAX_B64_SIZE) {
+        return NextResponse.json(safeErpFallback(filename, 'PDF is too large.'), { status: 200 });
+    }
+    if (mimeType !== 'application/pdf') {
+        return NextResponse.json(safeErpFallback(filename, 'File is not a PDF.'), { status: 200 });
+    }
 
     const apiKey = process.env.GOOGLE_GENAI_API_KEY;
     if (!apiKey) throw new Error('GOOGLE_GENAI_API_KEY is not set.');
@@ -107,7 +135,7 @@ export async function POST(req: Request) {
 
     const prompt = `You are a meticulous data extractor for accounting, specialized in German and cross-border invoices. Output ONLY a valid JSON object, no markdown, no prose.
 The target schema has these fields: { rechnungsnummer, datum (YYYY-MM-DD), lieferantName, lieferantAdresse, zahlungsziel, zahlungsart, gesamtbetrag (number), mwstSatz (number), rechnungspositionen: [{ productName, productCode, quantity, unitPrice, total }] }.
-If a value is not found, omit the key or set it to null. Ensure numbers are actual numbers, not strings.`;
+If a value is not found, omit the key or set it to null. Ensure numbers are actual numbers (using dot as decimal separator), not strings.`;
 
     const generation = await model.generateContent([
       { inlineData: { data: base64Data, mimeType } },
@@ -121,19 +149,22 @@ If a value is not found, omit the key or set it to null. Ensure numbers are actu
     }
 
     const parsed = JSON.parse(jsonString);
-    const safePayload = enforceErpSchemaSafety(parsed, filename);
+    let safePayload = enforceErpSchemaSafety(parsed, filename);
     
     // Final normalization before sending to client
     const grandTotal = parseGermanNumber(safePayload.gesamtbetrag ?? (parsed as any).brutto ?? (parsed as any).total ?? (parsed as any).summe ?? 0);
     safePayload.gesamtbetrag = grandTotal;
     safePayload.rechnungspositionen = normalizeLineItems(safePayload.rechnungspositionen ?? parsed.items, grandTotal);
+    if (safePayload.mwstSatz != null) {
+        safePayload.mwstSatz = parseGermanNumber(safePayload.mwstSatz);
+    }
 
-    return NextResponse.json(safePayload);
+    return NextResponse.json(safePayload, { headers: { 'Cache-Control': 'no-store' }});
   } catch (e: any) {
     console.error('[API /invoices/extract Error]', e);
     return NextResponse.json(
       safeErpFallback(filename, e?.message || String(e)),
-      { status: 200 }
+      { status: 200, headers: { 'Cache-Control': 'no-store' } }
     );
   }
 }
