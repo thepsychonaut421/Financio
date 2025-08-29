@@ -49,11 +49,37 @@ const erpTableSortOptions: { key: ERPSortKey; label: string }[] = [
   { key: 'pdfFileName', label: 'PDF Name' },
 ];
 
-// elimină recursiv undefined (și NaN), convertește Date -> Timestamp ISO
+
+function parseGermanNumber(v: any): number {
+  if (v == null) return 0;
+  if (typeof v === 'number') return isFinite(v) ? v : 0;
+  const s = String(v).trim().replace(/\./g, '').replace(',', '.'); // 1.234,56 -> 1234.56
+  const n = Number(s);
+  return isFinite(n) ? n : 0;
+}
+
+type AnyLine = any;
+function normalizeLineItems(items: AnyLine[] | undefined, fallbackTotal?: number) {
+  const src = Array.isArray(items) ? items : [];
+  let out = src.map((it) => {
+    const name = it.productName ?? it.name ?? it.bezeichnung ?? 'ITEM';
+    const code = it.productCode ?? it.code ?? it.sku ?? '';
+    const qty  = parseGermanNumber(it.qty ?? it.quantity ?? it.menge ?? 1);
+    const price= parseGermanNumber(it.unitPrice ?? it.preis ?? it.rate ?? 0);
+    const total= it.total != null ? parseGermanNumber(it.total) : +(qty * price).toFixed(2);
+    const uom  = it.uom ?? it.einheit ?? 'Nos';
+    return { productName: name, productCode: code, quantity: qty, unitPrice: price, total, uom };
+  }).filter(r => r.qty > 0 || r.total > 0);
+
+  if (out.length === 0 && (fallbackTotal ?? 0) > 0) {
+    out = [{ productName: 'INVOICE TOTAL', productCode: 'TOTAL', quantity: 1, unitPrice: fallbackTotal, total: fallbackTotal, uom: 'Nos' }];
+  }
+  return out;
+}
+
 function pruneForFirestore<T>(obj: T): T {
   if (obj === null || typeof obj !== 'object') return obj;
   if (Array.isArray(obj)) {
-    // curățăm elementele din array
     return obj
       .map((v) => pruneForFirestore(v))
       .filter((v) => v !== undefined) as unknown as T;
@@ -113,22 +139,12 @@ function safeErpFallback(filename: string) {
     zahlungsziel: '',
     zahlungsart: '',
     gesamtbetrag: 0,
-    rechnungspositionen: [{ productName: 'UNKNOWN ITEM', productCode: 'UNKNOWN', qty: 1, unitPrice: 0 }],
+    rechnungspositionen: [{ productName: 'UNKNOWN ITEM', productCode: 'UNKNOWN', quantity: 1, unitPrice: 0 }],
     isPaid: false,
     anomalies: ['AI_CRASH_FALLBACK'],
     pdfFileName: filename,
     wahrung: 'EUR',
   };
-}
-
-function normalizeLineItems(items: any[] | undefined) {
-    const arr = Array.isArray(items) ? items : [];
-    return arr.map(it => ({
-      productName: it.productName ?? it.name ?? 'UNKNOWN ITEM',
-      productCode: it.productCode ?? it.code ?? 'UNKNOWN',
-      quantity: it.qty ?? it.quantity ?? 1,
-      unitPrice: it.rate ?? it.unitPrice ?? 0,
-    }));
 }
 
 
@@ -402,8 +418,6 @@ export function IncomingInvoicesPageContent() {
 
     const yearCounters: Record<string, number> = {};
     const accumulatedErrors: string[] = [];
-    const toNumber = (v:any) => typeof v === 'number' ? v : Number(String(v).replace(',', '.')) || 0;
-
 
     try {
       for (let i = 0; i < filesToProcess.length; i++) {
@@ -424,15 +438,14 @@ export function IncomingInvoicesPageContent() {
             aiResult = safeErpFallback(file.name);
         }
         
-        const today = new Date().toISOString().slice(0,10);
-        aiResult = {
-          ...aiResult,
-          doctype: 'Purchase Invoice',
-          datum: aiResult?.datum || today,
-          lieferantAdresse: aiResult?.lieferantAdresse ?? '',
-          rechnungspositionen: normalizeLineItems(aiResult?.rechnungspositionen),
-          wahrung: aiResult?.wahrung || 'EUR',
-        };
+        
+        const grandTotal = parseGermanNumber(aiResult.brutto ?? aiResult.gesamtbetrag ?? aiResult.total ?? aiResult.summe ?? 0);
+        const items = normalizeLineItems(aiResult.rechnungspositionen, grandTotal);
+
+        const postingDateERP = formatDateForERP(aiResult.datum);
+        const billDateERP = postingDateERP; 
+        const dueDateERP = calculateDueDate(postingDateERP, aiResult.zahlungsziel);
+        const currency = (aiResult.wahrung ?? aiResult.currency ?? 'EUR').toString().toUpperCase() || 'EUR';
 
         const fingerprint = getFileFingerprint(file);
         newFingerprints[fingerprint] = file.name;
@@ -450,9 +463,6 @@ export function IncomingInvoicesPageContent() {
             finalLieferantName = "UNBEKANNT_SUPPLIER_PLACEHOLDER"; 
         }
 
-        const postingDateERP = formatDateForERP(aiResult.datum);
-        const billDateERP = postingDateERP; 
-        const dueDateERP = calculateDueDate(postingDateERP, aiResult.zahlungsziel);
         
         let remarks = '';
         if (aiResult.kundenNummer) remarks += `Kunden-Nr.: ${aiResult.kundenNummer}`;
@@ -493,16 +503,16 @@ export function IncomingInvoicesPageContent() {
           lieferantAdresse: aiResult.lieferantAdresse,
           zahlungsziel: aiResult.zahlungsziel,
           zahlungsart: aiResult.zahlungsart,
-          gesamtbetrag: toNumber(aiResult.gesamtbetrag),
+          gesamtbetrag: grandTotal,
           mwstSatz: aiResult.mwstSatz != null ? aiResult.mwstSatz : undefined,
-          rechnungspositionen: aiResult.rechnungspositionen,
+          rechnungspositionen: items,
           kundenNummer: aiResult.kundenNummer,
           bestellNummer: aiResult.bestellNummer,
           isPaidByAI: aiResult.isPaid,
           erpNextInvoiceName: internalRefId, 
           billDate: billDateERP, 
           dueDate: dueDateERP,   
-          wahrung: 'EUR', 
+          wahrung: currency, 
           istBezahlt: istBezahltStatus, 
           kontenrahmen: kontenrahmen.trim(), 
           remarks: remarks.trim(),
@@ -519,9 +529,9 @@ export function IncomingInvoicesPageContent() {
               lieferantAdresse: aiResult.lieferantAdresse,
               zahlungsziel: aiResult.zahlungsziel,
               zahlungsart: aiResult.zahlungsart,
-              gesamtbetrag: toNumber(aiResult.gesamtbetrag),
+              gesamtbetrag: grandTotal,
               mwstSatz: aiResult.mwstSatz,
-              rechnungspositionen: aiResult.rechnungspositionen,
+              rechnungspositionen: items,
               kundenNummer: aiResult.kundenNummer,
               bestellNummer: aiResult.bestellNummer,
               isPaidByAI: aiResult.isPaid,
@@ -533,10 +543,9 @@ export function IncomingInvoicesPageContent() {
           : (aiResult?.anomalies?.length ? 'WARN' : 'OK');
         
         try {
-          const uid = (!isAuthLoading && user?.uid) ? user.uid : 'anon';
-          if (uid !== 'anon') {
+          if (!isAuthLoading && user?.uid) {
               const erpDoc = {
-                userId: uid,
+                userId: user.uid,
                 filename: file.name,
                 status: statusForDoc,
                 erpMode: true, 
@@ -829,9 +838,9 @@ export function IncomingInvoicesPageContent() {
   
   const createInvoiceKey = (invoice: ERPIncomingInvoiceItem | IncomingInvoiceItem): string => {
     let dateToUse: string | undefined;
-    if ('datum' in invoice && invoice.datum) { // ERPIncomingInvoiceItem or IncomingInvoiceItem with YYYY-MM-DD
+    if ('datum' in invoice && invoice.datum) {
         dateToUse = invoice.datum;
-    } else if ('datum' in invoice) { // IncomingInvoiceItem with potentially other date format
+    } else if ('datum' in invoice) { 
         dateToUse = formatDateForERP(invoice.datum);
     }
     
@@ -851,7 +860,7 @@ export function IncomingInvoicesPageContent() {
     setErrorMessage(null);
     setErpExportFile(null);
     setExistingErpInvoiceKeys(new Set());
-    setErpSortKey('datum'); // Reset sort
+    setErpSortKey('datum'); 
     setErpSortOrder('desc');
     setProcessedFileFingerprints({});
 
@@ -1032,5 +1041,3 @@ export function IncomingInvoicesPageContent() {
     </div>
   );
 }
-
-    
