@@ -9,13 +9,15 @@ import { useToast } from '@/hooks/use-toast';
 
 // Your web app's Firebase configuration
 const firebaseConfig = {
-  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
-  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
-  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
-  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
-  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
+  apiKey: "AIzaSyA7aXkeQUB1UCZtc_28szbBI6YV-w1dYl4",
+  authDomain: "pdf-data-extractor-3krns.firebaseapp.com",
+  databaseURL: "https://pdf-data-extractor-3krns-default-rtdb.europe-west1.firebasedatabase.app",
+  projectId: "pdf-data-extractor-3krns",
+  storageBucket: "pdf-data-extractor-3krns.appspot.com",
+  messagingSenderId: "792878021257",
+  appId: "1:792878021257:web:d5be381975efbb4a8da458"
 };
+
 
 // Lazy initialization for Firebase app
 let app: FirebaseApp;
