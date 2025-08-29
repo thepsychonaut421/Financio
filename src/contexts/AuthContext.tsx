@@ -74,9 +74,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signInWithMicrosoft = async () => {
     const provider = new OAuthProvider('microsoft.com');
-    // Optional: Add scopes for specific data access
-    // provider.addScope('mail.read');
-    // provider.addScope('user.read');
+    // Forcing the "common" tenant endpoint often resolves internal errors
+    provider.setCustomParameters({
+        tenant: 'common',
+    });
 
     try {
         await signInWithPopup(auth, provider);
