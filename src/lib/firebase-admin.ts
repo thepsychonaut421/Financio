@@ -1,3 +1,4 @@
+
 // src/lib/firebase-admin.ts
 import type { Firestore } from 'firebase-admin/firestore';
 
@@ -29,3 +30,5 @@ export function getAdminDbSafe(): Promise<Firestore|null> {
   })();
   return _dbP;
 }
+
+    

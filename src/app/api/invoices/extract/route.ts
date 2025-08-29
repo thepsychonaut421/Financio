@@ -4,7 +4,6 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import { getAdminDbSafe } from '@/lib/firebase-admin';
 import crypto from 'crypto';
 import type { Firestore } from 'firebase-admin/firestore';
-import { FieldValue } from 'firebase-admin/firestore';
 
 
 export const runtime = 'nodejs';
@@ -41,6 +40,7 @@ async function ensureTranslationDoc(db: Firestore, input: string, scope: 'produc
 
   const snap = await ref.get();
   if (!snap.exists) {
+    const { FieldValue } = await import('firebase-admin/firestore');
     await ref.set({
       input: clean,
       scope,
@@ -291,6 +291,7 @@ If a value is not found, omit the key or set it to null. Ensure numbers are actu
 
     // Translation logic
     const adminDb = await getAdminDbSafe();
+    (safePayload as any).translationsEnabled = !!adminDb;
     if(adminDb) {
       try {
         const translateInputs: Array<{text:string, scope:'product'|'supplier'|'address'}> = [];
@@ -327,3 +328,5 @@ If a value is not found, omit the key or set it to null. Ensure numbers are actu
     );
   }
 }
+
+    
