@@ -38,8 +38,6 @@ export function BankStatementDataTable({ transactions }: BankStatementDataTableP
         comparison = valA - valB;
       } else if (typeof valA === 'string' && typeof valB === 'string') {
         comparison = valA.localeCompare(valB);
-      } else if (valA instanceof Date && valB instanceof Date) {
-        comparison = valA.getTime() - valB.getTime();
       }
 
       return sortOrder === 'asc' ? comparison : -comparison;

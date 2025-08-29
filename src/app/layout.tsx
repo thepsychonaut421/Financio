@@ -3,7 +3,7 @@ import './globals.css';
 import { Toaster } from "@/components/ui/toaster";
 import { AppHeader } from '@/components/shared/AppHeader';
 import { Inter } from 'next/font/google';
-import { AuthProvider } from '@/contexts/AuthContext'; // Added AuthProvider
+import { AuthProvider } from '@/contexts/AuthContext';
 
 const inter = Inter({
   subsets: ['latin'],
@@ -12,8 +12,8 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: 'Financio',
-  description: 'Extract data from PDFs, organize files, and match bank statements using AI.',
+  title: 'Financio - AI-Powered Financial Document Processing',
+  description: 'Financio uses AI to extract, organize, and manage your financial documents like invoices and bank statements with unparalleled speed and accuracy. Streamline your workflow today.',
 };
 
 export default function RootLayout({
@@ -24,10 +24,9 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${inter.variable} ${inter.className}`}>
       <head>
-        
       </head>
       <body className="antialiased min-h-screen flex flex-col">
-        <AuthProvider> {/* Wrapped with AuthProvider */}
+        <AuthProvider>
           <AppHeader />
           <main className="flex-grow">
             {children}

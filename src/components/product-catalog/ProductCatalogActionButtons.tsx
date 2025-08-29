@@ -3,7 +3,7 @@
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { productsToCSV, productsToJSON, downloadFile } from '@/lib/export-product-data';
-import type { EnrichedProduct } from '@/ai/flows/enrich-product-data';
+import type { EnrichedProduct } from '@/ai/schemas/product-catalog-schema';
 import { FileJson, FileSpreadsheet } from 'lucide-react';
 
 interface ProductCatalogActionButtonsProps {

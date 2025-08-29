@@ -60,7 +60,9 @@ function getDetailedRowData(match: MatchedTransaction): (string | number | undef
     matchedInvoice?.mwstSatz,
     matchedInvoice?.kundenNummer,
     matchedInvoice?.bestellNummer,
-    matchedInvoice?.isPaidByAI,
+    matchedInvoice?.isPaidByAI !== undefined
+      ? Number(matchedInvoice.isPaidByAI)
+      : undefined,
     matchedInvoice?.istBezahlt,
     matchedInvoice?.kontenrahmen,
     matchedInvoice?.billDate,

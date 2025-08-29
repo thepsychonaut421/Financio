@@ -114,7 +114,7 @@ export function ProductCatalogPageContent() {
         {status === 'idle' && enrichedProducts.length === 0 && (
           <Alert className="my-6 bg-primary/5 border-primary/20">
             <Info className="h-4 w-4 text-primary" />
-            <AlertTitle className="text-primary font-semibold">Los geht's</AlertTitle>
+            <AlertTitle className="text-primary font-semibold">Los geht&apos;s</AlertTitle>
             <AlertDescription className="text-primary/80">
               Geben Sie Produktnamen in das obige Textfeld ein, um Ihren Katalog zu erstellen.
             </AlertDescription>

@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import type { IncomingInvoiceItem, ERPIncomingInvoiceItem } from '@/types/incoming-invoice';
@@ -17,7 +18,7 @@ export function downloadFile(content: string | Blob, fileName: string, mimeType:
 }
 
 function escapeCSVField(field: string | number | undefined | null): string {
-  if (field === undefined || field === null) return '';
+  if (field === undefined || field === null) return '""';
   let stringField = String(field);
 
   // Force treatment as text in Excel for long numbers
@@ -87,85 +88,67 @@ export function incomingInvoicesToCSV(invoices: IncomingInvoiceItem[]): string {
 
 
 export function incomingInvoicesToERPNextCSVComplete(invoices: ERPIncomingInvoiceItem[]): string {
-  if (!invoices || invoices.length === 0) return '';
+    if (!invoices || invoices.length === 0) return '';
 
-  const allHeaders = [
-    "ID",
-    "Series",
-    "Supplier",
-    "Date",
-    "Credit To",
-    "Supplier Invoice No",
-    "Supplier Invoice Date",
-    "ID (Items)",
-    "Accepted Qty (Items)",
-    "Accepted Qty in Stock UOM (Items)",
-    "Amount (Items)",
-    "Amount (Company Currency) (Items)",
-    "Item Name (Items)",
-    "Rate (Items)",
-    "Rate (Company Currency) (Items)",
-    "UOM (Items)",
-    "UOM Conversion Factor (Items)",
-    "items.expense_account",
-  ];
-  
-  let csvString = allHeaders.map(escapeCSVField).join(',') + '\n';
+    const allHeaders = [
+        "ID", "Series", "Supplier", "Date", "Credit To", "Supplier Invoice No", "Supplier Invoice Date",
+        "ID (Items)", "Accepted Qty (Items)", "Accepted Qty in Stock UOM (Items)", "Amount (Items)",
+        "Amount (Company Currency) (Items)", "Item Name (Items)", "Rate (Items)",
+        "Rate (Company Currency) (Items)", "UOM (Items)", "UOM Conversion Factor (Items)", "items.expense_account",
+    ];
 
-  const DEFAULT_EXPENSE_ACCOUNT = "6000 - Warenaufwand - BRUG";
-  const DEFAULT_UOM = "Stk";
-  const DEFAULT_CONVERSION_FACTOR = '1';
+    let csvString = allHeaders.map(escapeCSVField).join(',') + '\n';
 
-  invoices.forEach((invoice, invoiceIndex) => {
-      const itemsToProcess = (invoice.rechnungspositionen && invoice.rechnungspositionen.length > 0)
-        ? invoice.rechnungspositionen
-        : [{ 
-            productCode: "DEFAULT_PLACEHOLDER_ITEM",
-            productName: `Invoice Total: ${invoice.rechnungsnummer || `INV${invoiceIndex + 1}`}`,
-            quantity: 1,
-            unitPrice: invoice.gesamtbetrag ?? 0,
-        }];
+    const DEFAULT_EXPENSE_ACCOUNT = "6000 - Warenaufwand - BRUG";
+    const DEFAULT_UOM = "Stk";
+    const DEFAULT_CONVERSION_FACTOR = '1';
 
-      itemsToProcess.forEach((item, itemIndex) => {
-          let invoiceLevelData;
-          if (itemIndex === 0) {
-              invoiceLevelData = [
-                  "", // ID
-                  "", // Series
-                  escapeCSVField(invoice.lieferantName),
-                  escapeCSVField(invoice.datum),
-                  escapeCSVField(invoice.kontenrahmen),
-                  escapeCSVField(invoice.rechnungsnummer),
-                  escapeCSVField(invoice.datum),
-              ];
-          } else {
-              invoiceLevelData = ['', '', '', '', '', '', ''];
-          }
+    invoices.forEach((invoice, invoiceIndex) => {
+        const invoiceLevelData = [
+            '""', // ID
+            '""', // Series
+            escapeCSVField(invoice.lieferantName),
+            escapeCSVField(invoice.datum),
+            escapeCSVField(invoice.kontenrahmen),
+            escapeCSVField(invoice.rechnungsnummer),
+            escapeCSVField(invoice.datum),
+        ];
 
-          const itemCodeValue = item.productCode || item.productName || `FALLBACK_ITEM_INV${invoiceIndex + 1}_ITEM${itemIndex + 1}`;
-          const itemNameValue = item.productName || item.productCode || `Item from Invoice ${invoice.rechnungsnummer || `INV${invoiceIndex + 1}`}`;
-          const itemRate = item.unitPrice ?? 0;
-          const itemQty = item.quantity ?? 0;
-          const itemAmount = itemQty * itemRate;
+        const itemsToProcess = (invoice.rechnungspositionen && invoice.rechnungspositionen.length > 0)
+            ? invoice.rechnungspositionen
+            : [{
+                productCode: "DEFAULT_PLACEHOLDER_ITEM",
+                productName: `Invoice Total: ${invoice.rechnungsnummer || `INV${invoiceIndex + 1}`}`,
+                quantity: 1,
+                unitPrice: invoice.gesamtbetrag ?? 0,
+            }];
 
-          const itemData = [
-              escapeCSVField(itemCodeValue),
-              escapeCSVField(itemQty.toString()),
-              escapeCSVField(itemQty.toString()), // Accepted Qty in Stock UOM
-              escapeCSVField(itemAmount.toFixed(2)),
-              escapeCSVField(itemAmount.toFixed(2)), // Amount (Company Currency)
-              escapeCSVField(itemNameValue),
-              escapeCSVField(itemRate.toFixed(2)),
-              escapeCSVField(itemRate.toFixed(2)), // Rate (Company Currency)
-              escapeCSVField(DEFAULT_UOM),
-              escapeCSVField(DEFAULT_CONVERSION_FACTOR),
-              escapeCSVField(DEFAULT_EXPENSE_ACCOUNT)
-          ];
+        itemsToProcess.forEach((item) => {
+            const itemCodeValue = item.productCode || item.productName || `FALLBACK_ITEM_INV${invoiceIndex + 1}`;
+            const itemNameValue = item.productName || item.productCode || `Item from Invoice ${invoice.rechnungsnummer || `INV${invoiceIndex + 1}`}`;
+            const itemRate = item.unitPrice ?? 0;
+            const itemQty = item.quantity ?? 0;
+            const itemAmount = itemQty * itemRate;
 
-          csvString += [...invoiceLevelData, ...itemData].join(',') + '\n';
-      });
-  });
-  return csvString;
+            const fullRow = [
+                ...invoiceLevelData,
+                escapeCSVField(itemCodeValue),
+                escapeCSVField(itemQty.toString()),
+                escapeCSVField(itemQty.toString()),
+                escapeCSVField(itemAmount.toFixed(2)),
+                escapeCSVField(itemAmount.toFixed(2)),
+                escapeCSVField(itemNameValue),
+                escapeCSVField(itemRate.toFixed(2)),
+                escapeCSVField(itemRate.toFixed(2)),
+                escapeCSVField(DEFAULT_UOM),
+                escapeCSVField(DEFAULT_CONVERSION_FACTOR),
+                escapeCSVField(DEFAULT_EXPENSE_ACCOUNT)
+            ];
+
+            csvString += fullRow.join(',') + '\n';
+        });
+    });
+    return csvString;
 }
 
 
@@ -222,6 +205,16 @@ export function incomingInvoicesToTSV(invoices: (IncomingInvoiceItem | ERPIncomi
   invoices.forEach((invoice, invoiceIndex) => {
     if (erpMode) {
         const erpInvoice = invoice as ERPIncomingInvoiceItem;
+        const invoiceLevelData = [
+            "", // ID - Leave blank
+            "", // Series - Leave blank
+            erpInvoice.lieferantName,
+            erpInvoice.datum,
+            erpInvoice.kontenrahmen,
+            erpInvoice.rechnungsnummer,
+            erpInvoice.datum,
+        ].map(f => escapeTSVField(f));
+
         const itemsToProcess = (erpInvoice.rechnungspositionen && erpInvoice.rechnungspositionen.length > 0)
             ? erpInvoice.rechnungspositionen
             : [{ 
@@ -232,23 +225,6 @@ export function incomingInvoicesToTSV(invoices: (IncomingInvoiceItem | ERPIncomi
             }];
         
         itemsToProcess.forEach((item, itemIndex) => {
-            let invoiceLevelData;
-            if (itemIndex === 0) {
-                // First row gets details
-                invoiceLevelData = [
-                    "",
-                    "",
-                    erpInvoice.lieferantName,
-                    erpInvoice.datum,
-                    erpInvoice.kontenrahmen,
-                    erpInvoice.rechnungsnummer,
-                    erpInvoice.datum,
-                ].map(f => escapeTSVField(f));
-            } else {
-                // Subsequent rows are blank
-                invoiceLevelData = ['', '', '', '', '', '', ''];
-            }
-
             const itemCodeValue = item.productCode || item.productName || `FALLBACK_ITEM_INV${invoiceIndex + 1}_ITEM${itemIndex + 1}`;
             const itemNameValue = item.productName || item.productCode || `Item for Invoice ${erpInvoice.rechnungsnummer || `INV${invoiceIndex + 1}`}`;
             const itemRate = item.unitPrice ?? 0;

@@ -15,6 +15,10 @@ export interface IncomingInvoiceData {
   bestellNummer?: string;
   isPaidByAI?: boolean;
   error?: string;
+  // New detailed financial fields
+  nettoBetrag?: number;
+  mwstBetrag?: number;
+  wahrung?: string; // Added currency field
 }
 
 export interface IncomingInvoiceItem extends IncomingInvoiceData {

@@ -1,0 +1,10 @@
+# Allow all user agents to crawl the site
+User-agent: *
+Allow: /
+
+# Disallow crawling of specific directories if needed, for example:
+# Disallow: /private/
+# Disallow: /api/
+
+# Specify the location of the sitemap
+Sitemap: https://your-domain.com/sitemap.xml

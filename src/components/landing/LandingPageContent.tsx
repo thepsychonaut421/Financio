@@ -1,9 +1,8 @@
-
 'use client';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
-import { ReceiptText, Landmark, FileEdit, FileScan, ArrowRight, Zap } from 'lucide-react';
+import { Landmark, FileEdit, FileScan, ArrowRight, Zap, ReceiptText } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
 
@@ -65,18 +64,6 @@ export function LandingPageContent() {
                         Access Account
                     </Button>
                 </Link>
-            </div>
-            <div className="mt-12 md:mt-20 relative">
-              <div className="absolute inset-0 bg-gradient-to-t from-background via-transparent to-transparent opacity-50 rounded-lg"></div>
-              <Image
-                src="https://placehold.co/1000x563.png"
-                alt="Financio Dashboard Mockup"
-                width={1000}
-                height={563}
-                className="rounded-xl shadow-2xl mx-auto relative z-10 border border-border"
-                data-ai-hint="modern dashboard app"
-                priority
-              />
             </div>
           </div>
         </section>
