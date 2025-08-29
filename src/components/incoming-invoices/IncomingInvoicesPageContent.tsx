@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { useState, useCallback, useEffect, ChangeEvent, useMemo } from 'react';
@@ -269,31 +268,21 @@ export function IncomingInvoicesPageContent() {
     setStatus('processing');
     setErrorMessage(null);
     setProgressValue(0);
-    
-    const newRegularInvoices: IncomingInvoiceItem[] = [];
-    const newErpInvoices: ERPIncomingInvoiceItem[] = [];
-    const newMatcherInvoices: ERPIncomingInvoiceItem[] = [];
+
+    const currentRegularInvoices = [...extractedInvoices];
+    const currentErpInvoices = [...erpProcessedInvoices];
+    const currentMatcherInvoices = JSON.parse(localStorage.getItem(LOCAL_STORAGE_MATCHER_DATA_KEY) || '[]');
     const newFingerprints = { ...processedFileFingerprints };
     const duplicates: string[] = [];
-
-    // Restore previously processed invoices that are duplicates
-    const cachedStateString = localStorage.getItem(LOCAL_STORAGE_PAGE_CACHE_KEY);
-    const cachedInvoices: (IncomingInvoiceItem | ERPIncomingInvoiceItem)[] = cachedStateString ? 
-        (JSON.parse(cachedStateString).erpMode ? JSON.parse(cachedStateString).erpProcessedInvoices : JSON.parse(cachedStateString).extractedInvoices) 
-        : [];
 
     const filesToProcess = selectedFiles.filter(file => {
         const fingerprint = getFileFingerprint(file);
         if (newFingerprints[fingerprint]) {
             duplicates.push(file.name);
-            const foundInvoice = cachedInvoices.find(inv => inv.pdfFileName === file.name);
-            if(foundInvoice) {
-                if(erpMode) {
-                    newErpInvoices.push(foundInvoice as ERPIncomingInvoiceItem);
-                } else {
-                    newRegularInvoices.push(foundInvoice as IncomingInvoiceItem);
-                }
-            }
+            const foundInvoice = erpMode 
+                ? erpProcessedInvoices.find(inv => inv.pdfFileName === file.name)
+                : extractedInvoices.find(inv => inv.pdfFileName === file.name);
+            // Even if found, we don't re-add it here, just notify. The list isn't cleared.
             return false;
         }
         return true;
@@ -302,16 +291,14 @@ export function IncomingInvoicesPageContent() {
     if (duplicates.length > 0) {
         toast({
             title: "Duplicate Files Skipped",
-            description: `${duplicates.length} file(s) were already processed and have been restored to the view: ${duplicates.join(', ')}`,
+            description: `${duplicates.length} file(s) were already processed and are in the current view: ${duplicates.join(', ')}`,
             variant: "default",
         });
     }
 
     if (filesToProcess.length === 0) {
-        setExtractedInvoices(prev => [...prev, ...newRegularInvoices]);
-        setErpProcessedInvoices(prev => [...prev, ...newErpInvoices]);
         setStatus('success');
-        setCurrentFileProgress('No new files to process. Duplicates restored.');
+        setCurrentFileProgress('No new files to process. Duplicates were skipped.');
         return;
     }
 
@@ -402,12 +389,12 @@ export function IncomingInvoicesPageContent() {
           kontenrahmen: kontenrahmen.trim(), 
           remarks: remarks.trim(),
         };
-        newMatcherInvoices.push(erpCompatibleInvoice);
+        currentMatcherInvoices.push(erpCompatibleInvoice);
 
         if (erpMode) {
-          newErpInvoices.push(erpCompatibleInvoice);
+          currentErpInvoices.push(erpCompatibleInvoice);
         } else {
-          newRegularInvoices.push({
+          currentRegularInvoices.push({
               pdfFileName: file.name,
               rechnungsnummer: rechnungsnummerToUse,
               datum: aiResult.datum, 
@@ -426,12 +413,11 @@ export function IncomingInvoicesPageContent() {
         setProgressValue(Math.round(((i + 1) / filesToProcess.length) * 100));
       }
 
-      setExtractedInvoices(prev => [...prev, ...newRegularInvoices]);
-      setErpProcessedInvoices(prev => [...prev, ...newErpInvoices]);
+      setExtractedInvoices(currentRegularInvoices);
+      setErpProcessedInvoices(currentErpInvoices);
       setProcessedFileFingerprints(newFingerprints);
       
-      const allProcessedForMatcher = [...erpProcessedInvoices, ...newMatcherInvoices];
-      localStorage.setItem(LOCAL_STORAGE_MATCHER_DATA_KEY, JSON.stringify(allProcessedForMatcher));
+      localStorage.setItem(LOCAL_STORAGE_MATCHER_DATA_KEY, JSON.stringify(currentMatcherInvoices));
       
       if (accumulatedErrors.length > 0) {
         setErrorMessage(accumulatedErrors.join('\n'));

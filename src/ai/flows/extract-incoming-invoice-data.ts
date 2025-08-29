@@ -1,4 +1,3 @@
-
 'use server';
 /**
  * @fileOverview Extracts detailed data from incoming invoices (Eingangsrechnungen).
@@ -148,30 +147,39 @@ The target schema is based on ERPNext Purchase Invoice fields.
 Extraction Rules:
 - Dates: Must be in ISO format (YYYY-MM-DD). Convert from other formats like DD.MM.YYYY.
 - Numbers: Must be floats with a dot as the decimal separator (e.g., 1234.56).
-- Supplier: Extract full name, full address, and any tax ID (USt-IdNr., NIP). The tax ID should be placed in the "remarks" field.
+- Supplier: Extract full name, full address, and any tax ID (USt-IdNr., NIP). The tax ID should be placed in 'custom_fields.supplier_vat_id'.
 - Order Reference: Capture any order numbers (Bestellnummer, ZK, etc.) and place them in 'custom_fields.order_reference'.
 - Currency: The primary currency of the invoice should be set in the 'currency' field.
-- **Multi-currency Invoices**: If the invoice shows totals in a secondary currency (e.g., PLN alongside EUR), extract the main currency (EUR) for the structured fields. Add a detailed note in the "remarks" field describing the secondary currency totals (e.g., "Also shows totals in PLN: Net 1319.03, VAT 250.62, Gross 1569.65.").
+- **Multi-currency Invoices**: If the invoice shows totals in a secondary currency (e.g., PLN alongside EUR), extract the main currency (EUR) for the structured fields. Put the secondary currency details in 'currency_secondary', 'totals_secondary', and add a note in the "remarks" field.
+- **Anomalies**: You MUST identify and flag special cases in an 'anomalies' array. Supported values are 'MULTI_CURRENCY', 'NO_ITEMS_EXTRACTED', 'ORDER_REFERENCE_DETECTED'.
 - Credit Notes: If the document is a Gutschrift or Credit Note, set 'is_return' to true.
 - Totals Check: Mentally verify that net + taxes is close to the grand total.
-- Missing Data: NEVER return an object with an "error" key. If a required field is missing, use null for optional fields and empty strings "" for required string fields. Explain any major ambiguities or missing critical data (like a missing invoice number) in the "remarks" field. Always include doctype, supplier, posting_date, bill_no, and bill_date.
+- **No Items Fallback**: CRITICAL: If you cannot extract any line items, you MUST return a fallback item: \`"items": [{"item_name":"UNKNOWN ITEM","qty":1,"rate":0,"amount":0}]\` and add 'NO_ITEMS_EXTRACTED' to the 'anomalies' array.
+- Missing Data: NEVER return an object with an "error" key. If a required field is missing, use null for optional fields and empty strings "" for required string fields. Explain any major ambiguities or missing critical data in the "remarks" field. Always include doctype, supplier, posting_date, bill_no, and bill_date.
 
-Target Fields Structure:
+Target Fields Structure (including new fields):
 \`\`\`json
 {
   "doctype": "Purchase Invoice",
   "supplier": "string (Full Supplier Name)",
+  "supplier_address": "string (Full Address)",
   "posting_date": "YYYY-MM-DD",
   "due_date": "YYYY-MM-DD|null",
   "bill_no": "string (Invoice Number)",
   "bill_date": "YYYY-MM-DD",
   "currency": "EUR",
+  "currency_main": "EUR",
+  "currency_secondary": "PLN|null",
+  "totals_main": { "net": 309.48, "vat": 58.80, "gross": 368.28 },
+  "totals_secondary": { "net": 1319.03, "vat": 250.62, "gross": 1569.65 },
   "items": [{ "item_code": "string|null", "item_name": "string", "qty": 1, "uom": "string", "rate": 0, "amount": 0, "tax_rate": 19, "tax_amount": 0 }],
   "taxes": [{ "charge_type": "On Net Total", "account_head": "Input Tax 19%", "rate": 19, "tax_amount": 0 }],
-  "supplier_address": "string (Full Address)",
-  "remarks": "string (Note any special conditions, secondary currency totals, or tax IDs here. Example: 'Tax ID: PL7773297218. Also shows totals in PLN: Net 1319.03, VAT 250.62, Gross 1569.65.')",
-  "custom_fields": { "order_reference": "string|null", "payment_method": "string|null" },
-  "is_return": false
+  "remarks": "string (Note special conditions here. Example: 'Order Ref: ZK 1216853... Secondary currency totals in PLN.')",
+  "custom_fields": { "order_reference": "string|null", "payment_method": "string|null", "supplier_vat_id": "string|null" },
+  "is_return": false,
+  "anomalies": ["MULTI_CURRENCY", "ORDER_REFERENCE_DETECTED"],
+  "extraction_confidence": 0.95,
+  "missing_fields": ["iban"]
 }
 \`\`\`
 
@@ -190,8 +198,9 @@ const getErrorPayload = (message: string): PurchaseInvoice & { error: string } =
     posting_date: now,
     bill_no: `ERROR-${Date.now()}`,
     bill_date: now,
-    items: [],
+    items: [{item_name: 'ERROR', qty: 1, rate: 0, amount: 0}], // Satisfy minItems:1
     error: message,
+    anomalies: ['EXTRACTION_FAILED'],
   };
 };
 
@@ -234,6 +243,15 @@ const extractIncomingInvoiceDataFlow = ai.defineFlow(
             return getErrorPayload(`AI Model Error: ${errorMessage}`);
         }
         
+        // Add fallback for items if AI fails to provide it
+        if (!parsedJson.items || !Array.isArray(parsedJson.items) || parsedJson.items.length === 0) {
+            parsedJson.items = [{ item_name: 'UNKNOWN ITEM', qty: 1, rate: 0, amount: 0 }];
+            if (!parsedJson.anomalies) parsedJson.anomalies = [];
+            if (!parsedJson.anomalies.includes('NO_ITEMS_EXTRACTED')) {
+                parsedJson.anomalies.push('NO_ITEMS_EXTRACTED');
+            }
+        }
+
         const validationResult = PurchaseInvoiceSchema.safeParse(parsedJson);
 
         if (!validationResult.success) {

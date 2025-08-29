@@ -1,4 +1,3 @@
-
 import { z } from 'genkit';
 
 // This is the old, simpler schema. It's kept for potential use in other, simpler flows
@@ -62,6 +61,22 @@ export const PurchaseInvoiceSchema = z.object({
   remarks: z.string().optional(),
   custom_fields: z.record(z.any()).optional().default({}),
   is_return: z.union([z.boolean(), z.number()]).optional().transform(v => v === 1 || v === true),
+  // NEW AI-aware fields
+  currency_main: z.string().optional(),
+  currency_secondary: z.string().optional().nullable(),
+  totals_main: z.object({
+      net: z.number().optional(),
+      vat: z.number().optional(),
+      gross: z.number().optional(),
+  }).optional(),
+  totals_secondary: z.object({
+      net: z.number().optional(),
+      vat: z.number().optional(),
+      gross: z.number().optional(),
+  }).optional().nullable(),
+  anomalies: z.array(z.string()).optional(),
+  extraction_confidence: z.number().min(0).max(1).optional(),
+  missing_fields: z.array(z.string()).optional(),
 });
 
 export type PurchaseInvoice = z.infer<typeof PurchaseInvoiceSchema>;
