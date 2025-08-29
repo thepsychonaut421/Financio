@@ -28,8 +28,8 @@ if (getApps().length === 0) {
   app = getApps()[0];
 }
 
-// Initialize App Check
-if (typeof window !== 'undefined') {
+// Initialize App Check ONLY IN PRODUCTION
+if (typeof window !== 'undefined' && process.env.NODE_ENV === 'production') {
     initializeAppCheck(app, {
         provider: new ReCaptchaV3Provider('6Ld5FbcrAAAAACkYWQDla0yJhXvSSHOVBUVAq6uv'), // Public reCAPTCHA Enterprise site key
         isTokenAutoRefreshEnabled: true
