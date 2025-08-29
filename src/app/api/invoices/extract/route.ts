@@ -23,7 +23,7 @@ function normalizeLineItems(items: AnyLine[] | undefined, fallbackTotal?: number
         const name = it.productName ?? it.name ?? it.bezeichnung ?? 'ITEM';
         const code = it.productCode ?? it.code ?? it.sku ?? '';
         const qty = parseGermanNumber(it.qty ?? it.quantity ?? it.menge ?? 1);
-        const price = parseGermanNumber(it.unitPrice ?? it.preis ?? it.rate ?? 0);
+        const price = parseGermanNumber(it.price ?? it.unitPrice ?? it.preis ?? it.rate ?? 0);
         const total = it.total != null ? parseGermanNumber(it.total) : +(qty * price).toFixed(2);
         const uom = it.uom ?? it.einheit ?? 'Nos';
         return { productName: name, productCode: code, quantity: qty, unitPrice: price, total, uom };
@@ -119,11 +119,13 @@ function extractJsonFromString(text: string): string | null {
 
 export async function POST(req: Request) {
     let uploadedFileName: string | undefined;
-    const { filename = 'unknown.pdf' } = await req.json().catch(() => ({}));
+
+    // Read body ONCE
+    let body: any = {};
+    try { body = await req.json(); } catch { body = {}; }
+    const { dataUri, filename = 'unknown.pdf' } = body;
 
     try {
-        const { dataUri } = await req.json();
-
         if (!dataUri || !dataUri.startsWith('data:application/pdf;base64,')) {
             return NextResponse.json({ error: 'Invalid or missing PDF data URI.' }, { status: 400 });
         }
@@ -146,7 +148,10 @@ export async function POST(req: Request) {
         });
         uploadedFileName = uploadResult.file.name;
 
-        const model = genAI.getGenerativeModel({ model: MODEL_NAME });
+        const model = genAI.getGenerativeModel({ 
+            model: MODEL_NAME,
+            generationConfig: { responseMimeType: 'application/json' },
+        });
         const prompt = `You are a meticulous data extractor for accounting, specialized in German and cross-border invoices. Output ONLY a valid JSON object, no markdown, no prose.
         The target schema has these fields: { rechnungsnummer, datum (in YYYY-MM-DD format), lieferantName, lieferantAdresse, zahlungsziel, zahlungsart, gesamtbetrag (as number), mwstSatz (as number), rechnungspositionen: [{ productName, productCode, quantity, unitPrice, total }] }.
         If a value is not found, omit the key or set it to null. Ensure numbers are actual numbers, not strings.`;
@@ -157,13 +162,7 @@ export async function POST(req: Request) {
         ]);
 
         const responseText = generationResult.response.text();
-        const jsonString = extractJsonFromString(responseText);
-        
-        if (!jsonString) {
-             throw new Error(`AI returned a non-JSON response. Raw text: ${responseText.substring(0, 200)}...`);
-        }
-
-        let parsedJson = JSON.parse(jsonString);
+        let parsedJson = JSON.parse(responseText);
 
         // Run schema safety and normalization
         const safePayload = enforceErpSchemaSafety(parsedJson, filename);
@@ -173,8 +172,7 @@ export async function POST(req: Request) {
     } catch (e: any) {
         console.error("[API /invoices/extract Error]", e);
         // Return a valid fallback payload with a 200 OK status
-        const fallback = safeErpFallback(filename, e.message || String(e));
-        return NextResponse.json(fallback, { status: 200 });
+        return NextResponse.json(safeErpFallback(filename, e.message || String(e)), { status: 200 });
 
     } finally {
         // Best-effort cleanup of the uploaded file
