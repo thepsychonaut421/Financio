@@ -1,7 +1,6 @@
 
 import { NextResponse } from 'next/server';
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import crypto from 'crypto';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -13,6 +12,7 @@ const MODEL_NAME = process.env.GENAI_MODEL || 'gemini-1.5-flash';
 type LineItem = {
   productName: string;
   productCode: string;
+  originalProductCode?: string | null;
   quantity: number;
   unitPrice: number;
   total: number;
@@ -40,18 +40,28 @@ function sumLineTotals(items: { quantity:number; unitPrice:number; total:number 
   return items.reduce((s, it) => s + (Number.isFinite(it.total) ? it.total : (it.quantity * it.unitPrice)), 0);
 }
 
-const VAT_NAME_RX = /^(?:mwst|mehrwertsteuer|umsatzsteuer|vat|tva)\b/i;
+const VAT_NAME_RX = /\b(mwst\.?|mehrwertsteuer|umsatzsteuer|ust|u\.?st\.?|vat|tva)\b/i;
+const PCT_RX = /\b\d{1,2}(?:[.,]\d{1,2})?\s*%\b/;
+
 function separateVatLine(items: LineItem[]) {
   let vatAmountFromLine = 0;
-  const filtered = items.filter(it => {
-    const looksVat = VAT_NAME_RX.test(String(it.productName || '').trim());
+  const kept: LineItem[] = [];
+
+  for (const it of items) {
+    const name = String(it.productName || '').trim();
+    const code = String(it.productCode || '').trim();
+    const looksVat =
+      VAT_NAME_RX.test(name) || PCT_RX.test(name) ||
+      /^(vat|mwst|ust)$/i.test(code);
+
     if (looksVat) {
-      vatAmountFromLine += parseGermanNumber(it.total ?? it.unitPrice);
-      return false; // remove line
+      const amount = parseGermanNumber(it.total ?? (it.unitPrice * it.quantity));
+      vatAmountFromLine += amount;
+      continue; // remove VAT line
     }
-    return true;
-  });
-  return { filtered, vatAmountFromLine };
+    kept.push(it);
+  }
+  return { filtered: kept, vatAmountFromLine: +vatAmountFromLine.toFixed(2) };
 }
 
 function deriveVatFromTotals(grandTotal: number, items: LineItem[]) {
@@ -101,21 +111,20 @@ function normalizeLineItems(items: any[] | undefined, fallbackTotal?: number): L
     const qty   = parseGermanNumber(it.qty ?? it.quantity ?? it.menge ?? 1);
     const price = parseGermanNumber(it.unitPrice ?? it.price ?? it.preis ?? it.rate ?? 0);
     const name  = it.productName ?? it.name ?? it.bezeichnung ?? 'ITEM';
-    let code    = it.productCode ?? it.code ?? it.sku ?? '';
+    const original = it.productCode ?? it.code ?? it.sku ?? '';
+    let code = original;
+    let autogenSku = false;
+
+    if (!code) { code = autoSku(name, it.lieferantName || it.supplier); autogenSku = true; }
+    
     const total = it.total != null ? parseGermanNumber(it.total) : +(qty * price).toFixed(2);
     const uom   = it.uom ?? it.einheit ?? 'Nos';
 
-    let autogenSku = false;
-    if (!code) {
-      code = autoSku(name, it.lieferantName || it.supplier);
-      autogenSku = true;
-    }
-
-    return { productName: name, productCode: code, quantity: qty, unitPrice: price, total, uom, autogenSku };
-  }).filter(r => r.quantity > 0 || r.total > 0);
+    return { productName: name, productCode: code, originalProductCode: original || null, quantity: qty, unitPrice: price, total, uom, autogenSku };
+  }).filter(r => r.quantity > 0 || r.total > 0 || r.productName.length > 3);
 
   if (out.length === 0 && (fallbackTotal ?? 0) > 0) {
-    out = [{ productName: 'INVOICE TOTAL', productCode: 'TOTAL', quantity: 1, unitPrice: fallbackTotal!, total: fallbackTotal!, uom: 'Nos' }];
+    out = [{ productName: 'INVOICE TOTAL', productCode: 'TOTAL', originalProductCode: null, quantity: 1, unitPrice: fallbackTotal!, total: fallbackTotal!, uom: 'Nos' }];
   }
   return out;
 }
@@ -128,7 +137,7 @@ function safeErpFallback(filename: string, errorMsg?: string) {
     datum: today,
     lieferantName: 'UNBEKANNT_SUPPLIER_PLACEHOLDER',
     gesamtbetrag: 0,
-    rechnungspositionen: [{ productName: 'UNKNOWN ITEM', productCode: 'UNKNOWN', quantity: 1, unitPrice: 0, total: 0, uom: 'Nos' }],
+    rechnungspositionen: [{ productName: 'UNKNOWN ITEM', productCode: 'UNKNOWN', originalProductCode: null, quantity: 1, unitPrice: 0, total: 0, uom: 'Nos', autogenSku: true }],
     isPaid: false,
     anomalies: ['AI_CRASH_FALLBACK'],
     pdfFileName: filename,
@@ -153,25 +162,6 @@ function enforceErpSchemaSafety(aiResult: any, filename: string) {
     };
 }
 
-function extractJsonFromString(text: string): string | null {
-    const code = text.match(/```json\s*([\s\S]*?)```/i)?.[1]?.trim();
-    if (code) return code;
-    const raw = text.trim();
-    if (raw.startsWith('{') && raw.endsWith('}')) return raw;
-  
-    let depth = 0, start = -1;
-    for (let i = 0; i < raw.length; i++) {
-      if (raw[i] === '{') { if (!depth) start = i; depth++; }
-      else if (raw[i] === '}') {
-        depth--;
-        if (!depth && start !== -1) {
-          const slice = raw.slice(start, i + 1);
-          try { JSON.parse(slice); return slice; } catch {}
-        }
-      }
-    }
-    return null;
-}
 
 // --- API Route Handler ---
 
@@ -235,19 +225,24 @@ If a value is not found, omit the key or set it to null. Ensure numbers are actu
 
     // 3) Calculate/validate VAT rate
     let mwst = parseGermanNumber(safePayload.mwstSatz ?? parsed.mwstSatz);
-    if (!isFinite(mwst) || mwst <= 0 || mwst >= 100) {
-      const guessed = deriveVatFromTotals(safePayload.gesamtbetrag, items);
-      if (guessed != null) mwst = guessed;
+    const sumItems = sumLineTotals(items);
+    const fromTotals = deriveVatFromTotals(safePayload.gesamtbetrag, items);
+    const fromVatLine = vatAmountFromLine > 0 && sumItems > 0
+        ? snapVatRate((vatAmountFromLine / sumItems) * 100)
+        : null;
+
+    if (!Number.isFinite(mwst) || mwst <= 0 || mwst >= 100) {
+        mwst = fromTotals ?? fromVatLine ?? 0;
     }
     mwst = snapVatRate(mwst);
-
+    
     // 4) Check for inconsistencies if a VAT line was found
-    const itemsSum = +sumLineTotals(items).toFixed(2);
-    const diff = +(safePayload.gesamtbetrag - itemsSum).toFixed(2);
+    const MONEY_EPS = 0.02;
+    const diff = +(safePayload.gesamtbetrag - sumItems).toFixed(2);
     const delta = Math.abs(diff - vatAmountFromLine);
-    if (vatAmountFromLine > 0 && delta <= 0.02) {
+    if (vatAmountFromLine > 0 && delta <= MONEY_EPS) {
       safePayload.anomalies = Array.from(new Set([...(safePayload.anomalies || []), 'VAT_LINE_REMOVED']));
-    } else if (vatAmountFromLine > 0 && delta > 0.02) {
+    } else if (vatAmountFromLine > 0 && delta > MONEY_EPS) {
       safePayload.anomalies = Array.from(new Set([...(safePayload.anomalies || []), 'VAT_INCONSISTENT_ITEMS']));
     }
     
@@ -268,6 +263,3 @@ If a value is not found, omit the key or set it to null. Ensure numbers are actu
     );
   }
 }
-
-
-    
