@@ -3,7 +3,7 @@
 
 import React, { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
-import { getAuth, onAuthStateChanged, type User, signInWithEmailAndPassword, signOut, connectAuthEmulator } from 'firebase/auth';
+import { getAuth, onAuthStateChanged, type User, signInWithEmailAndPassword, signOut, OAuthProvider, signInWithPopup } from 'firebase/auth';
 import { initializeApp, getApps, type FirebaseApp } from 'firebase/app';
 import { useToast } from '@/hooks/use-toast';
 
@@ -42,6 +42,7 @@ interface AuthContextType {
   isLoading: boolean;
   login: () => Promise<void>;
   logout: () => void;
+  signInWithMicrosoft: () => Promise<void>;
   getIdToken: () => Promise<string | null>;
 }
 
@@ -92,6 +93,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const signInWithMicrosoft = async () => {
+    if (process.env.NEXT_PUBLIC_MOCK_AUTH === 'true') {
+       toast({ title: "Logged in with Microsoft (Mock)" });
+       router.push('/incoming-invoices');
+       return;
+    }
+
+    const provider = new OAuthProvider('microsoft.com');
+    // Optional: Add scopes for specific data access
+    // provider.addScope('mail.read');
+    // provider.addScope('user.read');
+
+    try {
+        await signInWithPopup(auth, provider);
+        // onAuthStateChanged will handle the user state update and redirect
+    } catch (error: any) {
+        console.error("Microsoft Sign-In failed:", error);
+        toast({
+            title: "Microsoft Sign-In Failed",
+            description: error.message || "An unknown error occurred.",
+            variant: "destructive"
+        });
+    }
+  };
+
   const logout = async () => {
     if (process.env.NEXT_PUBLIC_MOCK_AUTH === 'true') {
       setUser(null);
@@ -123,7 +149,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [isLoading, user, pathname, router]);
 
   return (
-    <AuthContext.Provider value={{ user, isAuthenticated: !!user, isLoading, login, logout, getIdToken }}>
+    <AuthContext.Provider value={{ user, isAuthenticated: !!user, isLoading, login, logout, signInWithMicrosoft, getIdToken }}>
       {children}
     </AuthContext.Provider>
   );

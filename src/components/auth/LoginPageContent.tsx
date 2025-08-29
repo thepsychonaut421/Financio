@@ -13,8 +13,17 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
 
+const MicrosoftIcon = (props: React.SVGProps<SVGSVGElement>) => (
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 21 21" {...props}>
+    <path fill="#f25022" d="M1 1h9v9H1z" />
+    <path fill="#00a4ef" d="M1 11h9v9H1z" />
+    <path fill="#7fba00" d="M11 1h9v9h-9z" />
+    <path fill="#ffb900" d="M11 11h9v9h-9z" />
+  </svg>
+);
+
 export function LoginPageContent() {
-  const { login, isAuthenticated, isLoading } = useAuth();
+  const { login, signInWithMicrosoft, isAuthenticated, isLoading } = useAuth();
   const router = useRouter();
   const { toast } = useToast();
 
@@ -38,12 +47,18 @@ export function LoginPageContent() {
     });
   }
   
-  const handleSocialLogin = (provider: 'Google' | 'GitHub') => {
-      toast({
-          title: `${provider} Sign-In`,
-          description: `Sign-in with ${provider} is not yet implemented in this demo.`,
-          variant: 'default'
-      });
+  const handleSocialLogin = (provider: 'Google' | 'GitHub' | 'Microsoft') => {
+      switch (provider) {
+        case 'Microsoft':
+            signInWithMicrosoft();
+            break;
+        case 'Google':
+            toast({ title: 'Google Sign-In', description: 'Sign-in with Google is not yet implemented in this demo.' });
+            break;
+        case 'GitHub':
+            toast({ title: 'GitHub Sign-In', description: 'Sign-in with GitHub is not yet implemented in this demo.' });
+            break;
+      }
   }
 
   if (isLoading || (!isLoading && isAuthenticated)) {
@@ -119,12 +134,15 @@ export function LoginPageContent() {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <Button variant="outline" className="py-6 text-base" onClick={() => handleSocialLogin('Google')}>
               <Chrome className="mr-2 h-5 w-5" /> Google
             </Button>
             <Button variant="outline" className="py-6 text-base" onClick={() => handleSocialLogin('GitHub')}>
               <Github className="mr-2 h-5 w-5" /> GitHub
+            </Button>
+            <Button variant="outline" className="py-6 text-base" onClick={() => handleSocialLogin('Microsoft')}>
+                <MicrosoftIcon className="mr-2 h-5 w-5" /> Microsoft
             </Button>
           </div>
 
