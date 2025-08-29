@@ -340,6 +340,30 @@ export function IncomingInvoicesPageContent() {
     const newFingerprints = { ...processedFileFingerprints };
     const duplicates: string[] = [];
 
+    // === registry mirror ===
+    const REG_KEY = 'financio:processed-registry:v1';
+    type RegistryEntry = {
+      id: string;               // `${filename}::${Date.now()}`
+      filename: string;
+      status: 'OK'|'WARN'|'ERROR'|'DUPLICATE';
+      erpMode: boolean;
+      payload: any;             // ERPIncomingInvoiceItem compat
+      createdAt: string;        // ISO
+    };
+
+    function pushToRegistry(entry: RegistryEntry) {
+      try {
+        const raw = localStorage.getItem(REG_KEY);
+        const arr = raw ? JSON.parse(raw) as RegistryEntry[] : [];
+        arr.unshift(entry);
+        // cap la 500
+        localStorage.setItem(REG_KEY, JSON.stringify(arr.slice(0, 500)));
+      } catch (e) {
+        console.error('pushToRegistry failed', e);
+      }
+    }
+
+
     const filesToProcess = selectedFiles.filter(file => {
       const fingerprint = getFileFingerprint(file);
       if (newFingerprints[fingerprint]) {
@@ -351,8 +375,20 @@ export function IncomingInvoicesPageContent() {
         if (!existsInUi) {
           const cached = findCachedInvoiceByFilename(file.name, erpMode);
           if (cached) {
-            if (erpMode) currentErpInvoices.unshift(cached as ERPIncomingInvoiceItem);
-            else currentRegularInvoices.unshift(cached as any);
+            if (erpMode) {
+              currentErpInvoices.unshift(cached as ERPIncomingInvoiceItem);
+            } else {
+              currentRegularInvoices.unshift(cached as any);
+            }
+
+            pushToRegistry({
+                id: `${file.name}::${Date.now()}`,
+                filename: file.name,
+                status: 'DUPLICATE',
+                erpMode: erpMode,
+                payload: cached,
+                createdAt: new Date().toISOString(),
+            });
           }
         }
         
@@ -485,6 +521,20 @@ export function IncomingInvoicesPageContent() {
               isPaidByAI: aiResult.isPaid,
           });
         }
+        
+        const registryStatus: RegistryEntry['status'] =
+            (aiResult as any)?.error ? 'ERROR' :
+            ((aiResult as any)?.anomalies?.length ? 'WARN' : 'OK');
+
+        pushToRegistry({
+            id: `${file.name}::${Date.now()}`,
+            filename: file.name,
+            status: registryStatus,
+            erpMode: true, // Always save ERP-compatible payload
+            payload: erpCompatibleInvoice,
+            createdAt: new Date().toISOString(),
+        });
+
         setProgressValue(Math.round(((i + 1) / filesToProcess.length) * 100));
       }
 
@@ -954,5 +1004,3 @@ export function IncomingInvoicesPageContent() {
     </div>
   );
 }
-
-    
