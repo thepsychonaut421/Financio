@@ -27,14 +27,6 @@ if (getApps().length === 0) {
 
 const auth = getAuth(app);
 
-// Use a mocked user for local development to bypass emulator network issues
-const mockUser = {
-  uid: 'testuser',
-  email: 'test@example.com',
-  displayName: 'Test User',
-  emailVerified: true,
-};
-
 
 interface AuthContextType {
   user: User | null;
@@ -56,14 +48,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const { toast } = useToast();
 
   useEffect(() => {
-    // If mocking auth, just set the user and stop loading.
-    if (process.env.NEXT_PUBLIC_MOCK_AUTH === 'true') {
-      setUser(mockUser as User);
-      setIsLoading(false);
-      return;
-    }
-
-    // Otherwise, use real Firebase auth
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       setUser(user);
       setIsLoading(false);
@@ -73,13 +57,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const login = async () => {
-    // If mocking, we don't need to do anything as the user is already "logged in"
-    if (process.env.NEXT_PUBLIC_MOCK_AUTH === 'true') {
-       toast({ title: "Logged in (Mock)" });
-       router.push('/incoming-invoices');
-       return;
-    }
-      
     try {
       await signInWithEmailAndPassword(auth, "test@example.com", "password");
       // On successful login, onAuthStateChanged will trigger and handle the redirect
@@ -94,12 +71,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signInWithMicrosoft = async () => {
-    if (process.env.NEXT_PUBLIC_MOCK_AUTH === 'true') {
-       toast({ title: "Logged in with Microsoft (Mock)" });
-       router.push('/incoming-invoices');
-       return;
-    }
-
     const provider = new OAuthProvider('microsoft.com');
     // Optional: Add scopes for specific data access
     // provider.addScope('mail.read');
@@ -119,12 +90,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const logout = async () => {
-    if (process.env.NEXT_PUBLIC_MOCK_AUTH === 'true') {
-      setUser(null);
-      router.push('/login');
-      return;
-    }
-      
     try {
       await signOut(auth);
       router.push('/login');
@@ -134,9 +99,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const getIdToken = async (): Promise<string | null> => {
-    if (process.env.NEXT_PUBLIC_MOCK_AUTH === 'true') {
-      return 'mock-token';
-    }
     if (!auth.currentUser) return null;
     return auth.currentUser.getIdToken(true);
   };
