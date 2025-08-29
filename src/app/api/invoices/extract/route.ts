@@ -13,10 +13,23 @@ const MODEL_NAME = process.env.GENAI_MODEL || 'gemini-1.5-flash';
 function parseGermanNumber(v: any): number {
   if (v == null) return 0;
   if (typeof v === 'number') return Number.isFinite(v) ? v : 0;
-  const s = String(v).trim().replace(/\./g, '').replace(/,/g, '.');
+  // Clean NBSP, currency symbols, thousands separators (., ', space), and normalize decimal comma to dot.
+  let s = String(v)
+    .replace(/\u00A0/g, ' ')              // NBSP -> space
+    .replace(/[^\d,.\- ()']/g, '')        // Remove non-numeric symbols except for separators
+    .trim()
+    .replace(/'/g, '')                    // Swiss thousands separator
+    .replace(/\./g, '')                   // German thousands separator
+    .replace(/\s+/g, '')                  // Thousands separator with space
+    .replace(/,/g, '.');                  // European decimal comma
+  
+  // Support for accounting-style negative numbers: (123.45)
+  const neg = /^\(.*\)$/.test(s);
+  if (neg) s = s.slice(1, -1);
   const n = Number(s);
-  return Number.isFinite(n) ? n : 0;
+  return Number.isFinite(n) ? (neg ? -n : n) : 0;
 }
+
 
 type LineItem = {
   productName: string;
@@ -80,6 +93,7 @@ function enforceErpSchemaSafety(aiResult: any, filename: string) {
     };
 }
 
+// Not needed when forcing JSON response, but good to have as a utility
 function extractJsonFromString(text: string): string | null {
     const match = text.match(/```json\s*([\s\S]*?)\s*```/);
     if (match && match[1]) {
@@ -124,7 +138,8 @@ export async function POST(req: Request) {
     if (approxBytes > 8 * 1024 * 1024) { // ~8MB PDF
         return NextResponse.json(safeErpFallback(filename, 'PDF is too large.'), { status: 200, headers: { 'Cache-Control': 'no-store' } });
     }
-    if (!/^application\/pdf$/i.test(mimeType.split(';')[0])) {
+    const isMimeOk = /^application\/pdf(\s*;.*)?$/i.test(mimeType);
+    if (!isMimeOk) {
         return NextResponse.json(safeErpFallback(filename, 'File is not a PDF.'), { status: 200, headers: { 'Cache-Control': 'no-store' } });
     }
 
@@ -168,5 +183,3 @@ If a value is not found, omit the key or set it to null. Ensure numbers are actu
     );
   }
 }
-
-    
