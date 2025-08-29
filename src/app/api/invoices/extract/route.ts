@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
 export const runtime = 'nodejs';
-export const dynamic = 'force_dynamic';
+export const dynamic = 'force-dynamic';
 export const maxDuration = 60; // Allow up to 60s for extraction
 
 const MODEL_NAME = process.env.GENAI_MODEL || 'gemini-1.5-flash';
@@ -40,26 +40,50 @@ type LineItem = {
   uom: string;
 };
 
+function slug8(s: string) {
+    return (s || 'ITEM').toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,8) || 'ITEM';
+}
+
 function normalizeLineItems(items: any[] | undefined, fallbackTotal?: number): LineItem[] {
   const src = Array.isArray(items) ? items : [];
-  let out: LineItem[] = src.map((it) => {
-    const qty = parseGermanNumber(it.qty ?? it.quantity ?? it.menge ?? 1);
-    const price = parseGermanNumber(it.unitPrice ?? it.price ?? it.preis ?? it.rate ?? 0);
+  let out = src.map((it) => {
+    const name = it.productName ?? it.name ?? it.bezeichnung ?? 'ITEM';
+    const qty  = parseGermanNumber(it.qty ?? it.quantity ?? it.menge ?? 0);
+    let price  = parseGermanNumber(it.unitPrice ?? it.price ?? it.preis ?? it.rate ?? 0);
+    let total  = it.total != null ? parseGermanNumber(it.total) : 0;
+
+    // derive if needed
+    if (total === 0 && qty > 0 && price > 0) total = +(qty * price).toFixed(2);
+    if (qty <= 0 && total > 0) {         // fix „cantitate zero”
+      return {
+        productName: name,
+        productCode: it.productCode ?? it.code ?? it.sku ?? slug8(name),
+        quantity: 1,
+        unitPrice: total,
+        total,
+        uom: it.uom ?? it.einheit ?? 'Nos',
+      };
+    }
+    if (price === 0 && qty > 0 && total > 0) price = +(total / qty).toFixed(2);
+
     return {
-      productName: it.productName ?? it.name ?? it.bezeichnung ?? 'ITEM',
-      productCode: it.productCode ?? it.code ?? it.sku ?? '',
-      quantity: qty,
+      productName: name,
+      productCode: it.productCode ?? it.code ?? it.sku ?? slug8(name),
+      quantity: qty > 0 ? qty : 0,
       unitPrice: price,
-      total: it.total != null ? parseGermanNumber(it.total) : +(qty * price).toFixed(2),
+      total,
       uom: it.uom ?? it.einheit ?? 'Nos',
     };
-  }).filter(r => r.quantity > 0 || r.total > 0);
+  })
+  // elimină rânduri complet goale/zgomot
+  .filter(r => r.quantity > 0 || r.total > 0 || r.productName.length > 3);
 
   if (out.length === 0 && (fallbackTotal ?? 0) > 0) {
-    out = [{ productName: 'INVOICE TOTAL', productCode: 'TOTAL', quantity: 1, unitPrice: fallbackTotal, total: fallbackTotal, uom: 'Nos' }];
+    out = [{ productName: 'INVOICE TOTAL', productCode: 'TOTAL', quantity: 1, unitPrice: fallbackTotal!, total: fallbackTotal!, uom: 'Nos' }];
   }
   return out;
 }
+
 
 function safeErpFallback(filename: string, errorMsg?: string) {
   const today = new Date().toISOString().slice(0, 10);
@@ -93,25 +117,23 @@ function enforceErpSchemaSafety(aiResult: any, filename: string) {
     };
 }
 
-// Not needed when forcing JSON response, but good to have as a utility
 function extractJsonFromString(text: string): string | null {
-    const match = text.match(/```json\s*([\s\S]*?)\s*```/);
-    if (match && match[1]) {
-        return match[1];
-    }
+    const code = text.match(/```json\s*([\s\S]*?)```/i)?.[1]?.trim();
+    if (code) return code;
     const raw = text.trim();
     if (raw.startsWith('{') && raw.endsWith('}')) return raw;
-
+  
+    // căutăm primul obiect JSON echilibrat
     let depth = 0, start = -1;
     for (let i = 0; i < raw.length; i++) {
-        if (raw[i] === '{') { if (!depth) start = i; depth++; }
-        else if (raw[i] === '}') {
-            depth--;
-            if (!depth && start !== -1) {
-                const slice = raw.slice(start, i + 1);
-                try { JSON.parse(slice); return slice; } catch {}
-            }
+      if (raw[i] === '{') { if (!depth) start = i; depth++; }
+      else if (raw[i] === '}') {
+        depth--;
+        if (!depth && start !== -1) {
+          const slice = raw.slice(start, i + 1);
+          try { JSON.parse(slice); return slice; } catch {}
         }
+      }
     }
     return null;
 }
@@ -172,6 +194,11 @@ If a value is not found, omit the key or set it to null. Ensure numbers are actu
     safePayload.rechnungspositionen = normalizeLineItems(safePayload.rechnungspositionen, safePayload.gesamtbetrag);
     if (safePayload.mwstSatz != null) {
         safePayload.mwstSatz = parseGermanNumber(safePayload.mwstSatz);
+    }
+    
+    const allZero = safePayload.rechnungspositionen.every((li: any) => parseGermanNumber(li.total) === 0);
+    if (safePayload.gesamtbetrag > 0 && allZero) {
+      safePayload.anomalies = Array.from(new Set([...(safePayload.anomalies || []), 'ZERO_LINES_WITH_TOTAL']));
     }
 
     return NextResponse.json(safePayload, { headers: { 'Cache-Control': 'no-store' }});
