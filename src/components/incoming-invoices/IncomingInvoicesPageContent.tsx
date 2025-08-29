@@ -49,6 +49,25 @@ const erpTableSortOptions: { key: ERPSortKey; label: string }[] = [
   { key: 'pdfFileName', label: 'PDF Name' },
 ];
 
+// elimină recursiv undefined (și NaN), convertește Date -> Timestamp ISO
+function pruneForFirestore<T>(obj: T): T {
+  if (obj === null || typeof obj !== 'object') return obj;
+  if (Array.isArray(obj)) {
+    // curățăm elementele din array
+    return obj
+      .map((v) => pruneForFirestore(v))
+      .filter((v) => v !== undefined) as unknown as T;
+  }
+  const out: any = {};
+  for (const [k, v] of Object.entries(obj as any)) {
+    if (v === undefined || Number.isNaN(v)) continue;
+    if (v instanceof Date) { out[k] = v.toISOString(); continue; }
+    out[k] = pruneForFirestore(v as any);
+  }
+  return out;
+}
+
+
 function compareERPValues(valA: any, valB: any, order: SortOrder): number {
   const aIsNil = valA === null || valA === undefined || valA === '';
   const bIsNil = valB === null || valB === undefined || valB === '';
@@ -371,10 +390,9 @@ export function IncomingInvoicesPageContent() {
             description: `${duplicates.length} already processed. If they weren’t visible, I restored them from cache.`,
             variant: "default",
         });
+        setExtractedInvoices(currentRegularInvoices);
+        setErpProcessedInvoices(currentErpInvoices);
     }
-
-    setExtractedInvoices(currentRegularInvoices);
-    setErpProcessedInvoices(currentErpInvoices);
 
     if (filesToProcess.length === 0) {
         setStatus('success');
@@ -411,6 +429,7 @@ export function IncomingInvoicesPageContent() {
           ...aiResult,
           doctype: 'Purchase Invoice',
           datum: aiResult?.datum || today,
+          lieferantAdresse: aiResult?.lieferantAdresse ?? '',
           rechnungspositionen: normalizeLineItems(aiResult?.rechnungspositionen),
           wahrung: aiResult?.wahrung || 'EUR',
         };
@@ -515,15 +534,22 @@ export function IncomingInvoicesPageContent() {
         
         try {
           const uid = (!isAuthLoading && user?.uid) ? user.uid : 'anon';
-          if (uid !== 'anon') { // Only save if a user is logged in
-            await addDoc(collection(db, "processed_invoices"), {
-              userId: uid,
-              filename: file.name,
-              status: statusForDoc,
-              erpMode: erpMode,
-              payload: erpCompatibleInvoice,
-              createdAt: serverTimestamp(),
-            });
+          if (uid !== 'anon') {
+              const erpDoc = {
+                userId: uid,
+                filename: file.name,
+                status: statusForDoc,
+                erpMode: true, 
+                payload: {
+                  ...erpCompatibleInvoice,
+                  lieferantAdresse: erpCompatibleInvoice.lieferantAdresse ?? '',
+                  zahlungsziel: erpCompatibleInvoice.zahlungsziel ?? '',
+                  zahlungsart: erpCompatibleInvoice.zahlungsart ?? '',
+                  rechnungspositionen: erpCompatibleInvoice.rechnungspositionen ?? [],
+                },
+                createdAt: serverTimestamp(),
+              };
+              await addDoc(collection(db, "processed_invoices"), pruneForFirestore(erpDoc));
           }
         } catch (e) {
           console.error('Failed to persist invoice to Firestore:', e);
@@ -1006,3 +1032,5 @@ export function IncomingInvoicesPageContent() {
     </div>
   );
 }
+
+    
