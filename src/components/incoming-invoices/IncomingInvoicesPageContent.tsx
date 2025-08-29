@@ -103,14 +103,15 @@ function safeErpFallback(filename: string) {
 }
 
 function normalizeLineItems(items: any[] | undefined) {
-  const arr = Array.isArray(items) ? items : [];
-  return arr.map(it => ({
-    productName: it.productName ?? it.name ?? 'UNKNOWN ITEM',
-    productCode: it.productCode ?? it.code ?? 'UNKNOWN',
-    quantity: it.qty ?? it.quantity ?? 1,
-    unitPrice: it.price ?? it.unitPrice ?? 0,
-  }));
+    const arr = Array.isArray(items) ? items : [];
+    return arr.map(it => ({
+      productName: it.productName ?? it.name ?? 'UNKNOWN ITEM',
+      productCode: it.productCode ?? it.code ?? 'UNKNOWN',
+      quantity: it.qty ?? it.quantity ?? 1,
+      unitPrice: it.rate ?? it.unitPrice ?? 0,
+    }));
 }
+
 
 export function IncomingInvoicesPageContent() {
   const { user, isLoading: isAuthLoading } = useAuth();
@@ -371,6 +372,9 @@ export function IncomingInvoicesPageContent() {
             variant: "default",
         });
     }
+
+    setExtractedInvoices(currentRegularInvoices);
+    setErpProcessedInvoices(currentErpInvoices);
 
     if (filesToProcess.length === 0) {
         setStatus('success');
