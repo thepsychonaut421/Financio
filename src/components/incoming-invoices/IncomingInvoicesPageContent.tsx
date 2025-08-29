@@ -12,10 +12,8 @@ import { AlertCircle, Info, Settings2, FileCog } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { readFileAsDataURL } from '@/lib/file-helpers';
-import { extractIncomingInvoiceData, type ExtractIncomingInvoiceDataOutput } from '@/ai/flows/extract-incoming-invoice-data';
 import type { IncomingInvoiceItem, ERPIncomingInvoiceItem, IncomingProcessingStatus, ERPSortKey, SortOrder } from '@/types/incoming-invoice';
 import { addDays, parseISO, isValid, format as formatDateFns } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
@@ -53,7 +51,6 @@ function cap<T>(arr: T[], max = 200) {
   return Array.isArray(arr) && arr.length > max ? arr.slice(0, max) : arr;
 }
 
-
 // elimină recursiv undefined (și NaN), convertește Date -> Timestamp ISO
 function pruneForFirestore<T>(obj: T): T {
   if (obj === null || typeof obj !== 'object') return obj;
@@ -71,35 +68,6 @@ function pruneForFirestore<T>(obj: T): T {
   }
   return out;
 }
-
-
-function parseGermanNumber(v: any): number {
-  if (v == null) return 0;
-  if (typeof v === 'number') return isFinite(v) ? v : 0;
-  const s = String(v).trim().replace(/\./g, '').replace(',', '.'); // 1.234,56 -> 1234.56
-  const n = Number(s);
-  return isFinite(n) ? n : 0;
-}
-
-type AnyLine = any;
-function normalizeLineItems(items: AnyLine[] | undefined, fallbackTotal?: number): any[] {
-  const src = Array.isArray(items) ? items : [];
-  let out = src.map((it) => {
-    const name = it.productName ?? it.name ?? it.bezeichnung ?? 'ITEM';
-    const code = it.productCode ?? it.code ?? it.sku ?? '';
-    const qty  = parseGermanNumber(it.qty ?? it.quantity ?? it.menge ?? 1);
-    const price= parseGermanNumber(it.unitPrice ?? it.preis ?? it.rate ?? 0);
-    const total= it.total != null ? parseGermanNumber(it.total) : +(qty * price).toFixed(2);
-    const uom  = it.uom ?? it.einheit ?? 'Nos';
-    return { productName: name, productCode: code, quantity: qty, unitPrice: price, total, uom };
-  }).filter(r => r.quantity > 0 || r.total > 0);
-
-  if (out.length === 0 && (fallbackTotal ?? 0) > 0) {
-    out = [{ productName: 'INVOICE TOTAL', productCode: 'TOTAL', quantity: 1, unitPrice: fallbackTotal, total: fallbackTotal, uom: 'Nos' }];
-  }
-  return out;
-}
-
 
 function compareERPValues(valA: any, valB: any, order: SortOrder): number {
   const aIsNil = valA === null || valA === undefined || valA === '';
@@ -267,32 +235,14 @@ export function IncomingInvoicesPageContent() {
     "UNBEKANNT_SUPPLIER_AI_EXTRACTED": "UNBEKANNT_SUPPLIER_PLACEHOLDER",
   };
   
-
+  // This logic is now on the server
   const formatDateForERP = (dateString?: string): string | undefined => {
     if (!dateString || dateString.trim() === '') return undefined;
     if (/^\d{4}-\d{2}-\d{2}$/.test(dateString)) { 
         const d = parseISO(dateString); 
         return isValid(d) ? dateString : undefined;
     }
-    const datePatterns = [
-      { regex: /^(\d{1,2})\.(\d{1,2})\.(\d{4})$/, dayIdx: 1, monthIdx: 2, yearIdx: 3 }, 
-      { regex: /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/, dayIdx: 1, monthIdx: 2, yearIdx: 3 }, 
-      { regex: /^(\d{4})\.(\d{1,2})\.(\d{1,2})$/, yearIdx: 1, monthIdx: 2, dayIdx: 3 }, 
-      { regex: /^(\d{4})\/(\d{1,2})\/(\d{1,2})$/, yearIdx: 1, monthIdx: 2, dayIdx: 3 }, 
-    ];
-
-    for (const pattern of datePatterns) {
-      const match = dateString.match(pattern.regex);
-      if (match) {
-        const day = match[pattern.dayIdx].padStart(2, '0');
-        const month = match[pattern.monthIdx].padStart(2, '0');
-        const year = match[pattern.yearIdx];
-        const isoDate = `${year}-${month}-${day}`;
-        const d = parseISO(isoDate); 
-        if (isValid(d)) return isoDate;
-      }
-    }
-    
+    // Other parsing logic is now server-side, but keep a basic fallback.
     try {
         const d = new Date(dateString);
         if (isValid(d)) {
@@ -301,10 +251,8 @@ export function IncomingInvoicesPageContent() {
             return formatDateFns(d, 'yyyy-MM-dd');
           }
         }
-    } catch (e) { /* ignore error from new Date() */ }
-
-    console.warn(`Could not parse date "${dateString}" to YYYY-MM-DD for ERP. Returning undefined.`);
-    return undefined; 
+    } catch (e) { /* ignore */ }
+    return dateString;
   };
 
   const calculateDueDate = (invoiceDateStr?: string, paymentTerm?: string): string | undefined => {
@@ -349,13 +297,13 @@ export function IncomingInvoicesPageContent() {
   }
 
   const handleProcessFiles = async () => {
+    setErrorMessage(null);
     if (selectedFiles.length === 0) {
       setErrorMessage("No files selected. Please select PDF files to process.");
       setStatus('error');
       return;
     }
     setStatus('processing');
-    setErrorMessage(null);
     setProgressValue(0);
 
     const currentRegularInvoices = [...extractedInvoices];
@@ -411,44 +359,20 @@ export function IncomingInvoicesPageContent() {
         const file = filesToProcess[i];
         setCurrentFileProgress(`Processing file ${i + 1} of ${filesToProcess.length}: ${file.name}`);
         
-        let aiResult: ExtractIncomingInvoiceDataOutput | any;
-        try {
-            const dataUri = await readFileAsDataURL(file);
-            const response = await fetch('/api/invoices/extract', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ dataUri, filename: file.name }),
-            });
+        const dataUri = await readFileAsDataURL(file);
+        const response = await fetch('/api/invoices/extract', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ dataUri, filename: file.name }),
+        });
 
-            if (!response.ok) {
-              const errorText = await response.text();
-              throw new Error(`Server responded with ${response.status}: ${errorText}`);
-            }
-
-            aiResult = await response.json();
-
-        } catch (e: any) {
-            console.error('API call or extraction crashed:', e);
-            toast({
-                title: 'Extraction failed',
-                description: (e?.message || String(e)).slice(0, 300),
-                variant: 'destructive',
-            });
-            // Use a safe fallback from the server-side logic in the API route
-            aiResult = e.fallbackData || {
-                anomalies: ['CLIENT_SIDE_FETCH_FALLBACK'],
-                rechnungspositionen: [],
-            };
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`Server responded with ${response.status}: ${errorText.substring(0, 300)}`);
         }
         
-        const grandTotal = parseGermanNumber(aiResult.brutto ?? aiResult.gesamtbetrag ?? aiResult.total ?? aiResult.summe ?? 0);
-        const items = normalizeLineItems(aiResult.rechnungspositionen, grandTotal);
-
-        const postingDateERP = formatDateForERP(aiResult.datum);
-        const billDateERP = postingDateERP; 
-        const dueDateERP = calculateDueDate(postingDateERP, aiResult.zahlungsziel);
-        const currency = (aiResult.wahrung ?? aiResult.currency ?? 'EUR').toString().toUpperCase() || 'EUR';
-
+        const aiResult = await response.json();
+        
         const fingerprint = getFileFingerprint(file);
         newFingerprints[fingerprint] = file.name;
 
@@ -465,7 +389,6 @@ export function IncomingInvoicesPageContent() {
             finalLieferantName = "UNBEKANNT_SUPPLIER_PLACEHOLDER"; 
         }
 
-        
         let remarks = (aiResult.remarks || '');
         if (aiResult.kundenNummer) remarks += `${remarks ? ' / ' : ''}Kunden-Nr.: ${aiResult.kundenNummer}`;
         if (aiResult.bestellNummer) remarks += `${remarks ? ' / ' : ''}Bestell-Nr.: ${aiResult.bestellNummer}`;
@@ -482,14 +405,9 @@ export function IncomingInvoicesPageContent() {
         }
         
         let yearToUse = new Date().getFullYear().toString();
-        if (postingDateERP) {
-            const parsedYear = postingDateERP.substring(0,4);
+        if (aiResult.datum) {
+            const parsedYear = aiResult.datum.substring(0,4);
             if (!isNaN(parseInt(parsedYear))) yearToUse = parsedYear;
-        } else if (aiResult.datum) { 
-            try {
-              const parsedFallbackDate = new Date(aiResult.datum); 
-              if(isValid(parsedFallbackDate)) yearToUse = parsedFallbackDate.getFullYear().toString();
-            } catch (e) { /* ignore */ }
         }
         
         if (!yearCounters[yearToUse]) { yearCounters[yearToUse] = 0; }
@@ -500,21 +418,21 @@ export function IncomingInvoicesPageContent() {
         const erpCompatibleInvoice: ERPIncomingInvoiceItem = {
           pdfFileName: file.name,
           rechnungsnummer: rechnungsnummerToUse,
-          datum: postingDateERP, 
+          datum: aiResult.datum, 
           lieferantName: finalLieferantName,
           lieferantAdresse: aiResult.lieferantAdresse,
           zahlungsziel: aiResult.zahlungsziel,
           zahlungsart: aiResult.zahlungsart,
-          gesamtbetrag: grandTotal,
+          gesamtbetrag: aiResult.gesamtbetrag,
           mwstSatz: aiResult.mwstSatz != null ? String(aiResult.mwstSatz) : undefined,
-          rechnungspositionen: items,
+          rechnungspositionen: aiResult.rechnungspositionen,
           kundenNummer: aiResult.kundenNummer,
           bestellNummer: aiResult.bestellNummer,
           isPaidByAI: aiResult.isPaid,
           erpNextInvoiceName: internalRefId, 
-          billDate: billDateERP, 
-          dueDate: dueDateERP,   
-          wahrung: currency, 
+          billDate: aiResult.bill_date,
+          dueDate: calculateDueDate(aiResult.datum, aiResult.zahlungsziel),
+          wahrung: aiResult.currency, 
           istBezahlt: istBezahltStatus, 
           kontenrahmen: kontenrahmen.trim(), 
           remarks: remarks.trim(),
@@ -523,21 +441,7 @@ export function IncomingInvoicesPageContent() {
         if (erpMode) {
           currentErpInvoices.unshift(erpCompatibleInvoice);
         } else {
-          currentRegularInvoices.unshift({
-              pdfFileName: file.name,
-              rechnungsnummer: rechnungsnummerToUse,
-              datum: aiResult.datum, 
-              lieferantName: finalLieferantName,
-              lieferantAdresse: aiResult.lieferantAdresse,
-              zahlungsziel: aiResult.zahlungsziel,
-              zahlungsart: aiResult.zahlungsart,
-              gesamtbetrag: grandTotal,
-              mwstSatz: aiResult.mwstSatz,
-              rechnungspositionen: items,
-              kundenNummer: aiResult.kundenNummer,
-              bestellNummer: aiResult.bestellNummer,
-              isPaidByAI: aiResult.isPaid,
-          });
+          currentRegularInvoices.unshift(erpCompatibleInvoice); // Save ERP compatible even in standard mode
         }
         
         const statusForDoc: 'OK'|'WARN'|'ERROR' = aiResult?.anomalies?.includes('AI_CRASH_FALLBACK')
@@ -580,7 +484,7 @@ export function IncomingInvoicesPageContent() {
         datum: formatDateForERP(inv.datum),
         lieferantName: inv.lieferantName,
         gesamtbetrag: inv.gesamtbetrag,
-        rechnungspositionen: normalizeLineItems(inv.rechnungspositionen),
+        rechnungspositionen: inv.rechnungspositionen,
       }));
       localStorage.setItem(LOCAL_STORAGE_MATCHER_DATA_KEY, JSON.stringify([...justProcessedForMatcher, ...previousMatcherInvoices]));
       
@@ -588,7 +492,7 @@ export function IncomingInvoicesPageContent() {
         setErrorMessage(accumulatedErrors.join('\n'));
       }
       
-      const producedSomething = (erpMode ? currentErpInvoices.length : currentRegularInvoices.length) > 0;
+      const producedSomething = (erpMode ? currentErpInvoices.length > 0 : currentRegularInvoices.length > 0);
       setStatus(producedSomething ? 'success' : (accumulatedErrors.length ? 'error' : 'success'));
       setCurrentFileProgress('Processing complete!');
 

@@ -2,9 +2,12 @@
 import { NextResponse } from 'next/server';
 import { GoogleGenerativeAI, GoogleAIFileManager } from '@google/generative-ai';
 
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+
 const MODEL_NAME = process.env.GENAI_MODEL || 'gemini-1.5-flash';
 
-// Utility functions for data normalization, can be moved to a separate file
+// Utility functions for data normalization, moved to server-side for robustness
 function parseGermanNumber(v: any): number {
     if (v == null) return 0;
     if (typeof v === 'number') return isFinite(v) ? v : 0;
@@ -61,6 +64,7 @@ function enforceErpSchemaSafety<T extends Record<string, any>>(x: T, filename: s
   const grandTotal = parseGermanNumber(x.brutto ?? x.gesamtbetrag ?? x.total ?? x.summe ?? 0);
   x.gesamtbetrag = grandTotal;
 
+  // Use the robust normalizeLineItems function
   x.rechnungspositionen = normalizeLineItems(x.rechnungspositionen ?? x.items, grandTotal);
   
   if (x.rechnungspositionen.length === 0) {
@@ -115,8 +119,10 @@ function extractJsonFromString(text: string): string | null {
 
 export async function POST(req: Request) {
     let uploadedFileName: string | undefined;
+    const { filename = 'unknown.pdf' } = await req.json().catch(() => ({}));
+
     try {
-        const { dataUri, filename } = await req.json();
+        const { dataUri } = await req.json();
 
         if (!dataUri || !dataUri.startsWith('data:application/pdf;base64,')) {
             return NextResponse.json({ error: 'Invalid or missing PDF data URI.' }, { status: 400 });
@@ -136,7 +142,7 @@ export async function POST(req: Request) {
         const uploadResult = await fileManager.uploadFile({
             file: pdfBuffer,
             mimeType: 'application/pdf',
-            displayName: filename || 'invoice.pdf',
+            displayName: filename,
         });
         uploadedFileName = uploadResult.file.name;
 
@@ -166,7 +172,6 @@ export async function POST(req: Request) {
 
     } catch (e: any) {
         console.error("[API /invoices/extract Error]", e);
-        const { filename = 'unknown.pdf' } = await req.json().catch(() => ({}));
         // Return a valid fallback payload with a 200 OK status
         const fallback = safeErpFallback(filename, e.message || String(e));
         return NextResponse.json(fallback, { status: 200 });
