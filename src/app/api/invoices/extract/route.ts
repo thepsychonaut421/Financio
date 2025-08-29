@@ -1,10 +1,12 @@
 
 import { NextResponse } from 'next/server';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { adminDb } from '@/lib/firebase-admin';
+import crypto from 'crypto';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-export const maxDuration = 60; // Allow up to 60s for extraction
+export const maxDuration = 60;
 
 const MODEL_NAME = process.env.GENAI_MODEL || 'gemini-1.5-flash';
 
@@ -20,10 +22,55 @@ type LineItem = {
   autogenSku?: boolean;
 };
 
+// --- Translation Helpers ---
+function makeTranslationId(input: string, scope: string) {
+  // deterministic id to avoid duplicates
+  const h = crypto.createHash('sha256').update((scope + '|' + input).toLowerCase()).digest('hex').slice(0, 32);
+  return h; // ex. "c0ffee..."
+}
 
-// --- Utility Functions ---
+async function ensureTranslationDoc(input: string, scope: 'product'|'supplier'|'address') {
+  const clean = (input ?? '').trim();
+  if (!clean) return null;
 
-// VAT & SKU Helpers
+  const id = makeTranslationId(clean, scope);
+  const ref = adminDb.collection('translations').doc(id);
+
+  const snap = await ref.get();
+  if (!snap.exists) {
+    await ref.set({
+      input: clean,
+      scope,                 // optional: to know where the text comes from
+      createdAt: adminDb.FieldValue?.serverTimestamp?.() ?? new Date(),
+    }, { merge: true });
+  }
+  return id;
+}
+
+async function ensureManyTranslations(texts: Array<{text:string, scope:'product'|'supplier'|'address'}>) {
+  const unique = new Map<string,{text:string,scope:'product'|'supplier'|'address'}>();
+  for (const t of texts) {
+    const key = (t.scope + '|' + (t.text ?? '').trim().toLowerCase());
+    if (t.text && !unique.has(key)) unique.set(key, t);
+  }
+  // run in parallel but catch any errors
+  const results = await Promise.allSettled(
+    Array.from(unique.values()).map(t => ensureTranslationDoc(t.text, t.scope))
+  );
+  // map text->id, useful if you want to put it in the payload
+  const idMap = new Map<string,string>();
+  for (let i=0;i<results.length;i++){
+    const r = results[i];
+    const t = Array.from(unique.values())[i];
+    if (r.status === 'fulfilled' && r.value) {
+      idMap.set(t.scope + '|' + t.text.trim(), r.value);
+    }
+  }
+  return idMap;
+}
+
+
+// --- VAT & SKU Helpers ---
 const LIKELY_VAT_RATES = [0, 5, 7, 10, 16, 19, 20, 21, 22, 23, 24, 25];
 
 function snapVatRate(r: number) {
@@ -84,7 +131,7 @@ function autoSku(name: string, supplier?: string) {
   return `AUTO-${hash32(base).slice(0, 8)}`;
 }
 
-
+// --- Utility Functions ---
 function parseGermanNumber(v: any): number {
   if (v == null) return 0;
   if (typeof v === 'number') return Number.isFinite(v) ? v : 0;
@@ -129,7 +176,6 @@ function normalizeLineItems(items: any[] | undefined, fallbackTotal?: number): L
   return out;
 }
 
-
 function safeErpFallback(filename: string, errorMsg?: string) {
   const today = new Date().toISOString().slice(0, 10);
   return {
@@ -162,9 +208,7 @@ function enforceErpSchemaSafety(aiResult: any, filename: string) {
     };
 }
 
-
 // --- API Route Handler ---
-
 export async function POST(req: Request) {
   let filename = 'unknown.pdf';
   try {
@@ -216,27 +260,21 @@ If a value is not found, omit the key or set it to null. Ensure numbers are actu
     // Final normalization before sending to client
     safePayload.gesamtbetrag = parseGermanNumber(safePayload.gesamtbetrag ?? (parsed as any).brutto ?? (parsed as any).total ?? (parsed as any).summe ?? 0);
     
-    // 1) Normalize items
     let items = normalizeLineItems(safePayload.rechnungspositionen ?? parsed.items, safePayload.gesamtbetrag);
 
-    // 2) Separate VAT line
     const { filtered, vatAmountFromLine } = separateVatLine(items);
     items = filtered;
 
-    // 3) Calculate/validate VAT rate
     let mwst = parseGermanNumber(safePayload.mwstSatz ?? parsed.mwstSatz);
     const sumItems = sumLineTotals(items);
     const fromTotals = deriveVatFromTotals(safePayload.gesamtbetrag, items);
-    const fromVatLine = vatAmountFromLine > 0 && sumItems > 0
-        ? snapVatRate((vatAmountFromLine / sumItems) * 100)
-        : null;
+    const fromVatLine = vatAmountFromLine > 0 && sumItems > 0 ? snapVatRate((vatAmountFromLine / sumItems) * 100) : null;
 
     if (!Number.isFinite(mwst) || mwst <= 0 || mwst >= 100) {
         mwst = fromTotals ?? fromVatLine ?? 0;
     }
     mwst = snapVatRate(mwst);
     
-    // 4) Check for inconsistencies if a VAT line was found
     const MONEY_EPS = 0.02;
     const diff = +(safePayload.gesamtbetrag - sumItems).toFixed(2);
     const delta = Math.abs(diff - vatAmountFromLine);
@@ -253,6 +291,25 @@ If a value is not found, omit the key or set it to null. Ensure numbers are actu
     if (safePayload.gesamtbetrag > 0 && allZero) {
       safePayload.anomalies = Array.from(new Set([...(safePayload.anomalies || []), 'ZERO_LINES_WITH_TOTAL']));
     }
+
+    // Translation logic
+    const translateInputs: Array<{text:string, scope:'product'|'supplier'|'address'}> = [];
+    if (safePayload.lieferantName) translateInputs.push({ text: safePayload.lieferantName, scope: 'supplier' });
+    if (safePayload.lieferantAdresse) translateInputs.push({ text: safePayload.lieferantAdresse, scope: 'address' });
+    for (const li of items) {
+      if (li.productName) translateInputs.push({ text: li.productName, scope: 'product' });
+    }
+    const idMap = await ensureManyTranslations(translateInputs);
+
+    (safePayload as any).translationRefs = {
+      supplierNameId: idMap.get('supplier|' + (safePayload.lieferantName || '').trim()),
+      supplierAddrId: idMap.get('address|' + (safePayload.lieferantAdresse || '').trim()),
+    };
+    safePayload.rechnungspositionen = items.map(li => ({
+      ...li,
+      productNameTranslationId: idMap.get('product|' + (li.productName || '').trim()) || null,
+    }));
+
 
     return NextResponse.json(safePayload, { headers: { 'Cache-Control': 'no-store' }});
   } catch (e: any) {
