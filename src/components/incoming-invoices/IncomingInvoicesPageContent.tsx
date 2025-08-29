@@ -73,6 +73,43 @@ function cap<T>(arr: T[], max = 200) {
   return Array.isArray(arr) && arr.length > max ? arr.slice(0, max) : arr;
 }
 
+function findCachedInvoiceByFilename(name: string, erpMode: boolean) {
+  try {
+    const cachedStr = localStorage.getItem(LOCAL_STORAGE_PAGE_CACHE_KEY);
+    if (!cachedStr) return null;
+    const cached = JSON.parse(cachedStr) as IncomingInvoicesPageCache;
+    const list = erpMode ? cached.erpProcessedInvoices : cached.extractedInvoices;
+    return Array.isArray(list) ? list.find(inv => inv.pdfFileName === name) : null;
+  } catch { return null; }
+}
+
+function enforceErpSchemaSafety<T extends Record<string, any>>(x: T, filename: string): T {
+  const today = new Date().toISOString().slice(0,10);
+  x.doctype = 'Purchase Invoice';
+  x.posting_date ||= x.datum || today;
+  x.bill_date ||= x.posting_date;
+  x.currency ||= x.wahrung || 'EUR';
+
+  if (!Array.isArray(x.rechnungspositionen) || x.rechnungspositionen.length === 0) {
+    x.rechnungspositionen = [{
+      productName: 'UNKNOWN ITEM',
+      quantity: 1,
+      unitPrice: 0,
+      total: 0,
+      uom: 'Nos'
+    }];
+    x.anomalies = Array.from(new Set([...(x.anomalies||[]), 'NO_ITEMS_EXTRACTED']));
+  }
+
+  x.custom_fields = {
+    ...(x.custom_fields || {}),
+    _source_filename: filename,
+    _extraction_confidence: x.extraction_confidence ?? null,
+  };
+  return x;
+}
+
+
 
 export function IncomingInvoicesPageContent() {
   'use client';
@@ -91,7 +128,8 @@ export function IncomingInvoicesPageContent() {
   const { toast } = useToast();
   const [currentYear, setCurrentYear] = useState<string>('');
   const [kontenrahmen, setKontenrahmen] = useState('20000 - Verbindlichkeiten Lief Inland');
-  const [processedFileFingerprints, setProcessedFileFingerprints] = useState<Record<string, string>>({});
+  const [processedFileFingerprints, setProcessedFileFingerprints] =
+  useState<Record<string, string>>({});
 
 
   const [erpExportFile, setErpExportFile] = useState<File | null>(null);
@@ -144,6 +182,15 @@ export function IncomingInvoicesPageContent() {
       localStorage.removeItem(LOCAL_STORAGE_PAGE_CACHE_KEY);
     }
   }, []);
+
+  useEffect(() => {
+    const v = localStorage.getItem('financio:kontenrahmen');
+    if (v) setKontenrahmen(v);
+  }, []);
+  
+  useEffect(() => {
+    localStorage.setItem('financio:kontenrahmen', kontenrahmen);
+  }, [kontenrahmen]);
 
   useEffect(() => {
     if (status !== 'processing' && status !== 'idle') {
@@ -295,12 +342,24 @@ export function IncomingInvoicesPageContent() {
     const duplicates: string[] = [];
 
     const filesToProcess = selectedFiles.filter(file => {
-        const fingerprint = getFileFingerprint(file);
-        if (newFingerprints[fingerprint]) {
-            duplicates.push(file.name);
-            return false;
+      const fingerprint = getFileFingerprint(file);
+      if (newFingerprints[fingerprint]) {
+        duplicates.push(file.name);
+        
+        const existsInUi = (erpMode ? currentErpInvoices : currentRegularInvoices)
+          .some(inv => inv.pdfFileName === file.name);
+        
+        if (!existsInUi) {
+          const cached = findCachedInvoiceByFilename(file.name, erpMode);
+          if (cached) {
+            if (erpMode) currentErpInvoices.unshift(cached as ERPIncomingInvoiceItem);
+            else currentRegularInvoices.unshift(cached as any);
+          }
         }
-        return true;
+        
+        return false;
+      }
+      return true;
     });
 
     if (duplicates.length > 0) {
@@ -327,8 +386,10 @@ export function IncomingInvoicesPageContent() {
         setCurrentFileProgress(`Processing file ${i + 1} of ${filesToProcess.length}: ${file.name}`);
         
         const dataUri = await readFileAsDataURL(file);
-        const aiResult: ExtractIncomingInvoiceDataOutput = await extractIncomingInvoiceData({ invoiceDataUri: dataUri });
+        let aiResult: ExtractIncomingInvoiceDataOutput = await extractIncomingInvoiceData({ invoiceDataUri: dataUri });
         
+        aiResult = enforceErpSchemaSafety(aiResult as any, file.name);
+
         const fingerprint = getFileFingerprint(file);
         newFingerprints[fingerprint] = file.name;
 
