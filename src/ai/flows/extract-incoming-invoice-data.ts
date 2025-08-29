@@ -141,40 +141,41 @@ export async function extractIncomingInvoiceData(input: ExtractIncomingInvoiceDa
 const prompt = ai.definePrompt({
   name: 'extractIncomingInvoiceDataPrompt',
   input: {schema: ExtractIncomingInvoiceDataInputSchema},
-  prompt: `You are a strict data extractor for accounting. Output ONLY valid JSON, no prose.
+  prompt: `You are a meticulous data extractor for accounting, specialized in German and cross-border invoices. Output ONLY valid JSON, no prose.
 Your response MUST be a valid JSON object enclosed in a markdown code block (\`\`\`json ... \`\`\`).
-Target schema is ERPNext Purchase Invoice (see fields).
+The target schema is based on ERPNext Purchase Invoice fields.
 
-Rules:
-- Use ISO dates (YYYY-MM-DD).
-- Numbers as floats with dot decimal.
-- Sum check: net + VAT = gross; per-line amount = qty*rate.
-- If document is a Gutschrift/Credit Note set is_return true.
-- If due date absent, set null.
-- IMPORTANT: NEVER return an object with an "error" key. Always return a valid JSON object matching the schema. If information is missing, use null for optional fields and empty strings "" for required string fields. Explain any uncertainty in the "remarks" field. Always include doctype, supplier, posting_date, bill_no, bill_date, and at least one item.
+Extraction Rules:
+- Dates: Must be in ISO format (YYYY-MM-DD). Convert from other formats like DD.MM.YYYY.
+- Numbers: Must be floats with a dot as the decimal separator (e.g., 1234.56).
+- Supplier: Extract full name, full address, and any tax ID (USt-IdNr., NIP). The tax ID should be placed in the "remarks" field.
+- Order Reference: Capture any order numbers (Bestellnummer, ZK, etc.) and place them in 'custom_fields.order_reference'.
+- Currency: The primary currency of the invoice should be set in the 'currency' field.
+- **Multi-currency Invoices**: If the invoice shows totals in a secondary currency (e.g., PLN alongside EUR), extract the main currency (EUR) for the structured fields. Add a detailed note in the "remarks" field describing the secondary currency totals (e.g., "Also shows totals in PLN: Net 1319.03, VAT 250.62, Gross 1569.65.").
+- Credit Notes: If the document is a Gutschrift or Credit Note, set 'is_return' to true.
+- Totals Check: Mentally verify that net + taxes is close to the grand total.
+- Missing Data: NEVER return an object with an "error" key. If a required field is missing, use null for optional fields and empty strings "" for required string fields. Explain any major ambiguities or missing critical data (like a missing invoice number) in the "remarks" field. Always include doctype, supplier, posting_date, bill_no, and bill_date.
 
-
-Fields:
+Target Fields Structure:
 \`\`\`json
 {
   "doctype": "Purchase Invoice",
-  "supplier": "string",
+  "supplier": "string (Full Supplier Name)",
   "posting_date": "YYYY-MM-DD",
   "due_date": "YYYY-MM-DD|null",
-  "bill_no": "string",
+  "bill_no": "string (Invoice Number)",
   "bill_date": "YYYY-MM-DD",
   "currency": "EUR",
   "items": [{ "item_code": "string|null", "item_name": "string", "qty": 1, "uom": "string", "rate": 0, "amount": 0, "tax_rate": 19, "tax_amount": 0 }],
   "taxes": [{ "charge_type": "On Net Total", "account_head": "Input Tax 19%", "rate": 19, "tax_amount": 0 }],
-  "supplier_address": "string",
-  "contact_person": "string|null",
-  "remarks": "string",
-  "custom_fields": { "order_reference": "string|null", "payment_method": "string|null", "delivery_method": "string|null", "iban": "string|null", "swift": "string|null" },
-  "is_return": true
+  "supplier_address": "string (Full Address)",
+  "remarks": "string (Note any special conditions, secondary currency totals, or tax IDs here. Example: 'Tax ID: PL7773297218. Also shows totals in PLN: Net 1319.03, VAT 250.62, Gross 1569.65.')",
+  "custom_fields": { "order_reference": "string|null", "payment_method": "string|null" },
+  "is_return": false
 }
 \`\`\`
 
-Source text between <DOC> tags. Ignore noise, footers, bank ads, page numbers.
+Source document is between <DOC> tags. Focus on the main content and ignore headers/footers.
 <DOC>
 {{media url=invoiceDataUri}}
 </DOC>
