@@ -92,11 +92,10 @@ function enforceErpSchemaSafety<T extends Record<string, any>>(x: T, filename: s
 
   if (!Array.isArray(x.rechnungspositionen) || x.rechnungspositionen.length === 0) {
     x.rechnungspositionen = [{
+      productCode: 'UNKNOWN',
       productName: 'UNKNOWN ITEM',
       quantity: 1,
       unitPrice: 0,
-      total: 0,
-      uom: 'Nos'
     }];
     x.anomalies = Array.from(new Set([...(x.anomalies||[]), 'NO_ITEMS_EXTRACTED']));
   }
@@ -955,3 +954,5 @@ export function IncomingInvoicesPageContent() {
     </div>
   );
 }
+
+    
