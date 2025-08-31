@@ -85,7 +85,7 @@ export function StockReconciliationPageContent() {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${idToken}` 
                 },
-                body: JSON.stringify({}), // Body is now empty
+                body: JSON.stringify({}),
             });
             
             if (response.status === 401) {
@@ -94,13 +94,12 @@ export function StockReconciliationPageContent() {
                     description: "Your session may have expired. Please log in again.",
                     variant: 'destructive',
                  });
-                 // Optionally, you could trigger a logout here.
                  setIsLoading(false);
                  return;
             }
 
             if (!response.ok) {
-                const errorResult = await response.json();
+                const errorResult = await response.json().catch(()=>({error: 'Failed to parse error response'}));
                 throw new Error(errorResult.error || 'Failed to fetch aggregated stock data.');
             }
 

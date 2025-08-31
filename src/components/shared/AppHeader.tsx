@@ -173,7 +173,7 @@ export function AppHeader() {
                      <>
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" className="justify-start w-full text-base font-medium flex items-center space-x-3 px-3 py-3 rounded-md">
+                              <Button variant="ghost" className="justify-start w-full text-base font-medium flex items-center space-x-3 px-3 py-3 rounded-md text-muted-foreground hover:bg-accent hover:text-accent-foreground">
                                   <Settings className="w-5 h-5"/>
                                   <span>Settings</span>
                               </Button>

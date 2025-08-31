@@ -3,24 +3,7 @@ import { NextResponse } from 'next/server';
 import { getAdminDbSafe } from '@/lib/firebase-admin';
 import { getStockSettingsServer } from '@/server/stock-settings-server';
 import { isShippingFee } from '@/lib/is-shipping-fee';
-import { auth } from 'firebase-admin';
-
-async function getUidFromRequest(req: Request): Promise<string> {
-    const authHeader = req.headers.get('authorization');
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-        throw new Error('Missing or invalid Authorization header.');
-    }
-    const idToken = authHeader.split('Bearer ')[1];
-    if (!idToken) {
-        throw new Error('Missing or invalid Firebase ID token.');
-    }
-    
-    // Ensure admin is initialized before calling auth()
-    await getAdminDbSafe(); 
-    
-    const decodedToken = await auth().verifyIdToken(idToken);
-    return decodedToken.uid;
-}
+import { getUidFromRequest, AuthError } from '@/lib/get-uid-from-request';
 
 
 export const runtime = 'nodejs';
@@ -38,7 +21,6 @@ export async function POST(req: Request) {
     const settings = await getStockSettingsServer(uid);
     const snap = await db.collection('processed_invoices').where('userId','==',uid).get();
 
-    // key: productCode || name
     const agg = new Map<string, { code:string; name:string; qty:number; source:string[] }>();
     let shippingFeesExcluded = 0;
 
@@ -55,7 +37,7 @@ export async function POST(req: Request) {
             }
 
             const codeNorm = code.toUpperCase();
-            const nameNorm = name.toUpperCase(); // For key only
+            const nameNorm = name.toUpperCase();
             const key = codeNorm || nameNorm;
             if (!key) continue;
 
@@ -71,10 +53,15 @@ export async function POST(req: Request) {
         productCode: r.code,
         productName: r.name,
         totalQuantity: r.qty,
-        sourceInvoices: [...new Set(r.source)].slice(0,5), // Unique sources
+        sourceInvoices: [...new Set(r.source)].slice(0,5),
     }));
     
-    console.log(`[stock aggregate] uid=${uid} rows=${rows.length} skipped=${shippingFeesExcluded} wh="${settings.defaultWarehouse}"`);
+    console.log(JSON.stringify({
+        tag:'stock.aggregate',
+        uid, rows: rows.length,
+        skippedShippingItems: shippingFeesExcluded,
+        defaultWarehouse: settings.defaultWarehouse || null
+    }));
 
     return NextResponse.json({ ok:true, rows, warehouse: settings.defaultWarehouse, skippedShippingItems: shippingFeesExcluded }, {
         headers: {
@@ -85,9 +72,9 @@ export async function POST(req: Request) {
 
   } catch (error: any) {
     console.error("[API /stock/aggregate Error]", error);
-    if (error.message.includes('ID token')) {
-         return NextResponse.json({ ok: false, error: 'Authentication failed. Please log in again.' }, { status: 401 });
+    if (error instanceof AuthError) {
+        return NextResponse.json({ ok: false, error: error.message }, { status: 401 });
     }
-    return NextResponse.json({ ok: false, error: error.message || 'An unknown error occurred.' }, { status: 500 });
+    return NextResponse.json({ ok: false, error: error.message || 'An unknown server error occurred.' }, { status: 500 });
   }
 }
