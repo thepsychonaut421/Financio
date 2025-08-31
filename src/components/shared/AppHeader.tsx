@@ -1,4 +1,3 @@
-
 'use client';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -7,6 +6,15 @@ import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import React from 'react';
 import { useAuth } from '@/contexts/AuthContext'; // Import useAuth
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+
 
 const mainNavLinks = [
   { href: '/', label: 'Home', icon: <HomeIcon className="w-5 h-5" /> },
@@ -19,7 +27,10 @@ const mainNavLinks = [
   { href: '/stock-reconciliation', label: 'Stock Reconciliation', icon: <PackageCheck className="w-5 h-5" /> },
 ];
 
-const settingsLink = { href: '/settings/erpnext', label: 'Settings', icon: <Settings className="w-5 h-5" /> };
+const settingsNavLinks = [
+    { href: '/settings/erpnext', label: 'ERPNext Payments'},
+    { href: '/settings/stock', label: 'Stock Settings'},
+];
 
 
 export function AppHeader() {
@@ -93,18 +104,32 @@ export function AppHeader() {
             </Link>
           ))}
             {isAuthenticated && (
-                 <Link
-                    href={settingsLink.href}
-                    className={`flex items-center space-x-2 px-3 py-2 rounded-md text-sm font-medium transition-colors
-                                ${pathname.startsWith('/settings')
-                                ? 'bg-primary text-primary-foreground shadow-sm'
-                                : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
-                                }`}
-                    title={settingsLink.label}
-                >
-                    {settingsLink.icon}
-                    <span>{settingsLink.label}</span>
-                </Link>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                     <Button
+                        variant={pathname.startsWith('/settings') ? 'soft' : 'ghost'}
+                        className={`flex items-center space-x-2 px-3 py-2 rounded-md text-sm font-medium transition-colors
+                                    ${pathname.startsWith('/settings')
+                                    ? 'bg-primary text-primary-foreground shadow-sm'
+                                    : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+                                    }`}
+                     >
+                       <Settings className="w-5 h-5" />
+                       <span>Settings</span>
+                     </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuLabel>Configuration</DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    {settingsNavLinks.map(link => (
+                        <Link href={link.href} key={link.href}>
+                            <DropdownMenuItem className="cursor-pointer">
+                                {link.label}
+                            </DropdownMenuItem>
+                        </Link>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
             )}
         </nav>
 
@@ -144,19 +169,25 @@ export function AppHeader() {
                     </Link>
                   ))}
                    {isAuthenticated && (
-                     <Link
-                        key={`mobile-${settingsLink.href}`}
-                        href={settingsLink.href}
-                        onClick={() => setIsMobileMenuOpen(false)}
-                        className={`flex items-center space-x-3 px-3 py-3 rounded-md text-base font-medium transition-colors
-                                    ${pathname.startsWith('/settings')
-                                        ? 'bg-primary text-primary-foreground'
-                                        : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
-                                    }`}
-                        >
-                        {settingsLink.icon}
-                        <span>{settingsLink.label}</span>
-                    </Link>
+                     <>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" className="justify-start w-full text-base font-medium flex items-center space-x-3 px-3 py-3 rounded-md">
+                                  <Settings className="w-5 h-5"/>
+                                  <span>Settings</span>
+                              </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent>
+                            {settingsNavLinks.map(link => (
+                                <Link href={link.href} key={`mobile-${link.href}`} onClick={() => setIsMobileMenuOpen(false)}>
+                                    <DropdownMenuItem>
+                                        {link.label}
+                                    </DropdownMenuItem>
+                                </Link>
+                            ))}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                     </>
                   )}
                   <hr className="my-2"/>
                   {renderAuthButton(true)}

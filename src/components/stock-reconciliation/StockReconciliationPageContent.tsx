@@ -1,16 +1,15 @@
-
 'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Info, PackageCheck, Search, ArrowUpDown } from 'lucide-react';
-import type { ERPIncomingInvoiceItem } from '@/types/incoming-invoice';
+import { Info, PackageCheck, Search, ArrowUpDown, Loader2, RefreshCw } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-
-const LOCAL_STORAGE_MATCHER_DATA_KEY = 'processedIncomingInvoicesForMatcher';
+import { useAuth } from '@/contexts/AuthContext';
+import { useToast } from '@/hooks/use-toast';
+import Link from 'next/link';
 
 interface StockItem {
     productCode: string;
@@ -23,51 +22,63 @@ type SortKey = keyof StockItem | null;
 type SortOrder = 'asc' | 'desc';
 
 export function StockReconciliationPageContent() {
+    const { user, isLoading: isAuthLoading } = useAuth();
+    const { toast } = useToast();
+
     const [stockItems, setStockItems] = useState<StockItem[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [currentYear, setCurrentYear] = useState('');
     const [searchTerm, setSearchTerm] = useState('');
     const [sortKey, setSortKey] = useState<SortKey>('productName');
     const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
+    const [defaultWarehouse, setDefaultWarehouse] = useState('');
+    const [skippedItems, setSkippedItems] = useState(0);
 
     useEffect(() => {
         setCurrentYear(new Date().getFullYear().toString());
+    }, []);
+
+    const aggregateStockData = async () => {
+        if (!user) {
+            setIsLoading(false);
+            return;
+        };
+
+        setIsLoading(true);
         try {
-            const storedInvoicesString = localStorage.getItem(LOCAL_STORAGE_MATCHER_DATA_KEY);
-            if (storedInvoicesString) {
-                const invoices: ERPIncomingInvoiceItem[] = JSON.parse(storedInvoicesString);
-                const itemMap = new Map<string, StockItem>();
+            const response = await fetch('/api/stock/aggregate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ uid: user.uid }),
+            });
 
-                invoices.forEach(invoice => {
-                    (invoice.rechnungspositionen || []).forEach(lineItem => {
-                        if (!lineItem.productCode) return; // Skip items without a product code
-
-                        const existing = itemMap.get(lineItem.productCode);
-                        if (existing) {
-                            existing.totalQuantity += lineItem.quantity || 0;
-                            if (invoice.rechnungsnummer || invoice.pdfFileName) {
-                                existing.sourceInvoices.push(invoice.rechnungsnummer || invoice.pdfFileName);
-                            }
-                        } else {
-                            itemMap.set(lineItem.productCode, {
-                                productCode: lineItem.productCode,
-                                productName: lineItem.productName,
-                                totalQuantity: lineItem.quantity || 0,
-                                sourceInvoices: [(invoice.rechnungsnummer || invoice.pdfFileName)].filter(Boolean) as string[],
-                            });
-                        }
-                    });
-                });
-                
-                const allItems = Array.from(itemMap.values());
-                setStockItems(allItems);
+            if (!response.ok) {
+                const errorResult = await response.json();
+                throw new Error(errorResult.error || 'Failed to fetch aggregated stock data.');
             }
-        } catch (error) {
+
+            const result = await response.json();
+            setStockItems(result.rows || []);
+            setDefaultWarehouse(result.warehouse || '');
+            setSkippedItems(result.skippedShippingItems || 0);
+
+        } catch (error: any) {
             console.error("Failed to load or process invoice data for stock reconciliation:", error);
+            toast({
+                title: 'Error Loading Stock Data',
+                description: error.message,
+                variant: 'destructive',
+            });
         } finally {
             setIsLoading(false);
         }
-    }, []);
+    };
+
+    useEffect(() => {
+       if (!isAuthLoading) {
+           aggregateStockData();
+       }
+    }, [user, isAuthLoading]);
 
     const filteredAndSortedItems = useMemo(() => {
         let items = [...stockItems];
@@ -121,34 +132,50 @@ export function StockReconciliationPageContent() {
             <header className="mb-8 text-center">
                 <h1 className="text-3xl md:text-4xl font-headline font-bold text-primary">Stock Reconciliation</h1>
                 <p className="text-muted-foreground mt-2">
-                    Aggregated view of all item quantities from processed invoices for stock checking.
+                    Aggregated view of all item quantities from processed invoices for stock checking. Shipping fees are automatically excluded.
                 </p>
             </header>
 
             <main>
                 <Card className="shadow-lg">
                     <CardHeader>
-                        <CardTitle className="font-headline flex items-center gap-2">
-                           <PackageCheck className="w-6 h-6 text-primary" />
-                           Aggregated Item Quantities
-                        </CardTitle>
-                        <CardDescription>
-                            This table sums up the quantities for each unique product code found in the invoices processed in the "Incoming Invoices" tab. Use the search box to filter results.
-                        </CardDescription>
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
+                            <div>
+                                <CardTitle className="font-headline flex items-center gap-2">
+                                <PackageCheck className="w-6 h-6 text-primary" />
+                                Aggregated Item Quantities
+                                </CardTitle>
+                                <CardDescription>
+                                    This table sums up quantities for each unique product from processed invoices.
+                                </CardDescription>
+                            </div>
+                            <Button onClick={aggregateStockData} disabled={isLoading} variant="outline" className="mt-4 sm:mt-0">
+                                {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+                                Refresh Data
+                            </Button>
+                        </div>
                     </CardHeader>
                     <CardContent>
                         {isLoading ? (
-                            <p>Loading stock data...</p>
+                           <div className="flex items-center justify-center p-8">
+                             <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                           </div>
                         ) : stockItems.length > 0 ? (
                             <>
-                                <div className="mb-4 relative">
-                                    <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                                    <Input
-                                        placeholder="Search by Product Name or Code..."
-                                        value={searchTerm}
-                                        onChange={(e) => setSearchTerm(e.target.value)}
-                                        className="pl-8 w-full max-w-sm"
-                                    />
+                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
+                                    <div className="relative w-full sm:max-w-sm">
+                                        <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                                        <Input
+                                            placeholder="Search by Product Name or Code..."
+                                            value={searchTerm}
+                                            onChange={(e) => setSearchTerm(e.target.value)}
+                                            className="pl-8"
+                                        />
+                                    </div>
+                                    <div className="text-sm text-muted-foreground text-right w-full sm:w-auto">
+                                        <p>Default Warehouse: <strong>{defaultWarehouse || "Not Set"}</strong></p>
+                                        <p>Skipped Shipping Items: <strong>{skippedItems}</strong></p>
+                                    </div>
                                 </div>
                                 <div className="overflow-x-auto rounded-md border">
                                     <Table>
@@ -179,9 +206,9 @@ export function StockReconciliationPageContent() {
                                                         <TableCell className="font-medium">{item.productCode}</TableCell>
                                                         <TableCell>{item.productName}</TableCell>
                                                         <TableCell className="text-right font-bold">{item.totalQuantity}</TableCell>
-                                                        <TableCell className="text-xs text-muted-foreground" title={[...new Set(item.sourceInvoices)].join(', ')}>
-                                                            {[...new Set(item.sourceInvoices)].slice(0, 5).join(', ')}
-                                                            {item.sourceInvoices.length > 5 ? '...' : ''}
+                                                        <TableCell className="text-xs text-muted-foreground" title={item.sourceInvoices.join(', ')}>
+                                                            {item.sourceInvoices.join(', ')}
+                                                            {item.sourceInvoices.length >= 5 ? '...' : ''}
                                                         </TableCell>
                                                     </TableRow>
                                                 ))
@@ -201,7 +228,9 @@ export function StockReconciliationPageContent() {
                                 <Info className="h-4 w-4" />
                                 <AlertTitle>No Data Available</AlertTitle>
                                 <AlertDescription>
-                                    No invoice data found. Please process some invoices in the "Incoming Invoices" page first. The data from that page is used to build this stock view.
+                                    No stock data could be aggregated. This could be because no invoices have been processed yet, or there are no items with product codes in them.
+                                    <br />
+                                    Go to the <Link href="/incoming-invoices" className="underline text-primary">Incoming Invoices</Link> page to get started. Or check your <Link href="/settings/stock" className="underline text-primary">Stock Settings</Link>.
                                 </AlertDescription>
                             </Alert>
                         )}
