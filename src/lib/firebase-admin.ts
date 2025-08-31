@@ -1,34 +1,48 @@
 
 // src/lib/firebase-admin.ts
-import type { Firestore } from 'firebase-admin/firestore';
+import { getApps, initializeApp, cert, type App } from 'firebase-admin/app';
+import { getFirestore, type Firestore } from 'firebase-admin/firestore';
 
-let _dbP: Promise<Firestore|null> | null = null;
+let _app: App | null = null;
+let _db: Firestore | null = null;
 
-export function getAdminDbSafe(): Promise<Firestore|null> {
-  if (_dbP) return _dbP;
-  _dbP = (async () => {
-    try {
-      const { getApps, initializeApp, applicationDefault, cert } =
-        await import('firebase-admin/app');
-      const { getFirestore } = await import('firebase-admin/firestore');
+function initAdmin(): App | null {
+  if (getApps().length) return getApps()[0]!;
+  const projectId = process.env.FB_PROJECT_ID;
+  const clientEmail = process.env.FB_CLIENT_EMAIL;
+  let privateKey = process.env.FB_PRIVATE_KEY;
 
-      if (!getApps().length) {
-        const pid = process.env.FB_PROJECT_ID;
-        const email = process.env.FB_CLIENT_EMAIL;
-        const pkRaw = process.env.FB_PRIVATE_KEY;
-        if (pid && email && pkRaw) {
-          initializeApp({ credential: cert({ projectId: pid, clientEmail: email, privateKey: pkRaw.replace(/\\n/g, '\n') }) });
-        } else {
-          initializeApp({ credential: applicationDefault() });
-        }
-      }
-      return getFirestore();
-    } catch (e) {
-      console.error('[admin] init failed, translations disabled:', e);
-      return null;
-    }
-  })();
-  return _dbP;
+  if (!projectId || !clientEmail || !privateKey) {
+    console.error('[admin] Missing envs', {
+      hasProjectId: !!projectId, hasClientEmail: !!clientEmail, hasKey: !!privateKey
+    });
+    return null;
+  }
+  // dacă în .env.local ai \n escapate:
+  privateKey = privateKey.replace(/\\n/g, '\n');
+
+  try {
+    _app = initializeApp({ credential: cert({ projectId, clientEmail, privateKey }) });
+    return _app;
+  } catch (e: any) {
+    console.error('[admin] init error:', e?.message || e);
+    return null;
+  }
 }
 
-    
+export function getAdminApp(): App | null {
+  return _app ?? initAdmin();
+}
+
+export async function getAdminDbSafe(): Promise<Firestore | null> {
+  if (_db) return _db;
+  const app = getAdminApp();
+  if (!app) return null;
+  try {
+    _db = getFirestore(app);
+    return _db;
+  } catch (e) {
+    console.error('[admin] db init failed:', e);
+    return null;
+  }
+}
