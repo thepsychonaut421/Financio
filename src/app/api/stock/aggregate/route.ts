@@ -38,11 +38,13 @@ export async function POST(req: Request) {
                 continue; 
             }
 
-            const key = (code || name || '').toUpperCase();
+            const codeNorm = code.toUpperCase();
+            const nameNorm = name.toUpperCase();
+            const key = codeNorm || nameNorm;
             if (!key) continue;
 
             const qty = Number(it.quantity || 0);
-            const rec = agg.get(key) || { code, name, qty:0, source: [] };
+            const rec = agg.get(key) || { code: code || name, name: name, qty:0, source: [] };
             rec.qty += qty;
             if (inv?.payload?.rechnungsnummer) rec.source.push(inv.payload.rechnungsnummer);
             agg.set(key, rec);
