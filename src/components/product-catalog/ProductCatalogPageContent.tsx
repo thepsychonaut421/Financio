@@ -5,13 +5,16 @@ import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { AlertCircle, FilePlus, Info, Loader2, List, ExternalLink, CheckCircle, XCircle, PackageSearch } from 'lucide-react';
+import { AlertCircle, FilePlus, Info, Loader2, List, ExternalLink, CheckCircle, XCircle, PackageSearch, Save } from 'lucide-react';
 import { Table, TableBody, TableCell, TableHeader, TableHead, TableRow } from '@/components/ui/table';
-import { enrichProductData } from '@/ai/flows/enrich-product-data';
+import { aiEnrich, saveEnrichedToCatalog } from '@/app/product-catalog/actions';
 import type { EnrichedProduct } from '@/ai/schemas/product-catalog-schema';
 import { ProductCatalogActionButtons } from './ProductCatalogActionButtons';
 import type { ProductCatalogProcessingStatus } from '@/types/product';
 import Image from 'next/image';
+import { useToast } from '@/hooks/use-toast';
+import { useAuth } from '@/contexts/AuthContext';
+import { ProductList } from './ProductList';
 
 export function ProductCatalogPageContent() {
   const [productNames, setProductNames] = useState<string>('');
@@ -19,6 +22,9 @@ export function ProductCatalogPageContent() {
   const [status, setStatus] = useState<ProductCatalogProcessingStatus>('idle');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [currentYear, setCurrentYear] = useState<string>('');
+  const { toast } = useToast();
+  const { user } = useAuth();
+
 
   useEffect(() => {
     setCurrentYear(new Date().getFullYear().toString());
@@ -39,7 +45,7 @@ export function ProductCatalogPageContent() {
     const errors: string[] = [];
 
     for (const productName of productList) {
-      const result = await enrichProductData({ productName });
+      const result = await aiEnrich(productName);
       if (result.error || !result.product) {
         errors.push(result.error || `Verarbeitung von "${productName}" fehlgeschlagen.`);
       } else {
@@ -60,6 +66,27 @@ export function ProductCatalogPageContent() {
     setStatus('idle');
     setErrorMessage(null);
   }
+  
+  const handleSaveAll = async () => {
+    if (!user) {
+        toast({ title: "Nicht angemeldet", description: "Sie müssen angemeldet sein, um zu speichern.", variant: "destructive" });
+        return;
+    }
+    if (enrichedProducts.length === 0) {
+        toast({ title: "Keine Daten", description: "Es gibt keine Produkte zum Speichern.", variant: "destructive" });
+        return;
+    }
+
+    setStatus('processing');
+    try {
+        const result = await saveEnrichedToCatalog(user.uid, enrichedProducts);
+        toast({ title: "Gespeichert!", description: `${result.count} Produkt(e) erfolgreich im Katalog gespeichert.` });
+    } catch(e: any) {
+        toast({ title: "Speichern fehlgeschlagen", description: e.message, variant: "destructive" });
+    } finally {
+        setStatus('success'); // Return to success state to allow further actions
+    }
+  };
 
   return (
     <div className="container mx-auto px-4 py-8 md:px-8 md:py-12">
@@ -123,7 +150,13 @@ export function ProductCatalogPageContent() {
 
         {enrichedProducts.length > 0 && (
           <div className="space-y-6">
-            <ProductCatalogActionButtons products={enrichedProducts} />
+            <div className="flex flex-wrap justify-center gap-4">
+              <Button onClick={handleSaveAll} disabled={status === 'processing'}>
+                  <Save className="mr-2 h-4 w-4" /> Alle in Katalog speichern
+              </Button>
+              <ProductCatalogActionButtons products={enrichedProducts} />
+            </div>
+
             {enrichedProducts.map((product, index) => (
               <Card key={`${product.originalProductName}-${index}`} className="shadow-lg overflow-hidden">
                 <CardHeader>
@@ -205,6 +238,9 @@ export function ProductCatalogPageContent() {
             ))}
           </div>
         )}
+        
+        <ProductList />
+
       </main>
       <footer className="text-center mt-12 py-4 border-t">
         <p className="text-sm text-muted-foreground">&copy; {currentYear} Product Catalog Builder. Powered by AI.</p>
