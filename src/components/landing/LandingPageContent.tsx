@@ -3,7 +3,7 @@
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
-import { ReceiptText, Landmark, FileEdit, FileScan, ArrowRight, Zap } from 'lucide-react';
+import { ReceiptText, Landmark, FileEdit, FileScan, ArrowRight, Zap, Library, PackageCheck } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
 
@@ -20,6 +20,12 @@ const features = [
     icon: <Landmark className="w-8 h-8" />,
     href: '/bank-matcher',
   },
+   {
+    title: 'Bank Statement Extractor',
+    description: 'Extract transaction details from your bank statement PDFs efficiently.',
+    icon: <FileScan className="w-8 h-8" />,
+    href: '/bank-statement-extractor',
+  },
   {
     title: 'PDF Organizer',
     description: 'Get intelligent filename suggestions for your PDFs and download them organized.',
@@ -27,10 +33,16 @@ const features = [
     href: '/pdf-organizer',
   },
   {
-    title: 'Bank Statement Extractor',
-    description: 'Extract transaction details from your bank statement PDFs efficiently.',
-    icon: <FileScan className="w-8 h-8" />,
-    href: '/bank-statement-extractor',
+    title: 'Product Catalog',
+    description: 'Enrich product data using AI to build a detailed and structured catalog.',
+    icon: <Library className="w-8 h-8" />,
+    href: '/product-catalog',
+  },
+   {
+    title: 'Stock Reconciliation',
+    description: 'Aggregate item quantities from all processed invoices for easy stock checks.',
+    icon: <PackageCheck className="w-8 h-8" />,
+    href: '/stock-reconciliation',
   },
 ];
 
@@ -90,7 +102,7 @@ export function LandingPageContent() {
             <p className="text-lg text-muted-foreground text-center mb-16 max-w-2xl mx-auto">
               From invoice data extraction to complex financial matching, Financio is designed to streamline your document-heavy tasks.
             </p>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
               {features.map((feature) => (
                 <Link href={feature.href} key={feature.title}>
                   <Card className="h-full hover:shadow-xl hover:border-primary/50 transition-all duration-300 cursor-pointer flex flex-col group bg-card hover:bg-primary/5">

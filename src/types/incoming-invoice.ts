@@ -9,12 +9,14 @@ export interface IncomingInvoiceData {
   zahlungsziel?: string;
   zahlungsart?: string;
   gesamtbetrag?: number;
-  mwstSatz?: string;
+  mwstSatz?: string | number; // Can be string initially
   rechnungspositionen: LineItem[];
   kundenNummer?: string;
   bestellNummer?: string;
   isPaidByAI?: boolean;
   error?: string;
+  anomalies?: string[];
+  translationRefs?: any;
 }
 
 export interface IncomingInvoiceItem extends IncomingInvoiceData {

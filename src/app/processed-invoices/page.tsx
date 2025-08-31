@@ -4,7 +4,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { downloadFile } from '@/lib/export-helpers';
 import JSZip from 'jszip';
@@ -13,6 +13,9 @@ import ProtectedRoute from '@/components/auth/ProtectedRoute';
 import { useAuth } from '@/contexts/AuthContext';
 import { db } from '@/lib/firebase';
 import { collection, query, where, orderBy, onSnapshot, doc, deleteDoc } from 'firebase/firestore';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
+import { DeduplicateView } from '@/components/processed-invoices/DeduplicateView';
 
 
 type RegistryEntry = {
@@ -31,6 +34,7 @@ function ProcessedInvoicesPageContent() {
   const [busy, setBusy] = useState(false);
   const [selected, setSelected] = useState<Record<string, boolean>>({});
   const [error, setError] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<'list' | 'dedupe'>('list');
 
   useEffect(() => {
     if (isAuthLoading) return;
@@ -175,79 +179,97 @@ function ProcessedInvoicesPageContent() {
     <div className="container mx-auto px-4 py-8 md:px-8 md:py-12">
       <Card className="mb-6">
         <CardHeader>
-          <CardTitle className="flex items-center justify-between">
-            <span>Processed Invoices Registry</span>
-            <div className="flex gap-2">
-              <Input placeholder="Search filename / supplier / invoice no."
-                     value={queryTerm} onChange={e=>setQueryTerm(e.target.value)}
-                     className="w-80" />
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle>Processed Invoices Registry</CardTitle>
+              <CardDescription>View, export, or manage invoices processed by the system.</CardDescription>
             </div>
-          </CardTitle>
+             <div className="flex items-center space-x-2">
+                <Label htmlFor="view-mode-switch">Deduplicate Mode</Label>
+                <Switch
+                    id="view-mode-switch"
+                    checked={viewMode === 'dedupe'}
+                    onCheckedChange={(checked) => setViewMode(checked ? 'dedupe' : 'list')}
+                />
+            </div>
+          </div>
         </CardHeader>
-        <CardContent>
-          <div className="flex gap-2 mb-3 flex-wrap">
-            <Button variant="secondary" onClick={selectAll} disabled={busy}>Select All</Button>
-            <Button variant="secondary" onClick={clearSelection} disabled={busy}>Clear Selection</Button>
-            <Button onClick={()=>resendToERP(allSelectedIds)} disabled={busy || allSelectedIds.length===0}>
-              Resend to ERPNext
-            </Button>
-            <Button onClick={()=>downloadJSON(allSelectedIds)} variant="outline" disabled={busy || allSelectedIds.length===0}>
-              Download JSON
-            </Button>
-            <Button onClick={()=>exportZip(allSelectedIds)} variant="outline" disabled={busy || allSelectedIds.length===0}>
-              Export ZIP (CSV)
-            </Button>
-            <Button onClick={()=>removeByIds(allSelectedIds)} variant="destructive" disabled={busy || allSelectedIds.length===0}>
-              Delete Selected
-            </Button>
-            <Button onClick={clearAll} variant="destructive" disabled={busy}>Clear All</Button>
-          </div>
+        {viewMode === 'list' && (
+          <CardContent>
+            <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+                <Input placeholder="Search filename / supplier / invoice no."
+                       value={queryTerm} onChange={e=>setQueryTerm(e.target.value)}
+                       className="w-full sm:w-80" />
+            </div>
+            <div className="flex gap-2 mb-3 flex-wrap">
+              <Button variant="secondary" onClick={selectAll} disabled={busy}>Select All</Button>
+              <Button variant="secondary" onClick={clearSelection} disabled={busy}>Clear Selection</Button>
+              <Button onClick={()=>resendToERP(allSelectedIds)} disabled={busy || allSelectedIds.length===0}>
+                Resend to ERPNext
+              </Button>
+              <Button onClick={()=>downloadJSON(allSelectedIds)} variant="outline" disabled={busy || allSelectedIds.length===0}>
+                Download JSON
+              </Button>
+              <Button onClick={()=>exportZip(allSelectedIds)} variant="outline" disabled={busy || allSelectedIds.length===0}>
+                Export ZIP (CSV)
+              </Button>
+              <Button onClick={()=>removeByIds(allSelectedIds)} variant="destructive" disabled={busy || allSelectedIds.length===0}>
+                Delete Selected
+              </Button>
+              <Button onClick={clearAll} variant="destructive" disabled={busy}>Clear All</Button>
+            </div>
 
-          <div className="border rounded-md overflow-x-auto">
-            <table className="min-w-full text-sm">
-              <thead className="bg-muted">
-                <tr>
-                  <th className="text-left p-2">Select</th>
-                  <th className="text-left p-2">Status</th>
-                  <th className="text-left p-2">Invoice No.</th>
-                  <th className="text-left p-2">Supplier</th>
-                  <th className="text-left p-2">Date</th>
-                  <th className="text-left p-2">Total</th>
-                  <th className="text-left p-2">Filename</th>
-                  <th className="text-left p-2">Created</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map(r => (
-                  <tr key={r.id} className="border-t">
-                    <td className="p-2">
-                      <input
-                        type="checkbox"
-                        checked={!!selected[r.id]}
-                        onChange={()=>toggle(r.id)}
-                        disabled={busy}
-                      />
-                    </td>
-                    <td className="p-2">{badge(r.status)}</td>
-                    <td className="p-2">{r.payload?.rechnungsnummer || '-'}</td>
-                    <td className="p-2">{r.payload?.lieferantName || '-'}</td>
-                    <td className="p-2">{r.payload?.datum || '-'}</td>
-                    <td className="p-2">{r.payload?.gesamtbetrag ?? '-'}</td>
-                    <td className="p-2">{r.filename}</td>
-                    <td className="p-2">{formatTimestamp(r.createdAt)}</td>
-                  </tr>
-                ))}
-                {(rows.length === 0 || error) && (
+            <div className="border rounded-md overflow-x-auto">
+              <table className="min-w-full text-sm">
+                <thead className="bg-muted">
                   <tr>
-                    <td className="p-4 text-center text-muted-foreground" colSpan={8}>
-                       {isAuthLoading ? "Loading..." : (error ? error : "No processed invoices yet.")}
-                    </td>
+                    <th className="text-left p-2">Select</th>
+                    <th className="text-left p-2">Status</th>
+                    <th className="text-left p-2">Invoice No.</th>
+                    <th className="text-left p-2">Supplier</th>
+                    <th className="text-left p-2">Date</th>
+                    <th className="text-left p-2">Total</th>
+                    <th className="text-left p-2">Filename</th>
+                    <th className="text-left p-2">Created</th>
                   </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </CardContent>
+                </thead>
+                <tbody>
+                  {rows.map(r => (
+                    <tr key={r.id} className="border-t">
+                      <td className="p-2">
+                        <input
+                          type="checkbox"
+                          checked={!!selected[r.id]}
+                          onChange={()=>toggle(r.id)}
+                          disabled={busy}
+                        />
+                      </td>
+                      <td className="p-2">{badge(r.status)}</td>
+                      <td className="p-2">{r.payload?.rechnungsnummer || '-'}</td>
+                      <td className="p-2">{r.payload?.lieferantName || '-'}</td>
+                      <td className="p-2">{r.payload?.datum || '-'}</td>
+                      <td className="p-2">{r.payload?.gesamtbetrag ?? '-'}</td>
+                      <td className="p-2">{r.filename}</td>
+                      <td className="p-2">{formatTimestamp(r.createdAt)}</td>
+                    </tr>
+                  ))}
+                  {(rows.length === 0 || error) && (
+                    <tr>
+                      <td className="p-4 text-center text-muted-foreground" colSpan={8}>
+                         {isAuthLoading ? "Loading..." : (error ? error : "No processed invoices yet.")}
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        )}
+        {viewMode === 'dedupe' && (
+            <CardContent>
+                <DeduplicateView />
+            </CardContent>
+        )}
       </Card>
     </div>
   );
