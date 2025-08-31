@@ -3,14 +3,21 @@ import { NextResponse } from 'next/server';
 import { getAdminDbSafe } from '@/lib/firebase-admin';
 import { getStockSettingsServer } from '@/server/stock-settings-server';
 import { isShippingFee } from '@/lib/is-shipping-fee';
+import { auth } from 'firebase-admin';
 
 async function getUidFromRequest(req: Request): Promise<string> {
-    const idToken = req.headers.get('x-fb-idtoken');
+    const authHeader = req.headers.get('authorization');
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        throw new Error('Missing or invalid Authorization header.');
+    }
+    const idToken = authHeader.split('Bearer ')[1];
     if (!idToken) {
         throw new Error('Missing or invalid Firebase ID token.');
     }
-    // Dynamically import to keep cold-start times low for other scenarios
-    const { auth } = await import('firebase-admin');
+    
+    // Ensure admin is initialized before calling auth()
+    await getAdminDbSafe(); 
+    
     const decodedToken = await auth().verifyIdToken(idToken);
     return decodedToken.uid;
 }
@@ -48,12 +55,12 @@ export async function POST(req: Request) {
             }
 
             const codeNorm = code.toUpperCase();
-            const nameNorm = name; // keep original name for display
-            const key = codeNorm || nameNorm.toUpperCase();
+            const nameNorm = name.toUpperCase(); // For key only
+            const key = codeNorm || nameNorm;
             if (!key) continue;
 
             const qty = Number(it.quantity || 0);
-            const rec = agg.get(key) || { code: code || name, name: nameNorm, qty:0, source: [] };
+            const rec = agg.get(key) || { code: code || name, name: name, qty:0, source: [] };
             rec.qty += qty;
             if (inv?.payload?.rechnungsnummer) rec.source.push(inv.payload.rechnungsnummer);
             agg.set(key, rec);
@@ -73,7 +80,6 @@ export async function POST(req: Request) {
 
   } catch (error: any) {
     console.error("[API /stock/aggregate Error]", error);
-    // Differentiate between auth errors and other errors
     if (error.message.includes('ID token')) {
          return NextResponse.json({ ok: false, error: 'Authentication failed. Please log in again.' }, { status: 401 });
     }

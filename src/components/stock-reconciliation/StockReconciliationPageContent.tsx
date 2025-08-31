@@ -56,9 +56,9 @@ export function StockReconciliationPageContent() {
                 method: 'POST',
                 headers: { 
                     'Content-Type': 'application/json',
-                    'x-fb-idtoken': idToken 
+                    'Authorization': `Bearer ${idToken}` 
                 },
-                body: JSON.stringify({}), // Body can be empty as UID is derived from token
+                body: JSON.stringify({}), // Body is now empty
             });
 
             if (!response.ok) {
