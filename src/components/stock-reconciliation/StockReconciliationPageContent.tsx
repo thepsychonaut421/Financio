@@ -71,7 +71,7 @@ async function fetchWithFreshToken(
     options: RequestInit
 ): Promise<Response> {
     let idToken = await getIdToken();
-    if (!idToken) throw new AuthError("Cannot fetch without an ID token.");
+    if (!idToken) throw new AuthError("Cannot fetch without a valid ID token. User may be logged out.");
 
     let response = await fetch(endpoint, {
         ...options,
@@ -81,7 +81,7 @@ async function fetchWithFreshToken(
     if (response.status === 401) {
         console.warn("[Auth] Token may have been stale, forcing refresh and retrying...");
         idToken = await getIdToken(); // Force refresh
-        if (!idToken) throw new AuthError("Failed to refresh token for retry.");
+        if (!idToken) throw new AuthError("Failed to refresh token for retry. User may have been logged out.");
         
         response = await fetch(endpoint, {
             ...options,
