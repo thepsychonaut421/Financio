@@ -2,7 +2,7 @@
 'use client';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { ReceiptText, Landmark, FileEdit, FileScan, LogIn, LogOut, Home as HomeIcon, Menu, UserCircle, PackageCheck, Archive, PackagePlus, Library } from 'lucide-react';
+import { ReceiptText, Landmark, FileEdit, FileScan, LogIn, LogOut, Home as HomeIcon, Menu, UserCircle, PackageCheck, Archive, PackagePlus, Library, Settings } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import React from 'react';
@@ -18,6 +18,9 @@ const mainNavLinks = [
   { href: '/product-catalog', label: 'Product Catalog', icon: <Library className="w-5 h-5" /> },
   { href: '/stock-reconciliation', label: 'Stock Reconciliation', icon: <PackageCheck className="w-5 h-5" /> },
 ];
+
+const settingsLink = { href: '/settings/erpnext', label: 'Settings', icon: <Settings className="w-5 h-5" /> };
+
 
 export function AppHeader() {
   const pathname = usePathname();
@@ -89,6 +92,20 @@ export function AppHeader() {
               <span>{link.label}</span>
             </Link>
           ))}
+            {isAuthenticated && (
+                 <Link
+                    href={settingsLink.href}
+                    className={`flex items-center space-x-2 px-3 py-2 rounded-md text-sm font-medium transition-colors
+                                ${pathname.startsWith('/settings')
+                                ? 'bg-primary text-primary-foreground shadow-sm'
+                                : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+                                }`}
+                    title={settingsLink.label}
+                >
+                    {settingsLink.icon}
+                    <span>{settingsLink.label}</span>
+                </Link>
+            )}
         </nav>
 
         <div className="flex items-center space-x-2">
@@ -126,6 +143,21 @@ export function AppHeader() {
                       <span>{link.label}</span>
                     </Link>
                   ))}
+                   {isAuthenticated && (
+                     <Link
+                        key={`mobile-${settingsLink.href}`}
+                        href={settingsLink.href}
+                        onClick={() => setIsMobileMenuOpen(false)}
+                        className={`flex items-center space-x-3 px-3 py-3 rounded-md text-base font-medium transition-colors
+                                    ${pathname.startsWith('/settings')
+                                        ? 'bg-primary text-primary-foreground'
+                                        : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+                                    }`}
+                        >
+                        {settingsLink.icon}
+                        <span>{settingsLink.label}</span>
+                    </Link>
+                  )}
                   <hr className="my-2"/>
                   {renderAuthButton(true)}
                 </nav>

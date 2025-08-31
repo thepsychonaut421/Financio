@@ -13,6 +13,8 @@ import {
 } from '@/lib/export-helpers';
 import type { IncomingInvoiceItem, ERPIncomingInvoiceItem } from '@/types/incoming-invoice';
 import { Copy, FileJson, FileSpreadsheet, ExternalLink, Users, FileArchive, Trash2, Send, Package } from 'lucide-react'; // Removed Landmark
+import { useAuth } from '@/contexts/AuthContext';
+
 
 interface IncomingInvoiceActionButtonsProps {
   invoices: IncomingInvoiceItem[] | ERPIncomingInvoiceItem[];
@@ -44,6 +46,8 @@ export function IncomingInvoiceActionButtons({
   onExportSuppliersCSV
 }: IncomingInvoiceActionButtonsProps) {
   const { toast } = useToast();
+  const { user } = useAuth();
+
 
   const handleCopyToClipboard = async () => {
     if (invoices.length === 0) {
@@ -80,7 +84,7 @@ export function IncomingInvoiceActionButtons({
     let csvData;
     let fileName;
     if (erpMode) {
-      csvData = incomingInvoicesToERPNextCSVComplete(invoices as ERPIncomingInvoiceItem[]);
+      csvData = incomingInvoicesToERPNextCSVComplete(invoices as ERPIncomingInvoiceItem[], user?.uid);
       fileName = 'erpnext_purchase_invoices_for_import_ALL.csv'; 
     } else {
       csvData = incomingInvoicesToCSV(invoices as IncomingInvoiceItem[]);
@@ -168,5 +172,3 @@ export function IncomingInvoiceActionButtons({
     </div>
   );
 }
-
-    

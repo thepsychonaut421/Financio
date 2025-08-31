@@ -86,7 +86,7 @@ export function incomingInvoicesToCSV(invoices: IncomingInvoiceItem[]): string {
 }
 
 
-export function incomingInvoicesToERPNextCSVComplete(invoices: ERPIncomingInvoiceItem[]): string {
+export function incomingInvoicesToERPNextCSVComplete(invoices: ERPIncomingInvoiceItem[], uid?: string): string {
   if (!invoices || invoices.length === 0) return '';
 
   const allHeaders = [

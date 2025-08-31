@@ -432,7 +432,7 @@ export function IncomingInvoicesPageContent() {
           erpNextInvoiceName: internalRefId, 
           billDate: aiResult.bill_date,
           dueDate: calculateDueDate(aiResult.datum, aiResult.zahlungsziel),
-          wahrung: aiResult.currency, 
+          wahrung: aiResult.wahrung, 
           istBezahlt: istBezahltStatus, 
           kontenrahmen: kontenrahmen.trim(), 
           remarks: remarks.trim(),
@@ -515,12 +515,16 @@ export function IncomingInvoicesPageContent() {
       });
       return;
     }
+    if (!user) {
+        toast({ title: "Authentication Error", description: "You must be logged in to export.", variant: "destructive" });
+        return;
+    }
     setIsExportingToERPNext(true);
     try {
       const response = await fetch('/api/erpnext/invoices', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ invoices: invoicesToExport }),
+        body: JSON.stringify({ invoices: invoicesToExport, uid: user.uid }),
       });
 
       const result = await response.json();
@@ -707,7 +711,7 @@ export function IncomingInvoicesPageContent() {
     try {
       for (let i = 0; i < invoicesToZip.length; i++) {
         const invoice = invoicesToZip[i];
-        const csvString = incomingInvoicesToERPNextCSVComplete([invoice]); 
+        const csvString = incomingInvoicesToERPNextCSVComplete([invoice], user?.uid); 
         
         const safeInvoiceNumber = (invoice.rechnungsnummer || `invoice_${i + 1}`).replace(/[^a-zA-Z0-9_.-]/g, '_').substring(0, 50);
         const filename = `ERPNext_Invoice_${safeInvoiceNumber}.csv`;
