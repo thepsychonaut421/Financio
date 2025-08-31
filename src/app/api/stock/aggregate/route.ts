@@ -29,8 +29,9 @@ export async function POST(req: Request) {
 
     snap.forEach(doc=>{
         const inv = doc.data() as any;
-        // Defensive coding: ensure rechnungspositionen is an array
+        // Defensive coding: ensure rechnungspositionen is a valid array
         const items = Array.isArray(inv?.payload?.rechnungspositionen) ? inv.payload.rechnungspositionen : [];
+        
         for (const it of items) {
             const code = (it.productCode || '').toString().trim();
             const name = (it.productName || '').toString().trim();
@@ -45,7 +46,7 @@ export async function POST(req: Request) {
             const key = codeNorm || nameNorm;
             if (!key) continue;
 
-            const qty = Number(it.quantity || 0);
+            const qty = Number(it.quantity || 0) || 0; // Guard against NaN
             const rec = agg.get(key) || { code: code || name, name: name, qty:0, source: [] };
             rec.qty += qty;
             if (inv?.payload?.rechnungsnummer) rec.source.push(inv.payload.rechnungsnummer);
@@ -77,8 +78,8 @@ export async function POST(req: Request) {
   } catch (error: any) {
     console.error("[API /stock/aggregate Error]", error);
     if (error instanceof AuthError) {
-        return NextResponse.json({ ok: false, error: error.message }, { status: 401 });
+        return NextResponse.json({ ok: false, error: error.message }, { status: error.status });
     }
-    return NextResponse.json({ ok: false, error: error.message || 'An unknown server error occurred.' }, { status: 500 });
+    return NextResponse.json({ ok: false, error: 'An unknown server error occurred.' }, { status: 500 });
   }
 }

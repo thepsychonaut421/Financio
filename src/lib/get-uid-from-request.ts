@@ -21,13 +21,19 @@ export async function getUidFromRequest(req: Request): Promise<string> {
     const { getAuth } = await import('firebase-admin/auth');
     const decoded = await getAuth().verifyIdToken(idToken, true); // true checks for revocation
     return decoded.uid;
-  } catch(e: any) {
+  } catch (e: any) {
     const msg = e?.code || e?.message || '';
-    if (msg.includes('auth/id-token-expired') || msg.includes('auth/id-token-revoked') || msg.includes('argument-error')) {
+    // Check for specific Firebase Auth error codes
+    if (
+      msg.includes('auth/id-token-expired') ||
+      msg.includes('auth/id-token-revoked') ||
+      msg.includes('auth/argument-error') || // Catches malformed tokens
+      msg.includes('auth/invalid-id-token')
+    ) {
       throw new AuthError('ID token is invalid, expired, or revoked.');
     }
-    // For other errors, you might want to log them differently
+    // For other unexpected errors, log them but still throw a generic auth error
     console.error("Unexpected error during token verification:", e);
-    throw new Error('An unexpected error occurred during authentication.');
+    throw new AuthError('An unexpected error occurred during authentication.');
   }
 }
