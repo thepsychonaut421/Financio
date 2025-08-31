@@ -79,9 +79,9 @@ async function fetchWithFreshToken(
     });
 
     if (response.status === 401) {
-        console.log("[fetchWithFreshToken] Received 401, forcing token refresh and retrying...");
+        console.warn("[Auth] Token may have been stale, forcing refresh and retrying...");
         idToken = await getIdToken(); // Force refresh
-        if (!idToken) throw new AuthError("Failed to refresh token.");
+        if (!idToken) throw new AuthError("Failed to refresh token for retry.");
         
         response = await fetch(endpoint, {
             ...options,

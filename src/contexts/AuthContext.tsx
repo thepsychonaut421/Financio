@@ -5,7 +5,7 @@ import React, { createContext, useContext, useState, useEffect, type ReactNode }
 import { useRouter, usePathname } from 'next/navigation';
 import { onAuthStateChanged, type User, signInWithEmailAndPassword, signOut, OAuthProvider, signInWithPopup } from 'firebase/auth';
 import { useToast } from '@/hooks/use-toast';
-import { auth } from '@/lib/firebase'; // Import auth from the new firebase config file
+import { auth, initializeAppCheckIfNeeded } from '@/lib/firebase'; // Correctly import auth and AppCheck initializer
 
 
 interface AuthContextType {
@@ -28,6 +28,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const { toast } = useToast();
 
   useEffect(() => {
+    // Initialize App Check on the client side when the provider mounts
+    initializeAppCheckIfNeeded();
+    
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       setUser(user);
       setIsLoading(false);
@@ -80,7 +83,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const getIdToken = async (): Promise<string | null> => {
     if (!auth.currentUser) return null;
-    return auth.currentUser.getIdToken(true);
+    try {
+        // Force refresh the token to ensure it's not stale.
+        return await auth.currentUser.getIdToken(true);
+    } catch (error) {
+        console.error("Error refreshing ID token:", error);
+        // This might happen if the user's session is invalidated on the server.
+        // Logging out is a safe fallback.
+        await logout();
+        return null;
+    }
   };
   
   useEffect(() => {

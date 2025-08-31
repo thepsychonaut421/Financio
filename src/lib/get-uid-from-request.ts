@@ -26,11 +26,12 @@ export async function getUidFromRequest(req: Request): Promise<string> {
   } catch (e: any) {
     console.error('[auth] verifyIdToken failed:', e?.code || e?.message || e);
     // Throw a more specific error based on the Firebase error code
-    throw new AuthError(
-      e?.code === 'auth/id-token-expired' ? 'ID token expired' :
-      e?.code === 'auth/invalid-id-token' ? 'ID token invalid' :
-      e?.code === 'auth/id-token-revoked' ? 'ID token revoked' :
-      'ID token is invalid, expired, or revoked.'
-    );
+    if (e.code === 'auth/id-token-expired') {
+      throw new AuthError("ID token is expired. Please refresh and retry.");
+    }
+    if (e.code === 'auth/argument-error') {
+      throw new AuthError("ID token is malformed or missing.");
+    }
+    throw new AuthError(`Token validation failed: ${e.code || e.message}`);
   }
 }
