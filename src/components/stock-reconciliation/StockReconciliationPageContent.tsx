@@ -95,6 +95,7 @@ export function StockReconciliationPageContent() {
                     variant: 'destructive',
                  });
                  setIsLoading(false);
+                 setStockItems([]);
                  return;
             }
 
