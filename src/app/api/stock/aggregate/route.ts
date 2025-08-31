@@ -1,4 +1,5 @@
 
+
 import { NextResponse } from 'next/server';
 import { getAdminDbSafe } from '@/lib/firebase-admin';
 import { getStockSettingsServer } from '@/server/stock-settings-server';

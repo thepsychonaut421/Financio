@@ -1,7 +1,7 @@
 
 import { getAuth } from 'firebase-admin/auth';
 import { getAdminApp } from '@/lib/firebase-admin';
-import { AuthError } from './auth-error';
+import { AuthError } from '@/lib/auth-error';
 
 
 export async function getUidFromRequest(req: Request): Promise<string> {
