@@ -76,7 +76,12 @@ export async function POST(req: Request) {
     
     console.log(`[stock aggregate] uid=${uid} rows=${rows.length} skipped=${shippingFeesExcluded} wh="${settings.defaultWarehouse}"`);
 
-    return NextResponse.json({ ok:true, rows, warehouse: settings.defaultWarehouse, skippedShippingItems: shippingFeesExcluded });
+    return NextResponse.json({ ok:true, rows, warehouse: settings.defaultWarehouse, skippedShippingItems: shippingFeesExcluded }, {
+        headers: {
+            'Cache-Control': 'no-store',
+            'Content-Type': 'application/json; charset=utf-8',
+        }
+    });
 
   } catch (error: any) {
     console.error("[API /stock/aggregate Error]", error);

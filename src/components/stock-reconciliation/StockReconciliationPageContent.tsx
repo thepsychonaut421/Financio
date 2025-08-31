@@ -5,7 +5,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Info, PackageCheck, Search, ArrowUpDown, Loader2, RefreshCw } from 'lucide-react';
+import { Info, PackageCheck, Search, ArrowUpDown, Loader2, RefreshCw, FileSpreadsheet } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/contexts/AuthContext';
@@ -22,6 +22,25 @@ interface StockItem {
 type SortKey = keyof StockItem | null;
 type SortOrder = 'asc' | 'desc';
 
+function toCsv(rows: StockItem[]) {
+  const header = ['Product Code','Product Name','Total Quantity','Source Invoices'].join(',');
+  const lines = rows.map(r => [
+    `"${(r.productCode||'').replace(/"/g,'""')}"`,
+    `"${(r.productName||'').replace(/"/g,'""')}"`,
+    r.totalQuantity,
+    `"${(r.sourceInvoices||[]).join(' ').replace(/"/g,'""')}"`
+  ].join(','));
+  return [header, ...lines].join('\n');
+}
+
+function download(name: string, content: string, mime='text/csv;charset=utf-8;') {
+  const blob = new Blob([content], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = name; a.click();
+  URL.revokeObjectURL(url);
+}
+
+
 export function StockReconciliationPageContent() {
     const { user, isLoading: isAuthLoading, getIdToken } = useAuth();
     const { toast } = useToast();
@@ -29,6 +48,7 @@ export function StockReconciliationPageContent() {
     const [stockItems, setStockItems] = useState<StockItem[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [currentYear, setCurrentYear] = useState('');
+    const [rawSearchTerm, setRawSearchTerm] = useState('');
     const [searchTerm, setSearchTerm] = useState('');
     const [sortKey, setSortKey] = useState<SortKey>('productName');
     const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
@@ -38,6 +58,13 @@ export function StockReconciliationPageContent() {
     useEffect(() => {
         setCurrentYear(new Date().getFullYear().toString());
     }, []);
+
+    useEffect(() => {
+        const timerId = setTimeout(() => {
+            setSearchTerm(rawSearchTerm);
+        }, 180); // 180ms debounce delay
+        return () => clearTimeout(timerId);
+    }, [rawSearchTerm]);
 
     const aggregateStockData = async () => {
         if (!user) {
@@ -198,14 +225,19 @@ export function StockReconciliationPageContent() {
                         ) : stockItems.length > 0 ? (
                             <>
                                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
-                                    <div className="relative w-full sm:max-w-sm">
-                                        <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                                        <Input
-                                            placeholder="Search by Product Name or Code..."
-                                            value={searchTerm}
-                                            onChange={(e) => setSearchTerm(e.target.value)}
-                                            className="pl-8"
-                                        />
+                                     <div className="flex gap-2">
+                                        <div className="relative w-full sm:max-w-sm">
+                                            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                                            <Input
+                                                placeholder="Search by Product Name or Code..."
+                                                value={rawSearchTerm}
+                                                onChange={(e) => setRawSearchTerm(e.target.value)}
+                                                className="pl-8"
+                                            />
+                                        </div>
+                                         <Button variant="outline" onClick={()=>download('stock_aggregate.csv', toCsv(filteredAndSortedItems))}>
+                                            <FileSpreadsheet className="mr-2 h-4 w-4"/> Export CSV
+                                        </Button>
                                     </div>
                                     <div className="text-sm text-muted-foreground text-right w-full sm:w-auto">
                                         <p>Default Warehouse: <strong>{defaultWarehouse || "Not Set"}</strong></p>
