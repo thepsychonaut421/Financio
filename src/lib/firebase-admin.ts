@@ -1,48 +1,51 @@
-
 // src/lib/firebase-admin.ts
-import { getApps, initializeApp, cert, type App } from 'firebase-admin/app';
+import { getApps, initializeApp, cert, type App, applicationDefault } from 'firebase-admin/app';
 import { getFirestore, type Firestore } from 'firebase-admin/firestore';
+import { AuthError } from './auth-error';
 
 let _app: App | null = null;
 let _db: Firestore | null = null;
+let _initError: Error | null = null;
 
-function initAdmin(): App | null {
-  if (getApps().length) return getApps()[0]!;
-  const projectId = process.env.FB_PROJECT_ID;
-  const clientEmail = process.env.FB_CLIENT_EMAIL;
-  let privateKey = process.env.FB_PRIVATE_KEY;
-
-  if (!projectId || !clientEmail || !privateKey) {
-    console.error('[admin] Missing envs', {
-      hasProjectId: !!projectId, hasClientEmail: !!clientEmail, hasKey: !!privateKey
-    });
-    return null;
+function initializeAdminApp(): App | null {
+  if (getApps().length) {
+    _app = getApps()[0]!;
+    return _app;
   }
-  // dacă în .env.local ai \n escapate:
-  privateKey = privateKey.replace(/\\n/g, '\n');
+  
+  if (_initError) {
+      // Don't retry if we already have a fatal initialization error
+      return null;
+  }
 
   try {
-    _app = initializeApp({ credential: cert({ projectId, clientEmail, privateKey }) });
+    // Use Application Default Credentials, the recommended way for Firebase/Google Cloud environments
+    _app = initializeApp({ credential: applicationDefault() });
     return _app;
   } catch (e: any) {
-    console.error('[admin] init error:', e?.message || e);
+    console.error('[firebase-admin] Admin SDK initialization failed:', e?.message || e);
+    _initError = new AuthError("Firebase Admin SDK initialization failed. Check server logs for details.");
     return null;
   }
 }
 
-export function getAdminApp(): App | null {
-  return _app ?? initAdmin();
+export function getAdminApp(): App {
+  const app = _app ?? initializeAdminApp();
+  if (!app) {
+    throw _initError || new AuthError("Firebase Admin SDK is not available.");
+  }
+  return app;
 }
+
 
 export async function getAdminDbSafe(): Promise<Firestore | null> {
   if (_db) return _db;
-  const app = getAdminApp();
-  if (!app) return null;
   try {
+    const app = getAdminApp(); // This will throw if init fails
     _db = getFirestore(app);
     return _db;
   } catch (e) {
-    console.error('[admin] db init failed:', e);
+    // Error is already logged by getAdminApp, so we just return null
     return null;
   }
 }
