@@ -30,7 +30,7 @@ function toCsv(rows: StockItem[]) {
     r.totalQuantity,
     `"${(r.sourceInvoices||[]).join(' ').replace(/"/g,'""')}"`
   ].join(','));
-  return [header, ...lines].join('\n');
+  return '\uFEFF' + [header, ...lines].join('\n');
 }
 
 function download(name: string, content: string, mime='text/csv;charset=utf-8;') {

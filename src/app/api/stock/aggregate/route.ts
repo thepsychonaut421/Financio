@@ -19,7 +19,10 @@ export async function POST(req: Request) {
     }
 
     const settings = await getStockSettingsServer(uid);
-    const snap = await db.collection('processed_invoices').where('userId','==',uid).get();
+    const snap = await db.collection('processed_invoices')
+        .where('userId','==',uid)
+        .select('payload.rechnungspositionen','payload.rechnungsnummer')
+        .get();
 
     const agg = new Map<string, { code:string; name:string; qty:number; source:string[] }>();
     let shippingFeesExcluded = 0;
