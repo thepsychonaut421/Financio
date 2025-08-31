@@ -5,8 +5,7 @@ import React, { createContext, useContext, useState, useEffect, type ReactNode }
 import { useRouter, usePathname } from 'next/navigation';
 import { onAuthStateChanged, type User, signInWithEmailAndPassword, signOut, OAuthProvider, signInWithPopup } from 'firebase/auth';
 import { useToast } from '@/hooks/use-toast';
-import { auth, initializeAppCheckIfNeeded } from '@/lib/firebase'; // Correctly import auth and AppCheck initializer
-
+import { app, auth } from '@/lib/firebase'; // Removed initializeAppCheckIfNeeded from here
 
 interface AuthContextType {
   user: User | null;
@@ -28,9 +27,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const { toast } = useToast();
 
   useEffect(() => {
-    // Initialize App Check on the client side when the provider mounts
-    console.log("Attempting to initialize App Check...");
-    initializeAppCheckIfNeeded();
+    // Moved App Check logic directly here to ensure it's 100% client-side
+    const initializeAppCheckClientSide = async () => {
+        if (typeof window !== 'undefined') {
+            try {
+                const { initializeAppCheck, ReCaptchaV3Provider } = await import('firebase/app-check');
+                
+                const debugToken = process.env.NEXT_PUBLIC_FIREBASE_APPCHECK_DEBUG_TOKEN;
+                if (debugToken) {
+                    (window as any).FIREBASE_APPCHECK_DEBUG_TOKEN = debugToken;
+                }
+
+                const siteKey = process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY;
+                
+                // Initialize with debug token if present, otherwise with reCAPTCHA if the key is valid.
+                initializeAppCheck(app, {
+                    provider: siteKey && siteKey !== 'RECAPTCHA_ENTERPRISE_SITE_KEY' && !debugToken
+                        ? new ReCaptchaV3Provider(siteKey)
+                        : undefined,
+                    isTokenAutoRefreshEnabled: true
+                });
+                console.log("Firebase App Check initialized successfully.");
+
+            } catch (e) {
+                console.error("Error initializing Firebase App Check:", e);
+            }
+        }
+    };
+    
+    initializeAppCheckClientSide();
     
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       setUser(user);

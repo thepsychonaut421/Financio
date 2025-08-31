@@ -19,34 +19,7 @@ const app: FirebaseApp = getApps().length === 0 ? initializeApp(firebaseConfig) 
 const db = getFirestore(app);
 const auth = getAuth(app);
 
-// This function will be called from the AuthContext to ensure it runs only on the client.
-export async function initializeAppCheckIfNeeded() {
-    // Only run on client
-    if (typeof window !== 'undefined') {
-        try {
-            const { initializeAppCheck, ReCaptchaV3Provider } = await import('firebase/app-check');
-            
-            const debugToken = process.env.NEXT_PUBLIC_FIREBASE_APPCHECK_DEBUG_TOKEN;
-            if (debugToken) {
-                (window as any).FIREBASE_APPCHECK_DEBUG_TOKEN = debugToken;
-            }
-
-            const siteKey = process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY;
-            
-            // Initialize with debug token if present, otherwise with reCAPTCHA if the key is valid.
-            initializeAppCheck(app, {
-                provider: siteKey && siteKey !== 'RECAPTCHA_ENTERPRISE_SITE_KEY' && !debugToken
-                    ? new ReCaptchaV3Provider(siteKey)
-                    : undefined,
-                isTokenAutoRefreshEnabled: true
-            });
-            console.log("Firebase App Check initialized successfully.");
-
-        } catch (e) {
-            console.error("Error initializing Firebase App Check:", e);
-        }
-    }
-}
-
+// App Check initialization logic has been moved to AuthContext.tsx
+// to ensure it only runs on the client-side.
 
 export { app, auth, db };
