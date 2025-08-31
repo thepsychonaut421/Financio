@@ -29,6 +29,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     // Initialize App Check on the client side when the provider mounts
+    console.log("Attempting to initialize App Check...");
     initializeAppCheckIfNeeded();
     
     const unsubscribe = onAuthStateChanged(auth, (user) => {
