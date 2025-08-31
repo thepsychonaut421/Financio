@@ -23,6 +23,7 @@ type SortKey = keyof StockItem | null;
 type SortOrder = 'asc' | 'desc';
 
 function toCsv(rows: StockItem[]) {
+  const BOM = '\uFEFF'; // Byte Order Mark for Excel compatibility
   const header = ['Product Code','Product Name','Total Quantity','Source Invoices'].join(',');
   const lines = rows.map(r => [
     `"${(r.productCode||'').replace(/"/g,'""')}"`,
@@ -30,10 +31,10 @@ function toCsv(rows: StockItem[]) {
     r.totalQuantity,
     `"${(r.sourceInvoices||[]).join(' ').replace(/"/g,'""')}"`
   ].join(','));
-  return '\uFEFF' + [header, ...lines].join('\n');
+  return BOM + [header, ...lines].join('\n');
 }
 
-function download(name: string, content: string, mime='text/csv;charset=utf-8;') {
+function downloadFile(name: string, content: string, mime='text/csv;charset=utf-8;') {
   const blob = new Blob([content], { type: mime });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a'); a.href = url; a.download = name; a.click();
@@ -61,7 +62,7 @@ export function StockReconciliationPageContent() {
 
     useEffect(() => {
         const timerId = setTimeout(() => {
-            setSearchTerm(rawSearchTerm);
+            setSearchTerm(rawSearchTerm.trim());
         }, 180); // 180ms debounce delay
         return () => clearTimeout(timerId);
     }, [rawSearchTerm]);
@@ -76,7 +77,8 @@ export function StockReconciliationPageContent() {
         try {
             const idToken = await getIdToken();
             if (!idToken) {
-                throw new Error("Authentication token not available. Please log in again.");
+                // This case should be rare as useAuth would likely catch unauthenticated state earlier
+                throw new AuthError("Authentication token not available. Please log in again.");
             }
 
             const response = await fetch('/api/stock/aggregate', {
@@ -89,14 +91,8 @@ export function StockReconciliationPageContent() {
             });
             
             if (response.status === 401) {
-                 toast({
-                    title: 'Authentication Error',
-                    description: "Your session may have expired. Please log in again.",
-                    variant: 'destructive',
-                 });
-                 setIsLoading(false);
-                 setStockItems([]);
-                 return;
+                 const errorResult = await response.json().catch(()=>({error: 'Your session may have expired. Please log in again.'}));
+                 throw new AuthError(errorResult.error);
             }
 
             if (!response.ok) {
@@ -111,11 +107,19 @@ export function StockReconciliationPageContent() {
 
         } catch (error: any) {
             console.error("Failed to load or process invoice data for stock reconciliation:", error);
+            
+            const isAuthErr = error instanceof AuthError || (error.message && error.message.includes('token'));
+            
             toast({
-                title: 'Error Loading Stock Data',
+                title: isAuthErr ? 'Authentication Error' : 'Error Loading Stock Data',
                 description: error.message,
                 variant: 'destructive',
             });
+
+            if (isAuthErr) {
+                setStockItems([]); // Clear data on auth error
+            }
+
         } finally {
             setIsLoading(false);
         }
@@ -235,7 +239,7 @@ export function StockReconciliationPageContent() {
                                                 className="pl-8"
                                             />
                                         </div>
-                                         <Button variant="outline" onClick={()=>download('stock_aggregate.csv', toCsv(filteredAndSortedItems))}>
+                                         <Button variant="outline" onClick={()=>downloadFile('stock_aggregate.csv', toCsv(filteredAndSortedItems))} disabled={filteredAndSortedItems.length === 0}>
                                             <FileSpreadsheet className="mr-2 h-4 w-4"/> Export CSV
                                         </Button>
                                     </div>

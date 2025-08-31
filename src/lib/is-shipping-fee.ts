@@ -7,12 +7,33 @@ const BASE = [
 ];
 
 const esc = (s:string) => s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
-const mkRE = (w:string) => new RegExp(`(?<![\\p{L}\\p{N}_])${esc(w)}(?![\\p{L}\\p{N}_])`, 'iu');
+
+// Pre-compile regexes for base keywords for performance
+const BASE_REGEX_CACHE = new Map<string, RegExp>();
+BASE.forEach(k => {
+    BASE_REGEX_CACHE.set(k, new RegExp(`(?<![\\p{L}\\p{N}_])${esc(k)}(?![\\p{L}\\p{N}_])`, 'iu'));
+});
+
 
 export function isShippingFee(name?: string, code?: string, keywords: string[] = []) {
   const text = ((name||'')+' '+(code||'')).toLowerCase();
-  const bag = new Set([...BASE, ...keywords.map(k=>k.toLowerCase())].filter(Boolean));
-  for (const k of bag) if (k && mkRE(k).test(text)) return true;
+  if (!text.trim()) return false;
+
+  // Check against pre-compiled base keywords
+  for (const re of BASE_REGEX_CACHE.values()) {
+      if (re.test(text)) return true;
+  }
+  
+  // Check against custom keywords (compile them on the fly, as they can change)
+  const customKeywords = keywords.map(k=>k.toLowerCase()).filter(Boolean);
+  if (customKeywords.length > 0) {
+      for (const k of customKeywords) {
+          const customRe = new RegExp(`(?<![\\p{L}\\p{N}_])${esc(k)}(?![\\p{L}\\p{N}_])`, 'iu');
+          if (customRe.test(text)) return true;
+      }
+  }
+  
   if ((code||'').toUpperCase() === 'VERSAND') return true;
+  
   return false;
 }

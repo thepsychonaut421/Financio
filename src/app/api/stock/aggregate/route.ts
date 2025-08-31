@@ -29,7 +29,8 @@ export async function POST(req: Request) {
 
     snap.forEach(doc=>{
         const inv = doc.data() as any;
-        const items = inv?.payload?.rechnungspositionen || [];
+        // Defensive coding: ensure rechnungspositionen is an array
+        const items = Array.isArray(inv?.payload?.rechnungspositionen) ? inv.payload.rechnungspositionen : [];
         for (const it of items) {
             const code = (it.productCode || '').toString().trim();
             const name = (it.productName || '').toString().trim();
