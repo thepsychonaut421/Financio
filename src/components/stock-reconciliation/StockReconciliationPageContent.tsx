@@ -23,7 +23,7 @@ type SortKey = keyof StockItem | null;
 type SortOrder = 'asc' | 'desc';
 
 export function StockReconciliationPageContent() {
-    const { user, isLoading: isAuthLoading } = useAuth();
+    const { user, isLoading: isAuthLoading, getIdToken } = useAuth();
     const { toast } = useToast();
 
     const [stockItems, setStockItems] = useState<StockItem[]>([]);
@@ -47,10 +47,18 @@ export function StockReconciliationPageContent() {
 
         setIsLoading(true);
         try {
+            const idToken = await getIdToken();
+            if (!idToken) {
+                throw new Error("Authentication token not available. Please log in again.");
+            }
+
             const response = await fetch('/api/stock/aggregate', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ uid: user.uid }),
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'x-fb-idtoken': idToken 
+                },
+                body: JSON.stringify({}), // Body can be empty as UID is derived from token
             });
 
             if (!response.ok) {
@@ -76,8 +84,11 @@ export function StockReconciliationPageContent() {
     };
 
     useEffect(() => {
-       if (!isAuthLoading) {
+       if (!isAuthLoading && user) {
            aggregateStockData();
+       } else if (!isAuthLoading && !user) {
+            setIsLoading(false);
+            setStockItems([]);
        }
     }, [user, isAuthLoading]);
 
@@ -150,14 +161,26 @@ export function StockReconciliationPageContent() {
                                     This table sums up quantities for each unique product from processed invoices.
                                 </CardDescription>
                             </div>
-                            <Button onClick={aggregateStockData} disabled={isLoading} variant="outline" className="mt-4 sm:mt-0">
+                            <Button onClick={aggregateStockData} disabled={isLoading || !user} variant="outline" className="mt-4 sm:mt-0">
                                 {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
                                 Refresh Data
                             </Button>
                         </div>
                     </CardHeader>
                     <CardContent>
-                        {isLoading ? (
+                        {isAuthLoading ? (
+                            <div className="flex items-center justify-center p-8">
+                                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                            </div>
+                        ) : !user ? (
+                             <Alert>
+                                <Info className="h-4 w-4" />
+                                <AlertTitle>Not Logged In</AlertTitle>
+                                <AlertDescription>
+                                    Please <Link href="/login" className="underline text-primary">log in</Link> to view and reconcile stock.
+                                </AlertDescription>
+                            </Alert>
+                        ) : isLoading ? (
                            <div className="flex items-center justify-center p-8">
                              <Loader2 className="h-8 w-8 animate-spin text-primary" />
                            </div>

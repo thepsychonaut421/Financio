@@ -4,15 +4,24 @@ import { getAdminDbSafe } from '@/lib/firebase-admin';
 import { getStockSettingsServer } from '@/server/stock-settings-server';
 import { isShippingFee } from '@/lib/is-shipping-fee';
 
+async function getUidFromRequest(req: Request): Promise<string> {
+    const idToken = req.headers.get('x-fb-idtoken');
+    if (!idToken) {
+        throw new Error('Missing or invalid Firebase ID token.');
+    }
+    // Dynamically import to keep cold-start times low for other scenarios
+    const { auth } = await import('firebase-admin');
+    const decodedToken = await auth().verifyIdToken(idToken);
+    return decodedToken.uid;
+}
+
+
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: Request) {
   try {
-    const { uid } = await req.json() as { uid: string };
-    if (!uid) {
-        return NextResponse.json({ ok: false, error: 'User ID is missing.' }, { status: 400 });
-    }
+    const uid = await getUidFromRequest(req);
 
     const db = await getAdminDbSafe(); 
     if (!db) {
@@ -39,12 +48,12 @@ export async function POST(req: Request) {
             }
 
             const codeNorm = code.toUpperCase();
-            const nameNorm = name.toUpperCase();
-            const key = codeNorm || nameNorm;
+            const nameNorm = name; // keep original name for display
+            const key = codeNorm || nameNorm.toUpperCase();
             if (!key) continue;
 
             const qty = Number(it.quantity || 0);
-            const rec = agg.get(key) || { code: code || name, name: name, qty:0, source: [] };
+            const rec = agg.get(key) || { code: code || name, name: nameNorm, qty:0, source: [] };
             rec.qty += qty;
             if (inv?.payload?.rechnungsnummer) rec.source.push(inv.payload.rechnungsnummer);
             agg.set(key, rec);
@@ -57,11 +66,17 @@ export async function POST(req: Request) {
         totalQuantity: r.qty,
         sourceInvoices: [...new Set(r.source)].slice(0,5), // Unique sources
     }));
+    
+    console.log(`[stock aggregate] uid=${uid} rows=${rows.length} skipped=${shippingFeesExcluded} wh="${settings.defaultWarehouse}"`);
 
     return NextResponse.json({ ok:true, rows, warehouse: settings.defaultWarehouse, skippedShippingItems: shippingFeesExcluded });
 
   } catch (error: any) {
     console.error("[API /stock/aggregate Error]", error);
+    // Differentiate between auth errors and other errors
+    if (error.message.includes('ID token')) {
+         return NextResponse.json({ ok: false, error: 'Authentication failed. Please log in again.' }, { status: 401 });
+    }
     return NextResponse.json({ ok: false, error: error.message || 'An unknown error occurred.' }, { status: 500 });
   }
 }
