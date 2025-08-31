@@ -18,24 +18,32 @@ const firebaseConfig = {
 // Initialize Firebase
 const app: FirebaseApp = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 const db = getFirestore(app);
+const auth = getAuth(app);
 
-// Initialize App Check
-if (typeof window !== 'undefined') {
-    // Set the debug token if in development
-    if (process.env.NODE_ENV !== 'production') {
-        (window as any).FIREBASE_APPCHECK_DEBUG_TOKEN = "FD286712-FAC2-4627-910A-04A0208DCD76";
-    }
-    
-    try {
-        initializeAppCheck(app, {
-            provider: new ReCaptchaV3Provider('6LeeOLcrAAAAAJvzAaM-H3htVhwi6DR0bADVXnHj'),
-            isTokenAutoRefreshEnabled: true
-        });
-    } catch(e) {
-        console.error("Error initializing Firebase App Check:", e);
+// This function will be called from the AuthContext to ensure it runs only on the client.
+export function initializeAppCheckIfNeeded() {
+    if (typeof window !== 'undefined') {
+        const debugToken = process.env.NEXT_PUBLIC_FIREBASE_APPCHECK_DEBUG_TOKEN;
+        if (debugToken) {
+            (window as any).FIREBASE_APPCHECK_DEBUG_TOKEN = debugToken;
+        }
+
+        // Initialize with debug token or with reCAPTCHA if the key is present.
+        const siteKey = process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY;
+        if (debugToken || (siteKey && siteKey !== 'RECAPTCHA_ENTERPRISE_SITE_KEY')) {
+             try {
+                initializeAppCheck(app, {
+                    provider: siteKey && !debugToken ? new ReCaptchaV3Provider(siteKey) : undefined,
+                    isTokenAutoRefreshEnabled: true
+                });
+            } catch(e) {
+                console.error("Error initializing Firebase App Check:", e);
+            }
+        } else {
+             console.warn("reCAPTCHA key not found. App Check is running without a provider. This is only recommended for development with a debug token.");
+        }
     }
 }
 
-const auth = getAuth(app);
 
 export { app, auth, db };
