@@ -60,6 +60,17 @@ export function StockReconciliationPageContent() {
                 },
                 body: JSON.stringify({}), // Body is now empty
             });
+            
+            if (response.status === 401) {
+                 toast({
+                    title: 'Authentication Error',
+                    description: "Your session may have expired. Please log in again.",
+                    variant: 'destructive',
+                 });
+                 // Optionally, you could trigger a logout here.
+                 setIsLoading(false);
+                 return;
+            }
 
             if (!response.ok) {
                 const errorResult = await response.json();
