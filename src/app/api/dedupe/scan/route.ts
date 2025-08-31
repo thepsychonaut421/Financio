@@ -2,7 +2,6 @@
 import { NextResponse } from 'next/server';
 import { getAdminDbSafe } from '@/lib/firebase-admin';
 import { makeFingerprint, itemsHash } from '@/lib/dedupe';
-import { collection, getDocs, writeBatch } from 'firebase/firestore';
 import type { ERPIncomingInvoiceItem } from '@/types/incoming-invoice';
 
 export const runtime = 'nodejs';
@@ -15,12 +14,12 @@ export async function POST(req: Request) {
   }
 
   try {
-    const snap = await getDocs(collection(db, 'processed_invoices'));
+    const snap = await db.collection('processed_invoices').get();
     if (snap.empty) {
         return NextResponse.json({ ok: true, updated: 0, message: "No documents to scan." });
     }
 
-    const batch = writeBatch(db);
+    const batch = db.batch();
     snap.forEach(doc => {
       const iv = doc.data()?.payload as ERPIncomingInvoiceItem;
       if (!iv) return; 
