@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/button';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import Link from 'next/link';
-import { AuthError } from '@/lib/get-uid-from-request';
+import { AuthError } from '@/lib/auth-error';
 
 interface StockItem {
     productCode: string;

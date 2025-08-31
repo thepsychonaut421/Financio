@@ -1,14 +1,7 @@
 
 import { auth } from 'firebase-admin';
 import { getAdminDbSafe } from '@/lib/firebase-admin';
-
-export class AuthError extends Error {
-  status = 401;
-  constructor(message: string) {
-    super(message);
-    this.name = 'AuthError';
-  }
-}
+import { AuthError } from '@/lib/auth-error';
 
 export async function getUidFromRequest(req: Request): Promise<string> {
   const bearer = req.headers.get('authorization')?.replace(/^Bearer\s+/i,'').trim();

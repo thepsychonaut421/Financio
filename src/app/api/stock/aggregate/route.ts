@@ -10,9 +10,19 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: Request) {
+  let uid: string;
   try {
-    const uid = await getUidFromRequest(req);
+    uid = await getUidFromRequest(req);
+  } catch (error: any) {
+    console.error("[API /stock/aggregate Auth Error]", error);
+    // Ensure a JSON response is sent on authentication failure
+    return NextResponse.json(
+        { ok: false, error: error.message || 'Authentication failed.' },
+        { status: 401 }
+    );
+  }
 
+  try {
     const db = await getAdminDbSafe(); 
     if (!db) {
         return NextResponse.json({ ok:false, error:'Database service is unavailable.' }, { status:500 });
