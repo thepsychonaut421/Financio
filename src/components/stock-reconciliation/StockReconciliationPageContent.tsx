@@ -43,6 +43,56 @@ function downloadFile(name: string, content: string, mime='text/csv;charset=utf-
 }
 
 
+// Helper to read the response safely, avoiding JSON parse errors
+async function readSafePayload(res: Response) {
+    try {
+        const payload = await res.json();
+        return {
+            data: payload,
+            error: payload?.error || res.statusText,
+            status: res.status,
+            statusText: res.statusText
+        };
+    } catch {
+        return {
+            data: null,
+            error: "Failed to parse server response.",
+            status: res.status,
+            statusText: res.statusText
+        };
+    }
+}
+
+
+// New fetcher with built-in retry logic for 401 Unauthorized errors
+async function fetchWithFreshToken(
+    getIdToken: () => Promise<string | null>, 
+    endpoint: string, 
+    options: RequestInit
+): Promise<Response> {
+    let idToken = await getIdToken();
+    if (!idToken) throw new AuthError("Cannot fetch without an ID token.");
+
+    let response = await fetch(endpoint, {
+        ...options,
+        headers: { ...options.headers, 'Authorization': `Bearer ${idToken}` }
+    });
+
+    if (response.status === 401) {
+        console.log("[fetchWithFreshToken] Received 401, forcing token refresh and retrying...");
+        idToken = await getIdToken(); // Force refresh
+        if (!idToken) throw new AuthError("Failed to refresh token.");
+        
+        response = await fetch(endpoint, {
+            ...options,
+            headers: { ...options.headers, 'Authorization': `Bearer ${idToken}` }
+        });
+    }
+
+    return response;
+}
+
+
 export function StockReconciliationPageContent() {
     const { user, isLoading: isAuthLoading, getIdToken } = useAuth();
     const { toast } = useToast();
@@ -76,44 +126,33 @@ export function StockReconciliationPageContent() {
 
         setIsLoading(true);
         try {
-            const idToken = await getIdToken();
-            if (!idToken) {
-                // This case should be rare as useAuth would likely catch unauthenticated state earlier
-                throw new AuthError("Authentication token not available. Please log in again.");
-            }
-
-            const response = await fetch('/api/stock/aggregate', {
+            const response = await fetchWithFreshToken(getIdToken, '/api/stock/aggregate', {
                 method: 'POST',
-                headers: { 
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${idToken}` 
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({}),
+                cache: 'no-store'
             });
             
-            if (response.status === 401) {
-                 const errorResult = await response.json().catch(()=>({error: 'Your session may have expired. Please log in again.'}));
-                 throw new AuthError(errorResult.error);
-            }
+            const { data: payload, error: payloadErr, status } = await readSafePayload(response);
 
             if (!response.ok) {
-                const errorResult = await response.json().catch(()=>({error: 'Failed to parse error response'}));
-                throw new Error(errorResult.error || 'Failed to fetch aggregated stock data.');
+                if (status === 401) throw new AuthError(payloadErr || 'Your session may have expired. Please log in again.');
+                throw new Error(payloadErr || `Server returned HTTP ${status}`);
             }
 
-            const result = await response.json();
-            setStockItems(result.rows || []);
-            setDefaultWarehouse(result.warehouse || '');
-            setSkippedItems(result.skippedShippingItems || 0);
+            setStockItems(payload.rows || []);
+            setDefaultWarehouse(payload.warehouse || '');
+            setSkippedItems(payload.skippedShippingItems || 0);
 
         } catch (error: any) {
-            console.error("Failed to load or process invoice data for stock reconciliation:", error);
-            
             const isAuthErr = error instanceof AuthError || (error.message && error.message.includes('token'));
+            const msg = error.message || 'An unknown error occurred.';
             
+            console.error('[StockReconciliation] fetch/parse failed:', msg, error);
+
             toast({
                 title: isAuthErr ? 'Authentication Error' : 'Error Loading Stock Data',
-                description: error.message,
+                description: msg,
                 variant: 'destructive',
             });
 
