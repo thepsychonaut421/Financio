@@ -27,13 +27,17 @@ export async function upsertProducts(uid: string, items: ProductDoc[]) {
   for (const part of chunks) {
       const batch = db.batch();
       for (const p of part) {
-        // Generate a consistent document ID based on user and product code
-        const id = `${uid}__${p.productCode}`;
+        const normCode = (p.productCode || '').toString().trim().toUpperCase();
+        if (!normCode) continue; // Skip items without a valid product code
+
+        // Generate a consistent document ID based on user and normalized product code
+        const id = `${uid}__${normCode}`;
         const docRef = db.collection('products').doc(id);
         
         // Ensure all required fields are present and add server timestamp
         const dataToSet = { 
-            ...p, 
+            ...p,
+            productCode: normCode, 
             userId: uid, 
             updatedAt: FieldValue.serverTimestamp(),
             createdAt: p.createdAt || FieldValue.serverTimestamp(),
