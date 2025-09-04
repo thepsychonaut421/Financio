@@ -5,7 +5,7 @@ import React, { createContext, useContext, useState, useEffect, type ReactNode }
 import { useRouter, usePathname } from 'next/navigation';
 import { onAuthStateChanged, type User, signInWithEmailAndPassword, signOut, OAuthProvider, signInWithPopup } from 'firebase/auth';
 import { useToast } from '@/hooks/use-toast';
-import { app, auth } from '@/lib/firebase'; // Removed initializeAppCheckIfNeeded from here
+import { app, auth } from '@/lib/firebase';
 
 interface AuthContextType {
   user: User | null;
@@ -14,7 +14,7 @@ interface AuthContextType {
   login: (email: string, pass: string) => Promise<void>;
   logout: () => void;
   signInWithMicrosoft: () => Promise<void>;
-  getIdToken: () => Promise<string | null>;
+  getIdToken: (forceRefresh?: boolean) => Promise<string | null>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -107,11 +107,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const getIdToken = async (): Promise<string | null> => {
+  const getIdToken = async (forceRefresh: boolean = false): Promise<string | null> => {
     if (!auth.currentUser) return null;
     try {
         // Force refresh the token to ensure it's not stale.
-        return await auth.currentUser.getIdToken(true);
+        return await auth.currentUser.getIdToken(forceRefresh);
     } catch (error) {
         console.error("Error refreshing ID token:", error);
         // This might happen if the user's session is invalidated on the server.
