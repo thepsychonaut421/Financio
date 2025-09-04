@@ -12,6 +12,8 @@ import Image from 'next/image';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
+import { OAuthProvider, signInWithRedirect } from 'firebase/auth';
+import { auth } from '@/lib/firebase';
 
 const MicrosoftIcon = (props: React.SVGProps<SVGSVGElement>) => (
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 21 21" {...props}>
@@ -23,7 +25,7 @@ const MicrosoftIcon = (props: React.SVGProps<SVGSVGElement>) => (
 );
 
 export function LoginPageContent() {
-  const { login, signInWithMicrosoft, isAuthenticated, isLoading } = useAuth();
+  const { login, isAuthenticated, isLoading } = useAuth();
   const router = useRouter();
   const { toast } = useToast();
   const [email, setEmail] = useState('test@example.com');
@@ -50,10 +52,14 @@ export function LoginPageContent() {
     });
   }
   
-  const handleSocialLogin = (provider: 'Google' | 'GitHub' | 'Microsoft') => {
+  const handleSocialLogin = async (provider: 'Google' | 'GitHub' | 'Microsoft') => {
       switch (provider) {
         case 'Microsoft':
-            signInWithMicrosoft();
+            {
+                const microsoftProvider = new OAuthProvider('microsoft.com');
+                microsoftProvider.setCustomParameters({ tenant: 'common' });
+                await signInWithRedirect(auth, microsoftProvider);
+            }
             break;
         case 'Google':
             toast({ title: 'Google Sign-In', description: 'Sign-in with Google is not yet implemented in this demo.' });

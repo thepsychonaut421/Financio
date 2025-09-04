@@ -3,7 +3,7 @@
 
 import React, { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
-import { onAuthStateChanged, type User, signInWithEmailAndPassword, signOut, OAuthProvider, signInWithPopup } from 'firebase/auth';
+import { onAuthStateChanged, type User, signInWithEmailAndPassword, signOut, getRedirectResult } from 'firebase/auth';
 import { useToast } from '@/hooks/use-toast';
 import { auth } from '@/lib/firebase';
 
@@ -13,7 +13,6 @@ interface AuthContextType {
   isLoading: boolean;
   login: (email: string, pass: string) => Promise<void>;
   logout: () => void;
-  signInWithMicrosoft: () => Promise<void>;
   getIdToken: (forceRefresh?: boolean) => Promise<string | null>;
 }
 
@@ -27,16 +26,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const { toast } = useToast();
 
   useEffect(() => {
-    // App Check logic is permanently disabled to resolve persistent initialization errors.
-    // It can be revisited for production environments when package compatibility is guaranteed.
-    
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       setUser(user);
       setIsLoading(false);
     });
+    
+    // Check for redirect result from OAuth
+    getRedirectResult(auth)
+      .then((result) => {
+        if (result) {
+           // This gives you a Microsoft Access Token. You can use it to access the Microsoft API.
+           // const credential = OAuthProvider.credentialFromResult(result);
+           // const accessToken = credential?.accessToken;
+           // const user = result.user;
+           toast({
+               title: "Sign-In Successful",
+               description: `Welcome back, ${result.user.displayName || result.user.email}!`,
+           });
+        }
+      }).catch((error) => {
+        console.error("OAuth Redirect Error:", error);
+        toast({
+            title: "Sign-In Failed",
+            description: error.message || "An unknown error occurred during sign-in.",
+            variant: "destructive"
+        });
+      });
+
 
     return () => unsubscribe();
-  }, []);
+  }, [toast]);
 
   const login = async (email: string, pass: string) => {
     try {
@@ -48,25 +67,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           title: "Login Failed",
           description: error.message,
           variant: "destructive"
-        });
-    }
-  };
-
-  const signInWithMicrosoft = async () => {
-    const provider = new OAuthProvider('microsoft.com');
-    provider.setCustomParameters({
-        tenant: 'common',
-    });
-
-    try {
-        await signInWithPopup(auth, provider);
-        // onAuthStateChanged will handle the user state update and redirect
-    } catch (error: any) {
-        console.error("Microsoft Sign-In failed:", error);
-        toast({
-            title: "Microsoft Sign-In Failed",
-            description: error.message || "An unknown error occurred.",
-            variant: "destructive"
         });
     }
   };
@@ -83,12 +83,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const getIdToken = async (forceRefresh: boolean = false): Promise<string | null> => {
     if (!auth.currentUser) return null;
     try {
-        // Force refresh the token to ensure it's not stale.
         return await auth.currentUser.getIdToken(forceRefresh);
     } catch (error) {
         console.error("Error refreshing ID token:", error);
-        // This might happen if the user's session is invalidated on the server.
-        // Logging out is a safe fallback.
         await logout();
         return null;
     }
@@ -101,7 +98,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [isLoading, user, pathname, router]);
 
   return (
-    <AuthContext.Provider value={{ user, isAuthenticated: !!user, isLoading, login, logout, signInWithMicrosoft, getIdToken }}>
+    <AuthContext.Provider value={{ user, isAuthenticated: !!user, isLoading, login, logout, getIdToken }}>
       {children}
     </AuthContext.Provider>
   );
