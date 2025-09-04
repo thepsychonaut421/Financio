@@ -12,6 +12,7 @@ import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
 import { addDays, parseISO, isValid } from 'date-fns';
 import { pageCacheKey, matcherDataKey, kontenrahmenKey } from '@/lib/storage-keys';
 import { formatDateForERP, createInvoiceKey } from '@/lib/invoice-helpers';
+import { fileToDataURL } from '@/lib/file-helpers';
 
 
 type Kind = 'purchase' | 'sales';

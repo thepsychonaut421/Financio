@@ -2,7 +2,7 @@
 'use client';
 
 import React from 'react';
-import { useIncomingInvoices } from '@/hooks/useIncomingInvoices.tsx';
+import { useIncomingInvoices } from '@/hooks/useIncomingInvoices';
 import { IncomingInvoiceUploadForm } from '@/components/incoming-invoices/IncomingInvoiceUploadForm';
 import { IncomingInvoiceCard } from '@/components/incoming-invoices/IncomingInvoiceCard';
 import { ERPInvoiceTable } from '@/components/incoming-invoices/ERPInvoiceTable';

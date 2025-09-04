@@ -1,8 +1,8 @@
 'use client';
 
 import dynamic from 'next/dynamic';
-import { Skeleton } from '@/components/ui/skeleton';
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
+import { Skeleton } from '@/components/ui/skeleton';
 import { IncomingInvoicesPageContent } from '@/components/incoming-invoices/IncomingInvoicesPageContent';
 
 
