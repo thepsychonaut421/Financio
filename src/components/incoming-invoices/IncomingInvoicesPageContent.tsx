@@ -25,8 +25,10 @@ const erpTableSortOptions = [
   { key: 'pdfFileName' as const, label: 'PDF Name' },
 ];
 
-export function PurchasesPageContent() {
-  const kind = 'purchase';
+type Props = { kind: 'purchase'|'sales' };
+
+
+export function IncomingInvoicesPageContent({ kind }: Props) {
   const isSales = kind === 'sales';
 
   const {

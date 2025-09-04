@@ -1,13 +1,12 @@
 
-
 'use client';
 
 import dynamic from 'next/dynamic';
 import { Skeleton } from '@/components/ui/skeleton';
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
 
-const PurchasesPageContent = dynamic(
-  () => import('@/components/purchases/PurchasesPageContent').then(mod => mod.PurchasesPageContent),
+const IncomingInvoicesPageContent = dynamic(
+  () => import('@/components/incoming-invoices/IncomingInvoicesPageContent').then(mod => mod.IncomingInvoicesPageContent),
   {
     loading: () => (
       <div className="container mx-auto px-4 py-8 md:px-8 md:py-12 space-y-8">
@@ -31,7 +30,7 @@ const PurchasesPageContent = dynamic(
 export default function PurchasesPage() {
   return (
     <ProtectedRoute>
-      <PurchasesPageContent />
+      <IncomingInvoicesPageContent kind="purchase" />
     </ProtectedRoute>
   );
 }
