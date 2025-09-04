@@ -1,4 +1,5 @@
 
+
 import { initializeApp, getApps, getApp, type FirebaseApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
@@ -19,7 +20,7 @@ const app: FirebaseApp = getApps().length === 0 ? initializeApp(firebaseConfig) 
 const db = getFirestore(app);
 const auth = getAuth(app);
 
-// App Check initialization logic has been moved to AuthContext.tsx
-// to ensure it only runs on the client-side.
+// App Check initialization logic has been removed as it was causing persistent errors.
+// This can be re-evaluated for production deployment.
 
 export { app, auth, db };

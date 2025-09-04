@@ -5,7 +5,7 @@ import React, { createContext, useContext, useState, useEffect, type ReactNode }
 import { useRouter, usePathname } from 'next/navigation';
 import { onAuthStateChanged, type User, signInWithEmailAndPassword, signOut, OAuthProvider, signInWithPopup } from 'firebase/auth';
 import { useToast } from '@/hooks/use-toast';
-import { app, auth } from '@/lib/firebase';
+import { auth } from '@/lib/firebase';
 
 interface AuthContextType {
   user: User | null;
@@ -27,38 +27,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const { toast } = useToast();
 
   useEffect(() => {
-    // App Check logic is temporarily disabled to resolve persistent initialization errors.
-    // This can be revisited for production environments.
-    /*
-    const initializeAppCheckClientSide = async () => {
-        if (typeof window !== 'undefined') {
-            try {
-                const { initializeAppCheck, ReCaptchaV3Provider } = await import('firebase/app-check');
-                
-                const debugToken = process.env.NEXT_PUBLIC_FIREBASE_APPCHECK_DEBUG_TOKEN;
-                if (debugToken) {
-                    (window as any).FIREBASE_APPCHECK_DEBUG_TOKEN = debugToken;
-                }
-
-                const siteKey = process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY;
-                
-                // Initialize with debug token if present, otherwise with reCAPTCHA if the key is valid.
-                initializeAppCheck(app, {
-                    provider: siteKey && siteKey !== 'RECAPTCHA_ENTERPRISE_SITE_KEY' && !debugToken
-                        ? new ReCaptchaV3Provider(siteKey)
-                        : undefined,
-                    isTokenAutoRefreshEnabled: true
-                });
-                console.log("Firebase App Check initialized successfully.");
-
-            } catch (e) {
-                console.error("Error initializing Firebase App Check:", e);
-            }
-        }
-    };
-    
-    initializeAppCheckClientSide();
-    */
+    // App Check logic is permanently disabled to resolve persistent initialization errors.
+    // It can be revisited for production environments when package compatibility is guaranteed.
     
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       setUser(user);
