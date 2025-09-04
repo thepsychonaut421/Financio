@@ -27,7 +27,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const { toast } = useToast();
 
   useEffect(() => {
-    // Moved App Check logic directly here to ensure it's 100% client-side
+    // App Check logic is temporarily disabled to resolve persistent initialization errors.
+    // This can be revisited for production environments.
+    /*
     const initializeAppCheckClientSide = async () => {
         if (typeof window !== 'undefined') {
             try {
@@ -56,6 +58,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
     
     initializeAppCheckClientSide();
+    */
     
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       setUser(user);
