@@ -13,7 +13,7 @@ import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { useIncomingInvoices } from '@/hooks/useIncomingInvoices';
+import { useIncomingInvoices } from '@/hooks/useIncomingInvoices.tsx';
 import type { ERPIncomingInvoiceItem, IncomingInvoiceItem } from '@/types/incoming-invoice';
 import { createInvoiceKey } from '@/lib/invoice-helpers';
 

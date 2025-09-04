@@ -273,22 +273,22 @@ export function useIncomingInvoices(kind: Kind) {
     };
 
     const handleFilesSelected = useCallback(async (files: File[]) => {
-        setStatus('idle');
-        setCurrentFileProgress('');
-        setErrorMessage(null);
-        setProgressValue(0);
-
+        setStatus('processing');
+        setCurrentFileProgress(`Reading ${files.length} file(s)...`);
         const filesWithData: FileWithDataUri[] = [];
         for (const file of files) {
             try {
                 const dataUri = await fileToDataURL(file);
                 filesWithData.push({ name: file.name, dataUri, size: file.size, lastModified: file.lastModified });
             } catch (e) {
-                setErrorMessage((prev) => (prev ? prev + '\n' : '') + `Could not read file: ${file.name}. Error: ${toErrorString(e)}`);
+                setErrorMessage(`Could not read file: ${file.name}. Error: ${toErrorString(e)}`);
                 setStatus('error');
+                return;
             }
         }
         setSelectedFiles(filesWithData);
+        setStatus('idle');
+        setCurrentFileProgress('');
     }, []);
 
     const handleRemoveFile = (fileName: string) => {
@@ -335,7 +335,7 @@ export function useIncomingInvoices(kind: Kind) {
             setExtractedInvoices(currentRegularInvoices);
             setErpProcessedInvoices(currentErpInvoices);
         }
-        
+
         if (filesToProcess.length === 0) {
             setStatus('success');
             setCurrentFileProgress('No new files to process. Duplicates were skipped.');
@@ -369,7 +369,7 @@ export function useIncomingInvoices(kind: Kind) {
                 if (!responseText.startsWith('{')) {
                     throw new Error('Model did not return valid JSON. The response may be blocked or empty.');
                 }
-
+                
                 let aiResult = JSON.parse(responseText);
 
                 if (aiResult.error) throw new Error(aiResult.error);
