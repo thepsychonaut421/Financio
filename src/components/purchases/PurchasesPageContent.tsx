@@ -161,7 +161,7 @@ function friendlyServerError(status: number, fallback: string) {
 }
 
 
-export function IncomingInvoicesPageContent() {
+export function PurchasesPageContent() {
   const { user, isLoading: isAuthLoading } = useAuth();
   const [selectedFiles, setSelectedFiles] = useState<FileWithDataUri[]>([]);
   const [extractedInvoices, setExtractedInvoices] = useState<IncomingInvoiceItem[]>([]);
@@ -884,7 +884,7 @@ export function IncomingInvoicesPageContent() {
   return (
     <div className="container mx-auto px-4 py-8 md:px-8 md:py-12">
       <header className="mb-8 text-center">
-        <h1 className="text-3xl md:text-4xl font-headline font-bold text-primary">Incoming Invoice Details</h1>
+        <h1 className="text-3xl md:text-4xl font-headline font-bold text-primary">Purchase Invoices</h1>
         <p className="text-muted-foreground mt-2">
           Upload German PDF invoices (Eingangsrechnungen) to extract comprehensive details. Switch to ERP Vorlage Mode for ERPNext-compatible data.
         </p>

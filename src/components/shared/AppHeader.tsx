@@ -1,8 +1,9 @@
 
+
 'use client';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { ReceiptText, Landmark, FileEdit, FileScan, LogIn, LogOut, Home as HomeIcon, Menu, UserCircle, PackageCheck, Archive, PackagePlus, Library, Settings } from 'lucide-react';
+import { ReceiptText, Landmark, FileEdit, FileScan, LogIn, LogOut, Home as HomeIcon, Menu, UserCircle, PackageCheck, Archive, PackagePlus, Library, Settings, TrendingUp, ShoppingCart } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import React from 'react';
@@ -19,7 +20,8 @@ import {
 
 const mainNavLinks = [
   { href: '/', label: 'Home', icon: <HomeIcon className="w-5 h-5" /> },
-  { href: '/incoming-invoices', label: 'Incoming Invoices', icon: <ReceiptText className="w-5 h-5" /> },
+  { href: '/purchases', label: 'Purchases', icon: <ShoppingCart className="w-5 h-5" /> },
+  { href: '/sales', label: 'Sales', icon: <TrendingUp className="w-5 h-5" /> },
   { href: '/processed-invoices', label: 'Processed', icon: <Archive className="w-5 h-5" /> },
   { href: '/bank-matcher', label: 'Bank Matcher', icon: <Landmark className="w-5 h-5" /> },
   { href: '/pdf-organizer', label: 'PDF Organizer', icon: <FileEdit className="w-5 h-5" /> },

@@ -6,10 +6,8 @@ import dynamic from 'next/dynamic';
 import { Skeleton } from '@/components/ui/skeleton';
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
 
-// This page is deprecated and will be removed. Redirecting or pointing to /purchases.
-// For now, we point to the new component.
-const PurchasesPageContent = dynamic(
-  () => import('@/components/purchases/PurchasesPageContent').then(mod => mod.PurchasesPageContent),
+const SalesPageContent = dynamic(
+  () => import('@/components/sales/SalesPageContent').then(mod => mod.SalesPageContent),
   {
     loading: () => (
       <div className="container mx-auto px-4 py-8 md:px-8 md:py-12 space-y-8">
@@ -30,10 +28,10 @@ const PurchasesPageContent = dynamic(
   }
 );
 
-export default function IncomingInvoicesPage() {
+export default function SalesPage() {
   return (
     <ProtectedRoute>
-      <PurchasesPageContent />
+      <SalesPageContent />
     </ProtectedRoute>
   );
 }

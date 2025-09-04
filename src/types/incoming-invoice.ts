@@ -1,4 +1,5 @@
 
+
 import type { AppLineItem as LineItem } from '@/ai/schemas/invoice-item-schema';
 
 export interface IncomingInvoiceData {
@@ -17,6 +18,7 @@ export interface IncomingInvoiceData {
   error?: string;
   anomalies?: string[];
   translationRefs?: any;
+  kind: 'purchase' | 'sales';
 }
 
 export interface IncomingInvoiceItem extends IncomingInvoiceData {

@@ -6,8 +6,6 @@ import dynamic from 'next/dynamic';
 import { Skeleton } from '@/components/ui/skeleton';
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
 
-// This page is deprecated and will be removed. Redirecting or pointing to /purchases.
-// For now, we point to the new component.
 const PurchasesPageContent = dynamic(
   () => import('@/components/purchases/PurchasesPageContent').then(mod => mod.PurchasesPageContent),
   {
@@ -30,7 +28,7 @@ const PurchasesPageContent = dynamic(
   }
 );
 
-export default function IncomingInvoicesPage() {
+export default function PurchasesPage() {
   return (
     <ProtectedRoute>
       <PurchasesPageContent />
