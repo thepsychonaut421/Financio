@@ -13,7 +13,7 @@ import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { readFileAsDataURL } from '@/lib/file-helpers';
+import { fileToDataURL } from '@/lib/file-helpers';
 import type { IncomingInvoiceItem, ERPIncomingInvoiceItem, IncomingProcessingStatus, ERPSortKey, SortOrder } from '@/types/incoming-invoice';
 import { addDays, parseISO, isValid, format as formatDateFns } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
@@ -102,6 +102,14 @@ function findCachedInvoiceByFilename(name: string, erpMode: boolean) {
 }
 
 function toErrorString(err: unknown): string {
+    if (err instanceof DOMException) {
+        if (err.name === 'NotReadableError') {
+            return 'The file could not be read. It may be moved, locked by another app, or on a disconnected/unsynced drive. Please reselect the PDF from a local folder.';
+        }
+        if (err.name === 'SecurityError') {
+            return 'The browser blocked access to this file in the current context. Please select the PDF from your local disk (not from a temporary or restricted location).';
+        }
+    }
   if (err instanceof Error && err.message) return err.message;
   if (typeof err === 'string' && err.trim()) return err.trim();
   // ProgressEvent / Event from FileReader, fetch, XHR etc.
@@ -404,7 +412,7 @@ export function IncomingInvoicesPageContent() {
         setCurrentFileProgress(`Processing file ${i + 1} of ${filesToProcess.length}: ${file.name}`);
         
         try {
-            const dataUri = await readFileAsDataURL(file);
+            const dataUri = await fileToDataURL(file);
             const response = await postJsonWithTimeout('/api/invoices/extract', { dataUri, filename: file.name });
     
             if (!response.ok) {
@@ -646,8 +654,8 @@ export function IncomingInvoicesPageContent() {
         });
 
     } catch (error) {
-        const message = toErrorString(error);
-        toast({ title: "Supplier Export Failed", description: message, variant: "destructive" });
+      const message = toErrorString(error);
+      toast({ title: "Supplier Export Failed", description: message, variant: "destructive" });
     } finally {
       setIsExportingSuppliers(false);
     }
@@ -681,8 +689,8 @@ export function IncomingInvoicesPageContent() {
       toast({ title: "Suppliers Exported", description: "Supplier data has been exported to CSV." });
 
     } catch (error) {
-        const message = toErrorString(error);
-        toast({ title: "Export Failed", description: message, variant: "destructive" });
+      const message = toErrorString(error);
+      toast({ title: "Export Failed", description: message, variant: "destructive" });
     }
   };
 
