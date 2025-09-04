@@ -104,12 +104,14 @@ function findCachedInvoiceByFilename(name: string, erpMode: boolean) {
 function toErrorString(err: unknown): string {
   if (err instanceof Error && err.message) return err.message;
   if (typeof err === 'string' && err.trim()) return err.trim();
-  try {
-    const str = JSON.stringify(err);
-    if (str !== '{}') return str;
-  } catch {
-    // fall through
+  // ProgressEvent / Event from FileReader, fetch, XHR etc.
+  if (typeof err === 'object' && err !== null && 'isTrusted' in (err as any)) {
+    return 'Browser I/O error (ProgressEvent) — likely FileReader or network layer failed.';
   }
+  try {
+    const s = JSON.stringify(err);
+    if (s && s !== '{}') return s;
+  } catch { /* ignore */ }
   return 'Unknown client-side error occurred.';
 }
 
@@ -366,8 +368,7 @@ export function IncomingInvoicesPageContent() {
     const yearCounters: Record<string, number> = {};
     const accumulatedErrors: { fileName: string, message: string }[] = [];
 
-    try {
-      for (let i = 0; i < filesToProcess.length; i++) {
+    for (let i = 0; i < filesToProcess.length; i++) {
         const file = filesToProcess[i];
         setCurrentFileProgress(`Processing file ${i + 1} of ${filesToProcess.length}: ${file.name}`);
         
@@ -380,14 +381,14 @@ export function IncomingInvoicesPageContent() {
             });
     
             if (!response.ok) {
-                let errorMessage = `Server error: ${response.status} ${response.statusText}`;
+                let errorMessageFromServer = `Server error: ${response.status} ${response.statusText}`;
                 try {
                     const errorJson = await response.json();
-                    errorMessage = errorJson.error || errorJson.message || errorMessage;
+                    errorMessageFromServer = errorJson.error || errorJson.message || errorMessageFromServer;
                 } catch {
                     // Could not parse JSON, use the original error message
                 }
-                throw new Error(errorMessage);
+                throw new Error(errorMessageFromServer);
             }
             
             const aiResult = await response.json();
@@ -493,42 +494,34 @@ export function IncomingInvoicesPageContent() {
         } finally {
             setProgressValue(Math.round(((i + 1) / filesToProcess.length) * 100));
         }
-      }
-
-      setExtractedInvoices(currentRegularInvoices);
-      setErpProcessedInvoices(currentErpInvoices);
-      setProcessedFileFingerprints(newFingerprints);
-      
-      const previousMatcherInvoices = JSON.parse(localStorage.getItem(LOCAL_STORAGE_MATCHER_DATA_KEY) || '[]');
-      const justProcessedForMatcher = (erpMode ? currentErpInvoices : currentRegularInvoices).map(inv => ({
-        pdfFileName: inv.pdfFileName,
-        rechnungsnummer: inv.rechnungsnummer,
-        datum: formatDateForERP(inv.datum),
-        lieferantName: inv.lieferantName,
-        gesamtbetrag: inv.gesamtbetrag,
-        rechnungspositionen: inv.rechnungspositionen,
-      }));
-      localStorage.setItem(LOCAL_STORAGE_MATCHER_DATA_KEY, JSON.stringify([...justProcessedForMatcher, ...previousMatcherInvoices]));
-      
-      if (accumulatedErrors.length > 0) {
-        setErrorMessage(
-            accumulatedErrors
-            .map(e => `${e.fileName}: ${e.message || 'Unknown error'}`)
-            .join('\n')
-        );
-      }
-      
-      const producedSomething = (erpMode ? currentErpInvoices.length > 0 : currentRegularInvoices.length > 0);
-      setStatus(producedSomething ? 'success' : (accumulatedErrors.length > 0 ? 'error' : 'success'));
-      setCurrentFileProgress('Processing complete!');
-
-    } catch (error) {
-      console.error("Critical error in handleProcessFiles:", error);
-      const message = toErrorString(error);
-      setErrorMessage(message);
-      setStatus('error');
-      setCurrentFileProgress('Processing failed.');
     }
+
+    setExtractedInvoices(currentRegularInvoices);
+    setErpProcessedInvoices(currentErpInvoices);
+    setProcessedFileFingerprints(newFingerprints);
+    
+    const previousMatcherInvoices = JSON.parse(localStorage.getItem(LOCAL_STORAGE_MATCHER_DATA_KEY) || '[]');
+    const justProcessedForMatcher = (erpMode ? currentErpInvoices : currentRegularInvoices).map(inv => ({
+      pdfFileName: inv.pdfFileName,
+      rechnungsnummer: inv.rechnungsnummer,
+      datum: formatDateForERP(inv.datum),
+      lieferantName: inv.lieferantName,
+      gesamtbetrag: inv.gesamtbetrag,
+      rechnungspositionen: inv.rechnungspositionen,
+    }));
+    localStorage.setItem(LOCAL_STORAGE_MATCHER_DATA_KEY, JSON.stringify([...justProcessedForMatcher, ...previousMatcherInvoices]));
+    
+    if (accumulatedErrors.length > 0) {
+      setErrorMessage(
+          accumulatedErrors
+          .map(e => `${e.fileName}: ${e.message || 'Unknown error'}`)
+          .join('\n')
+      );
+    }
+    
+    const producedSomething = (erpMode ? currentErpInvoices.length > 0 : currentRegularInvoices.length > 0);
+    setStatus(producedSomething ? 'success' : (accumulatedErrors.length > 0 ? 'error' : 'success'));
+    setCurrentFileProgress('Processing complete!');
   };
 
   const handleExportToERPNext = async () => {
