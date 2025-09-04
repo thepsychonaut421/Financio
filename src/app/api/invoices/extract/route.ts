@@ -223,11 +223,11 @@ export async function POST(req: Request) {
     
     const approxBytes = Math.floor(base64Data.length * 3 / 4);
     if (approxBytes > 8 * 1024 * 1024) { // ~8MB PDF
-        return NextResponse.json(safeErpFallback(filename, 'PDF is too large.'), { status: 200, headers: { 'Cache-Control': 'no-store' } });
+        return NextResponse.json({ error: 'PDF is too large (over 8MB).' }, { status: 413, headers: { 'Cache-Control': 'no-store' } });
     }
     const isMimeOk = /^application\/pdf(\s*;.*)?$/i.test(mimeType);
     if (!isMimeOk) {
-        return NextResponse.json(safeErpFallback(filename, 'File is not a PDF.'), { status: 200, headers: { 'Cache-Control': 'no-store' } });
+        return NextResponse.json({ error: 'File is not a PDF.' }, { status: 415, headers: { 'Cache-Control': 'no-store' } });
     }
 
     const apiKey = process.env.GOOGLE_GENAI_API_KEY;
@@ -323,8 +323,8 @@ If a value is not found, omit the key or set it to null. Ensure numbers are actu
   } catch (e: any) {
     console.error('[API /invoices/extract Error]', e);
     return NextResponse.json(
-      safeErpFallback(filename, e?.message || String(e)),
-      { status: 200, headers: { 'Cache-Control': 'no-store' } }
+      { error: e?.message || String(e) },
+      { status: 500, headers: { 'Cache-Control': 'no-store' } }
     );
   }
 }
