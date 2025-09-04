@@ -3,7 +3,6 @@
 
 import { useState, useCallback, useEffect, useMemo } from 'react';
 import type { IncomingInvoiceItem, ERPIncomingInvoiceItem, IncomingProcessingStatus, ERPSortKey, SortOrder } from '@/types/incoming-invoice';
-import { fileToDataURL } from '@/lib/file-helpers';
 import { useToast } from '@/hooks/use-toast';
 import JSZip from 'jszip';
 import { downloadFile, incomingInvoicesToERPNextCSVComplete } from '@/lib/export-helpers';
