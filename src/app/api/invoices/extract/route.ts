@@ -248,7 +248,12 @@ If a value is not found, omit the key or set it to null. Ensure numbers are actu
       { text: prompt },
     ]);
     
-    const responseText = generation.response.text();
+    let responseText = generation.response.text() || '';
+    responseText = responseText.trim()
+      .replace(/^```(?:json)?/i, '')
+      .replace(/```$/, '')
+      .trim();
+    
     if (!responseText?.trim().startsWith('{')) {
         throw new Error('Model did not return valid JSON. The response may be blocked or empty.');
     }

@@ -101,6 +101,18 @@ function findCachedInvoiceByFilename(name: string, erpMode: boolean) {
   } catch { return null; }
 }
 
+function toErrorString(err: unknown): string {
+  if (err instanceof Error && err.message) return err.message;
+  if (typeof err === 'string' && err.trim()) return err.trim();
+  try {
+    const str = JSON.stringify(err);
+    if (str !== '{}') return str;
+  } catch {
+    // fall through
+  }
+  return 'Unknown client-side error occurred.';
+}
+
 
 export function IncomingInvoicesPageContent() {
   const { user, isLoading: isAuthLoading } = useAuth();
@@ -368,15 +380,12 @@ export function IncomingInvoicesPageContent() {
             });
     
             if (!response.ok) {
-                // If response is not OK, read the body as text to avoid JSON parsing errors on HTML error pages
-                const errorText = await response.text();
-                // Try to parse as JSON, but fall back to raw text if it fails
-                let errorMessage = `Server error ${response.status}: ${errorText.substring(0, 300)}`;
+                let errorMessage = `Server error: ${response.status} ${response.statusText}`;
                 try {
-                    const jsonError = JSON.parse(errorText);
-                    errorMessage = jsonError.error || jsonError.message || `Server error ${response.status}`;
+                    const errorJson = await response.json();
+                    errorMessage = errorJson.error || errorJson.message || errorMessage;
                 } catch {
-                    // Not a JSON error, use the raw text
+                    // Could not parse JSON, use the original error message
                 }
                 throw new Error(errorMessage);
             }
@@ -479,8 +488,8 @@ export function IncomingInvoicesPageContent() {
             } catch (e) {
               console.error('Failed to persist invoice to Firestore:', e);
             }
-        } catch(error: any) {
-            accumulatedErrors.push({ fileName: file.name, message: error.message });
+        } catch (error) {
+            accumulatedErrors.push({ fileName: file.name, message: toErrorString(error) });
         } finally {
             setProgressValue(Math.round(((i + 1) / filesToProcess.length) * 100));
         }
@@ -502,7 +511,11 @@ export function IncomingInvoicesPageContent() {
       localStorage.setItem(LOCAL_STORAGE_MATCHER_DATA_KEY, JSON.stringify([...justProcessedForMatcher, ...previousMatcherInvoices]));
       
       if (accumulatedErrors.length > 0) {
-        setErrorMessage(accumulatedErrors.map(e => `${e.fileName}: ${e.message}`).join('\n'));
+        setErrorMessage(
+            accumulatedErrors
+            .map(e => `${e.fileName}: ${e.message || 'Unknown error'}`)
+            .join('\n')
+        );
       }
       
       const producedSomething = (erpMode ? currentErpInvoices.length > 0 : currentRegularInvoices.length > 0);
@@ -511,7 +524,7 @@ export function IncomingInvoicesPageContent() {
 
     } catch (error) {
       console.error("Critical error in handleProcessFiles:", error);
-      const message = error instanceof Error ? error.message : 'An unexpected critical error occurred.';
+      const message = toErrorString(error);
       setErrorMessage(message);
       setStatus('error');
       setCurrentFileProgress('Processing failed.');
@@ -549,8 +562,8 @@ export function IncomingInvoicesPageContent() {
       
       toast({ title: "Export Status", description: result.message || "Invoices submitted successfully.", variant: response.status === 207 ? "default" : "default" });
 
-    } catch (error: any) {
-      const message = error instanceof Error ? error.message : "Unknown client-side error during ERPNext export.";
+    } catch (error) {
+      const message = toErrorString(error);
       toast({ title: "ERPNext Export Failed", description: message, variant: "destructive" });
     } finally {
       setIsExportingToERPNext(false);
@@ -614,8 +627,9 @@ export function IncomingInvoicesPageContent() {
             description: <pre className="mt-2 w-full max-w-sm rounded-md bg-slate-950 p-4 whitespace-pre-wrap"><code className="text-white">{feedbackLines}</code></pre>,
         });
 
-    } catch (error: any) {
-        toast({ title: "Supplier Export Failed", description: error.message, variant: "destructive" });
+    } catch (error) {
+        const message = toErrorString(error);
+        toast({ title: "Supplier Export Failed", description: message, variant: "destructive" });
     } finally {
       setIsExportingSuppliers(false);
     }
@@ -648,8 +662,9 @@ export function IncomingInvoicesPageContent() {
       downloadFile(blob, 'erpnext_suppliers.csv', 'text/csv;charset=utf-8');
       toast({ title: "Suppliers Exported", description: "Supplier data has been exported to CSV." });
 
-    } catch (error: any) {
-       toast({ title: "Export Failed", description: error.message, variant: "destructive" });
+    } catch (error) {
+        const message = toErrorString(error);
+        toast({ title: "Export Failed", description: message, variant: "destructive" });
     }
   };
 
@@ -695,10 +710,11 @@ export function IncomingInvoicesPageContent() {
           title: 'Items Submitted',
           description:  <pre className="mt-2 w-full max-w-sm rounded-md bg-slate-950 p-4 whitespace-pre-wrap"><code className="text-white">{result.message}\n\n{feedbackLines}</code></pre>,
         });
-      } catch (error: any) {
+      } catch (error) {
+        const message = toErrorString(error);
         toast({
           title: 'Items API Failed',
-          description: error.message,
+          description: message,
           variant: 'destructive',
         });
       } finally {
@@ -747,11 +763,11 @@ export function IncomingInvoicesPageContent() {
           variant: "destructive",
         });
       }
-    } catch (error: any) {
-      console.error("Error creating ZIP file:", error);
+    } catch (error) {
+      const message = toErrorString(error);
       toast({
         title: "ZIP Export Failed",
-        description: error.message || "Could not create ZIP file.",
+        description: message,
         variant: "destructive",
       });
     } finally {
