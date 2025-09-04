@@ -368,7 +368,14 @@ export function IncomingInvoicesPageContent() {
 
         if (!response.ok) {
             const errorText = await response.text();
-            throw new Error(`Server responded with ${response.status}: ${errorText.substring(0, 300)}`);
+            let parsedError = errorText;
+            try {
+                const jsonError = JSON.parse(errorText);
+                parsedError = jsonError.error || errorText;
+            } catch (e) {
+                // Ignore if not JSON
+            }
+            throw new Error(`Server error for ${file.name}: ${response.status} - ${parsedError}`);
         }
         
         const aiResult = await response.json();
