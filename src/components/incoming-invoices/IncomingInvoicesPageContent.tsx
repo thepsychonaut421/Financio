@@ -106,13 +106,44 @@ function toErrorString(err: unknown): string {
   if (typeof err === 'string' && err.trim()) return err.trim();
   // ProgressEvent / Event from FileReader, fetch, XHR etc.
   if (typeof err === 'object' && err !== null && 'isTrusted' in (err as any)) {
-    return 'Browser I/O error (ProgressEvent) — likely FileReader or network layer failed.';
+    return 'Browser I/O error (FileReader). Close other tabs/apps, reselect the PDF, or try another file.';
   }
   try {
     const s = JSON.stringify(err);
     if (s && s !== '{}') return s;
   } catch { /* ignore */ }
   return 'Unknown client-side error occurred.';
+}
+
+async function postJsonWithTimeout(url: string, body: any, ms = 45_000) {
+  const c = new AbortController();
+  const t = setTimeout(() => c.abort(), ms);
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: c.signal,
+    });
+    return res;
+  } catch (err) {
+    if ((err as any)?.name === 'AbortError') {
+      throw new Error('Network timeout while contacting the server.');
+    }
+    throw err;
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+function friendlyServerError(status: number, fallback: string) {
+  switch (status) {
+    case 413: return 'PDF is too large (> 8MB). Please upload a smaller file.';
+    case 415: return 'File is not a PDF. Please select a valid PDF.';
+    case 429: return 'Too many requests. Please try again in a few moments.';
+    case 500: return 'Server error during data extraction. Please retry or try another PDF.';
+    default:  return fallback;
+  }
 }
 
 
@@ -374,21 +405,15 @@ export function IncomingInvoicesPageContent() {
         
         try {
             const dataUri = await readFileAsDataURL(file);
-            const response = await fetch('/api/invoices/extract', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ dataUri, filename: file.name }),
-            });
+            const response = await postJsonWithTimeout('/api/invoices/extract', { dataUri, filename: file.name });
     
             if (!response.ok) {
-                let errorMessageFromServer = `Server error: ${response.status} ${response.statusText}`;
-                try {
-                    const errorJson = await response.json();
-                    errorMessageFromServer = errorJson.error || errorJson.message || errorMessageFromServer;
-                } catch {
-                    // Could not parse JSON, use the original error message
-                }
-                throw new Error(errorMessageFromServer);
+              let msg = `Server error: ${response.status} ${response.statusText}`;
+              try {
+                const j = await response.json();
+                msg = friendlyServerError(response.status, j.error || j.message || msg);
+              } catch { /* keep original message */ }
+              throw new Error(msg);
             }
             
             const aiResult = await response.json();
