@@ -27,6 +27,11 @@ const CACHE_VERSION = 'v2';
 const LOCAL_STORAGE_PAGE_CACHE_KEY = `incomingInvoicesPageCache:${CACHE_VERSION}`;
 const LOCAL_STORAGE_MATCHER_DATA_KEY = 'processedIncomingInvoicesForMatcher';
 
+interface FileWithDataUri {
+    name: string;
+    dataUri: string;
+}
+
 interface IncomingInvoicesPageCache {
   extractedInvoices: IncomingInvoiceItem[];
   erpProcessedInvoices: ERPIncomingInvoiceItem[];
@@ -86,10 +91,10 @@ function compareERPValues(valA: any, valB: any, order: SortOrder): number {
   return order === 'asc' ? comparison : -comparison;
 }
 
-const getFileFingerprint = (file: File): string => {
-    return `${file.name}-${file.size}-${file.lastModified}`;
+const getFileFingerprint = (file: FileWithDataUri): string => {
+    // Using dataUri length as a proxy for file size, and name for identity.
+    return `${file.name}-${file.dataUri.length}`;
 };
-
 
 function findCachedInvoiceByFilename(name: string, erpMode: boolean) {
   try {
@@ -157,7 +162,7 @@ function friendlyServerError(status: number, fallback: string) {
 
 export function IncomingInvoicesPageContent() {
   const { user, isLoading: isAuthLoading } = useAuth();
-  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [selectedFiles, setSelectedFiles] = useState<FileWithDataUri[]>([]);
   const [extractedInvoices, setExtractedInvoices] = useState<IncomingInvoiceItem[]>([]);
   const [erpProcessedInvoices, setErpProcessedInvoices] = useState<ERPIncomingInvoiceItem[]>([]);
   const [status, setStatus] = useState<IncomingProcessingStatus>('idle');
@@ -331,9 +336,17 @@ export function IncomingInvoicesPageContent() {
     return erpInvoiceDate; 
   };
 
-  const handleFilesSelected = useCallback((files: File[]) => {
-    setSelectedFiles(files);
-  }, []);
+    const handleFilesSelected = useCallback(async (files: File[]) => {
+        const filePromises = files.map(file => 
+            fileToDataURL(file).then(dataUri => ({ name: file.name, dataUri }))
+        );
+        const newFilesWithData = await Promise.all(filePromises);
+        setSelectedFiles(newFilesWithData);
+    }, []);
+
+    const handleRemoveFile = (fileName: string) => {
+        setSelectedFiles(prev => prev.filter(f => f.name !== fileName));
+    };
 
 
   const resetStateOnModeChange = () => {
@@ -412,8 +425,7 @@ export function IncomingInvoicesPageContent() {
         setCurrentFileProgress(`Processing file ${i + 1} of ${filesToProcess.length}: ${file.name}`);
         
         try {
-            const dataUri = await fileToDataURL(file);
-            const response = await postJsonWithTimeout('/api/invoices/extract', { dataUri, filename: file.name });
+            const response = await postJsonWithTimeout('/api/invoices/extract', { dataUri: file.dataUri, filename: file.name });
     
             if (!response.ok) {
               let msg = `Server error: ${response.status} ${response.statusText}`;
@@ -871,6 +883,8 @@ export function IncomingInvoicesPageContent() {
           onProcess={handleProcessFiles}
           isProcessing={status === 'processing'}
           selectedFileCount={selectedFiles.length}
+          selectedFileNames={selectedFiles.map(f => f.name)}
+          onRemoveFile={handleRemoveFile}
         />
         
         <div className="flex flex-col sm:flex-row items-center justify-center gap-4 p-4 bg-card border rounded-lg shadow-sm">

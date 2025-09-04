@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useState, ChangeEvent } from 'react';
@@ -11,24 +12,26 @@ interface IncomingInvoiceUploadFormProps {
   onProcess: () => void;
   isProcessing: boolean;
   selectedFileCount: number;
+  // New prop to display filenames managed by the parent
+  selectedFileNames: string[];
+  onRemoveFile: (fileName: string) => void;
 }
 
-export function IncomingInvoiceUploadForm({ onFilesSelected, onProcess, isProcessing, selectedFileCount }: IncomingInvoiceUploadFormProps) {
-  const [currentFiles, setCurrentFiles] = useState<File[]>([]);
+export function IncomingInvoiceUploadForm({ 
+    onFilesSelected, 
+    onProcess, 
+    isProcessing, 
+    selectedFileCount,
+    selectedFileNames,
+    onRemoveFile
+}: IncomingInvoiceUploadFormProps) {
   const inputId = React.useId();
 
   const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
     if (event.target.files) {
       const newFiles = Array.from(event.target.files);
-      setCurrentFiles(newFiles);
       onFilesSelected(newFiles);
     }
-  };
-  
-  const handleRemoveFile = (fileName: string) => {
-    const updatedFiles = currentFiles.filter(file => file.name !== fileName);
-    setCurrentFiles(updatedFiles);
-    onFilesSelected(updatedFiles);
   };
 
   return (
@@ -59,18 +62,18 @@ export function IncomingInvoiceUploadForm({ onFilesSelected, onProcess, isProces
           />
         </div>
 
-        {currentFiles.length > 0 && (
+        {selectedFileNames.length > 0 && (
           <div className="space-y-2">
             <h3 className="text-sm font-medium text-foreground">Selected Files:</h3>
             <ul className="max-h-40 overflow-y-auto space-y-1 rounded-md border p-2">
-              {currentFiles.map((file) => (
-                <li key={file.name} className="flex items-center justify-between text-sm p-1.5 bg-secondary/50 rounded-md">
+              {selectedFileNames.map((fileName) => (
+                <li key={fileName} className="flex items-center justify-between text-sm p-1.5 bg-secondary/50 rounded-md">
                   <div className="flex items-center gap-2">
                     <FileText className="w-4 h-4 text-primary" />
-                    <span className="truncate max-w-xs" title={file.name}>{file.name}</span>
+                    <span className="truncate max-w-xs" title={fileName}>{fileName}</span>
                   </div>
                   {!isProcessing && (
-                     <Button variant="ghost" size="sm" onClick={() => handleRemoveFile(file.name)} aria-label={`Remove ${file.name}`}>
+                     <Button variant="ghost" size="sm" onClick={() => onRemoveFile(fileName)} aria-label={`Remove ${fileName}`}>
                         <XCircle className="w-4 h-4 text-destructive" />
                      </Button>
                   )}
