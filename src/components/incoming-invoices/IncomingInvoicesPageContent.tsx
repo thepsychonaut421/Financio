@@ -24,13 +24,15 @@ import { db } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
 import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
 
-const CACHE_VERSION = 'v2';
-const LOCAL_STORAGE_PAGE_CACHE_KEY = `incomingInvoicesPageCache:${CACHE_VERSION}`;
-const LOCAL_STORAGE_MATCHER_DATA_KEY = 'processedIncomingInvoicesForMatcher';
+const CACHE_VERSION = 'v1';
+const LOCAL_STORAGE_PAGE_CACHE_KEY = `incomingPurchasesPageCache:${CACHE_VERSION}`;
+const LOCAL_STORAGE_MATCHER_DATA_KEY = 'processedPurchasesForMatcher';
 
 interface FileWithDataUri {
     name: string;
     dataUri: string;
+    size: number;
+    lastModified: number;
 }
 
 interface IncomingInvoicesPageCache {
@@ -57,11 +59,9 @@ function cap<T>(arr: T[], max = 200) {
   return Array.isArray(arr) && arr.length > max ? arr.slice(0, max) : arr;
 }
 
-// elimină recursiv undefined (și NaN), convertește Date -> Timestamp ISO
 function pruneForFirestore<T>(obj: T): T {
   if (obj === null || typeof obj !== 'object') return obj;
   if (Array.isArray(obj)) {
-    // curățăm elementele din array
     return obj
       .map((v) => pruneForFirestore(v))
       .filter((v) => v !== undefined) as unknown as T;
@@ -92,9 +92,8 @@ function compareERPValues(valA: any, valB: any, order: SortOrder): number {
   return order === 'asc' ? comparison : -comparison;
 }
 
-const getFileFingerprint = (file: FileWithDataUri): string => {
-    // Using dataUri length as a proxy for file size, and name for identity.
-    return `${file.name}-${file.dataUri.length}`;
+const getFileFingerprint = (file: {name: string; size: number; lastModified: number}): string => {
+    return `${file.name}-${file.size}-${file.lastModified}`;
 };
 
 function findCachedInvoiceByFilename(name: string, erpMode: boolean) {
@@ -118,7 +117,6 @@ function toErrorString(err: unknown): string {
     }
   if (err instanceof Error && err.message) return err.message;
   if (typeof err === 'string' && err.trim()) return err.trim();
-  // ProgressEvent / Event from FileReader, fetch, XHR etc.
   if (typeof err === 'object' && err !== null && 'isTrusted' in (err as any)) {
     return 'Browser I/O error (FileReader). Close other tabs/apps, reselect the PDF, or try another file.';
   }
@@ -180,12 +178,7 @@ export function IncomingInvoicesPageContent() {
   const [kontenrahmen, setKontenrahmen] = useState('20000 - Verbindlichkeiten Lief Inland');
   const [processedFileFingerprints, setProcessedFileFingerprints] = useState<Record<string, string>>({});
 
-
-  const [erpExportFile, setErpExportFile] = useState<File | null>(null);
   const [existingErpInvoiceKeys, setExistingErpInvoiceKeys] = useState<Set<string>>(new Set());
-  const [isCheckingDuplicates, setIsCheckingDuplicates] = useState(false);
-  const erpExportInputId = React.useId();
-
   const [erpSortKey, setErpSortKey] = useState<ERPSortKey | null>('datum');
   const [erpSortOrder, setErpSortOrder] = useState<SortOrder>('desc');
 
@@ -294,14 +287,12 @@ export function IncomingInvoicesPageContent() {
     "UNBEKANNT_SUPPLIER_AI_EXTRACTED": "UNBEKANNT_SUPPLIER_PLACEHOLDER",
   };
   
-  // This logic is now on the server
   const formatDateForERP = (dateString?: string): string | undefined => {
     if (!dateString || dateString.trim() === '') return undefined;
     if (/^\d{4}-\d{2}-\d{2}$/.test(dateString)) { 
         const d = parseISO(dateString); 
         return isValid(d) ? dateString : undefined;
     }
-    // Other parsing logic is now server-side, but keep a basic fallback.
     try {
         const d = new Date(dateString);
         if (isValid(d)) {
@@ -344,7 +335,7 @@ export function IncomingInvoicesPageContent() {
         for (const file of files) {
             try {
                 const dataUri = await fileToDataURL(file);
-                filesWithData.push({ name: file.name, dataUri });
+                filesWithData.push({ name: file.name, dataUri, size: file.size, lastModified: file.lastModified });
             } catch (e) {
                 setErrorMessage(`Could not read file: ${file.name}. Please try re-selecting it. Error: ${toErrorString(e)}`);
                 setStatus('error');
@@ -359,7 +350,6 @@ export function IncomingInvoicesPageContent() {
     const handleRemoveFile = (fileName: string) => {
         setSelectedFiles(prev => prev.filter(f => f.name !== fileName));
     };
-
 
   const resetStateOnModeChange = () => {
     const hasProcessedResults = extractedInvoices.length > 0 || erpProcessedInvoices.length > 0;
@@ -448,7 +438,18 @@ export function IncomingInvoicesPageContent() {
               throw new Error(msg);
             }
             
-            const aiResult = await response.json();
+            let responseText = await response.text();
+            let aiResult;
+            try {
+                responseText = responseText.trim().replace(/^```(?:json)?/i, '').replace(/```$/, '').trim();
+                if (!responseText.startsWith('{')) {
+                    throw new Error('Model did not return valid JSON. The response may be blocked or empty.');
+                }
+                aiResult = JSON.parse(responseText);
+            } catch (jsonError) {
+                console.error("JSON parsing error for file:", file.name, "Response text:", responseText);
+                throw new Error("Failed to parse AI response as JSON.");
+            }
 
             const fingerprint = getFileFingerprint(file);
             newFingerprints[fingerprint] = file.name;
@@ -513,13 +514,13 @@ export function IncomingInvoicesPageContent() {
               istBezahlt: istBezahltStatus, 
               kontenrahmen: kontenrahmen.trim(), 
               remarks: remarks.trim(),
-              kind: 'purchase' // Set the kind for purchase invoices
+              kind: 'purchase'
             };
 
             if (erpMode) {
               currentErpInvoices.unshift(erpCompatibleInvoice);
             } else {
-              currentRegularInvoices.unshift(erpCompatibleInvoice); // Save ERP compatible even in standard mode
+              currentRegularInvoices.unshift(erpCompatibleInvoice);
             }
             
             const statusForDoc: 'OK'|'WARN'|'ERROR' = aiResult?.anomalies?.includes('AI_CRASH_FALLBACK')
@@ -652,7 +653,6 @@ export function IncomingInvoicesPageContent() {
         }
     }));
 
-
     if (supplierPayloads.length === 0) {
         toast({ title: "No New Suppliers", description: "No unique suppliers found to export." });
         return;
@@ -737,7 +737,6 @@ export function IncomingInvoicesPageContent() {
 
         const uniqueItems = Array.from(new Map(itemsPayload.map(item => [item.item_code, item])).values());
 
-
       if(uniqueItems.length === 0) {
         toast({ title: 'No Items', description: 'No valid items with product codes found to submit.', variant: 'destructive'});
         return;
@@ -772,7 +771,6 @@ export function IncomingInvoicesPageContent() {
         setIsSubmittingItems(false);
       }
     };
-
 
   const handleExportInvoicesAsZip = async () => {
     const invoicesToZip = erpMode ? sortedErpProcessedInvoices : erpProcessedInvoices;
@@ -848,12 +846,10 @@ export function IncomingInvoicesPageContent() {
     setProgressValue(0);
     setCurrentFileProgress('');
     setErrorMessage(null);
-    setErpExportFile(null);
     setExistingErpInvoiceKeys(new Set());
     setErpSortKey('datum'); 
     setErpSortOrder('desc');
     setProcessedFileFingerprints({});
-
 
     localStorage.removeItem(LOCAL_STORAGE_PAGE_CACHE_KEY);
     localStorage.removeItem(LOCAL_STORAGE_MATCHER_DATA_KEY);
@@ -884,7 +880,7 @@ export function IncomingInvoicesPageContent() {
   return (
     <div className="container mx-auto px-4 py-8 md:px-8 md:py-12">
       <header className="mb-8 text-center">
-        <h1 className="text-3xl md:text-4xl font-headline font-bold text-primary">Incoming Invoice Details</h1>
+        <h1 className="text-3xl md:text-4xl font-headline font-bold text-primary">Purchase Invoices</h1>
         <p className="text-muted-foreground mt-2">
           Upload German PDF invoices (Eingangsrechnungen) to extract comprehensive details. Switch to ERP Vorlage Mode for ERPNext-compatible data.
         </p>
@@ -953,7 +949,6 @@ export function IncomingInvoicesPageContent() {
             </CardContent>
           </Card>
         )}
-
 
         {status === 'processing' && (
           <div className="my-6 p-4 border rounded-lg shadow-sm bg-card">
