@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import React, { useState, useCallback, useEffect, useMemo } from 'react';
@@ -86,7 +87,7 @@ function compareERPValues(valA: any, valB: any, order: SortOrder): number {
   if (typeof valA === 'number' && typeof valB === 'number') {
     comparison = valA - valB;
   } else { 
-    comparison = String(valA).toLowerCase().localeCompare(String(valB).toLowerCase());
+    comparison = String(valA).toLowerCase().localeCompare(String(B).toLowerCase());
   }
   return order === 'asc' ? comparison : -comparison;
 }
@@ -337,11 +338,22 @@ export function IncomingInvoicesPageContent() {
   };
 
     const handleFilesSelected = useCallback(async (files: File[]) => {
-        const filePromises = files.map(file => 
-            fileToDataURL(file).then(dataUri => ({ name: file.name, dataUri }))
-        );
-        const newFilesWithData = await Promise.all(filePromises);
-        setSelectedFiles(newFilesWithData);
+        setStatus('processing');
+        setCurrentFileProgress(`Reading ${files.length} file(s)...`);
+        const filesWithData: FileWithDataUri[] = [];
+        for (const file of files) {
+            try {
+                const dataUri = await fileToDataURL(file);
+                filesWithData.push({ name: file.name, dataUri });
+            } catch (e) {
+                setErrorMessage(`Could not read file: ${file.name}. Please try re-selecting it. Error: ${toErrorString(e)}`);
+                setStatus('error');
+                return;
+            }
+        }
+        setSelectedFiles(filesWithData);
+        setStatus('idle');
+        setCurrentFileProgress('');
     }, []);
 
     const handleRemoveFile = (fileName: string) => {
@@ -404,7 +416,7 @@ export function IncomingInvoicesPageContent() {
     if (duplicates.length > 0) {
         toast({
             title: "Duplicate Files Skipped",
-            description: `${duplicates.length} already processed. If they weren’t visible, I restored them from cache.`,
+            description: `${duplicates.length} file(s) already processed: ${duplicates.join(', ')}. Restored from cache if not visible.`,
             variant: "default",
         });
         setExtractedInvoices(currentRegularInvoices);
