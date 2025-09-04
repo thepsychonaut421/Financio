@@ -249,7 +249,9 @@ If a value is not found, omit the key or set it to null. Ensure numbers are actu
     ]);
     
     const responseText = generation.response.text();
-    if (!responseText?.trim().startsWith('{')) throw new Error('Model did not return valid JSON.');
+    if (!responseText?.trim().startsWith('{')) {
+        throw new Error('Model did not return valid JSON. The response may be blocked or empty.');
+    }
     
     const parsed = JSON.parse(responseText);
     let safePayload = enforceErpSchemaSafety(parsed, filename);
@@ -328,5 +330,3 @@ If a value is not found, omit the key or set it to null. Ensure numbers are actu
     );
   }
 }
-
-    

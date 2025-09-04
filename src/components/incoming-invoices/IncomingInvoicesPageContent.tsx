@@ -367,13 +367,13 @@ export function IncomingInvoicesPageContent() {
         });
 
         if (!response.ok) {
-            const errorText = await response.text();
-            let parsedError = errorText;
+            const errorBody = await response.text();
+            let parsedError = errorBody;
             try {
-                const jsonError = JSON.parse(errorText);
-                parsedError = jsonError.error || errorText;
+                const jsonError = JSON.parse(errorBody);
+                parsedError = jsonError.error || jsonError.message || errorBody;
             } catch (e) {
-                // Ignore if not JSON
+                // Ignore if response is not JSON
             }
             throw new Error(`Server error for ${file.name}: ${response.status} - ${parsedError}`);
         }
