@@ -87,7 +87,7 @@ function compareERPValues(valA: any, valB: any, order: SortOrder): number {
   if (typeof valA === 'number' && typeof valB === 'number') {
     comparison = valA - valB;
   } else { 
-    comparison = String(valA).toLowerCase().localeCompare(String(B).toLowerCase());
+    comparison = String(valA).toLowerCase().localeCompare(String(valB).toLowerCase());
   }
   return order === 'asc' ? comparison : -comparison;
 }
