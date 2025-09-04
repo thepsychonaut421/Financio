@@ -352,132 +352,138 @@ export function IncomingInvoicesPageContent() {
     }
 
     const yearCounters: Record<string, number> = {};
-    const accumulatedErrors: string[] = [];
+    const accumulatedErrors: { fileName: string, message: string }[] = [];
 
     try {
       for (let i = 0; i < filesToProcess.length; i++) {
         const file = filesToProcess[i];
         setCurrentFileProgress(`Processing file ${i + 1} of ${filesToProcess.length}: ${file.name}`);
         
-        const dataUri = await readFileAsDataURL(file);
-        const response = await fetch('/api/invoices/extract', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ dataUri, filename: file.name }),
-        });
-
-        if (!response.ok) {
-            const errorBody = await response.text();
-            let parsedError = errorBody;
-            try {
-                const jsonError = JSON.parse(errorBody);
-                parsedError = jsonError.error || jsonError.message || errorBody;
-            } catch (e) {
-                // Ignore if response is not JSON
-            }
-            throw new Error(`Server error for ${file.name}: ${response.status} - ${parsedError}`);
-        }
-        
-        const aiResult = await response.json();
-        
-        const fingerprint = getFileFingerprint(file);
-        newFingerprints[fingerprint] = file.name;
-
-        if (aiResult.error) {
-          accumulatedErrors.push(`${file.name}: ${aiResult.error}`);
-        }
-
-        let finalLieferantName = (aiResult.lieferantName || "").trim();
-        const upperCaseExtractedName = finalLieferantName.toUpperCase();
-
-        if (supplierMap[upperCaseExtractedName]) {
-            finalLieferantName = supplierMap[upperCaseExtractedName];
-        } else if (finalLieferantName === "" || finalLieferantName === "UNBEKANNT" || finalLieferantName === "UNBEKANNT_SUPPLIER_AI_EXTRACTED") {
-            finalLieferantName = "UNBEKANNT_SUPPLIER_PLACEHOLDER"; 
-        }
-
-        let remarks = (aiResult.remarks || '');
-        if (aiResult.kundenNummer) remarks += `${remarks ? ' / ' : ''}Kunden-Nr.: ${aiResult.kundenNummer}`;
-        if (aiResult.bestellNummer) remarks += `${remarks ? ' / ' : ''}Bestell-Nr.: ${aiResult.bestellNummer}`;
-        
-        let istBezahltStatus: 0 | 1 = 0;
-        if (aiResult.isPaid === true) {
-          istBezahltStatus = 1;
-        } else {
-            const zahlungszielLower = (aiResult.zahlungsziel || '').toLowerCase();
-            const zahlungsartLower = (aiResult.zahlungsart || '').toLowerCase();
-            if (zahlungszielLower.includes('sofort') || zahlungsartLower === 'sofort' || zahlungsartLower === 'lastschrift' || zahlungsartLower.includes('paypal') || zahlungsartLower.includes('paid') || zahlungsartLower.includes('klarna')) {
-              istBezahltStatus = 1;
-            }
-        }
-        
-        let yearToUse = new Date().getFullYear().toString();
-        if (aiResult.datum) {
-            const parsedYear = aiResult.datum.substring(0,4);
-            if (!isNaN(parseInt(parsedYear))) yearToUse = parsedYear;
-        }
-        
-        if (!yearCounters[yearToUse]) { yearCounters[yearToUse] = 0; }
-        yearCounters[yearToUse]++;
-        const internalRefId = `INTERNAL-${yearToUse}-${String(yearCounters[yearToUse]).padStart(5, '0')}`;
-        const rechnungsnummerToUse = aiResult.rechnungsnummer || internalRefId;
-
-        const erpCompatibleInvoice: ERPIncomingInvoiceItem = {
-          pdfFileName: file.name,
-          rechnungsnummer: rechnungsnummerToUse,
-          datum: aiResult.datum, 
-          lieferantName: finalLieferantName,
-          lieferantAdresse: aiResult.lieferantAdresse,
-          zahlungsziel: aiResult.zahlungsziel,
-          zahlungsart: aiResult.zahlungsart,
-          gesamtbetrag: aiResult.gesamtbetrag,
-          mwstSatz: aiResult.mwstSatz != null ? String(aiResult.mwstSatz) : undefined,
-          rechnungspositionen: aiResult.rechnungspositionen,
-          kundenNummer: aiResult.kundenNummer,
-          bestellNummer: aiResult.bestellNummer,
-          isPaidByAI: aiResult.isPaid,
-          erpNextInvoiceName: internalRefId, 
-          billDate: aiResult.bill_date,
-          dueDate: calculateDueDate(aiResult.datum, aiResult.zahlungsziel),
-          wahrung: aiResult.wahrung, 
-          istBezahlt: istBezahltStatus, 
-          kontenrahmen: kontenrahmen.trim(), 
-          remarks: remarks.trim(),
-        };
-
-        if (erpMode) {
-          currentErpInvoices.unshift(erpCompatibleInvoice);
-        } else {
-          currentRegularInvoices.unshift(erpCompatibleInvoice); // Save ERP compatible even in standard mode
-        }
-        
-        const statusForDoc: 'OK'|'WARN'|'ERROR' = aiResult?.anomalies?.includes('AI_CRASH_FALLBACK')
-          ? 'ERROR'
-          : (aiResult?.anomalies?.length ? 'WARN' : 'OK');
-        
         try {
-          if (!isAuthLoading && user?.uid) {
-              const erpDoc = {
-                userId: user.uid,
-                filename: file.name,
-                status: statusForDoc,
-                erpMode: true, 
-                payload: {
-                  ...erpCompatibleInvoice,
-                  lieferantAdresse: erpCompatibleInvoice.lieferantAdresse ?? '',
-                  zahlungsziel: erpCompatibleInvoice.zahlungsziel ?? '',
-                  zahlungsart: erpCompatibleInvoice.zahlungsart ?? '',
-                  rechnungspositionen: erpCompatibleInvoice.rechnungspositionen ?? [],
-                },
-                createdAt: serverTimestamp(),
-              };
-              await addDoc(collection(db, "processed_invoices"), pruneForFirestore(erpDoc));
-          }
-        } catch (e) {
-          console.error('Failed to persist invoice to Firestore:', e);
-        }
+            const dataUri = await readFileAsDataURL(file);
+            const response = await fetch('/api/invoices/extract', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ dataUri, filename: file.name }),
+            });
+    
+            if (!response.ok) {
+                // If response is not OK, read the body as text to avoid JSON parsing errors on HTML error pages
+                const errorText = await response.text();
+                // Try to parse as JSON, but fall back to raw text if it fails
+                let errorMessage = `Server error ${response.status}: ${errorText.substring(0, 300)}`;
+                try {
+                    const jsonError = JSON.parse(errorText);
+                    errorMessage = jsonError.error || jsonError.message || `Server error ${response.status}`;
+                } catch {
+                    // Not a JSON error, use the raw text
+                }
+                throw new Error(errorMessage);
+            }
+            
+            const aiResult = await response.json();
 
-        setProgressValue(Math.round(((i + 1) / filesToProcess.length) * 100));
+            const fingerprint = getFileFingerprint(file);
+            newFingerprints[fingerprint] = file.name;
+
+            if (aiResult.error) {
+              throw new Error(aiResult.error);
+            }
+
+            let finalLieferantName = (aiResult.lieferantName || "").trim();
+            const upperCaseExtractedName = finalLieferantName.toUpperCase();
+
+            if (supplierMap[upperCaseExtractedName]) {
+                finalLieferantName = supplierMap[upperCaseExtractedName];
+            } else if (finalLieferantName === "" || finalLieferantName === "UNBEKANNT" || finalLieferantName === "UNBEKANNT_SUPPLIER_AI_EXTRACTED") {
+                finalLieferantName = "UNBEKANNT_SUPPLIER_PLACEHOLDER"; 
+            }
+
+            let remarks = (aiResult.remarks || '');
+            if (aiResult.kundenNummer) remarks += `${remarks ? ' / ' : ''}Kunden-Nr.: ${aiResult.kundenNummer}`;
+            if (aiResult.bestellNummer) remarks += `${remarks ? ' / ' : ''}Bestell-Nr.: ${aiResult.bestellNummer}`;
+            
+            let istBezahltStatus: 0 | 1 = 0;
+            if (aiResult.isPaid === true) {
+              istBezahltStatus = 1;
+            } else {
+                const zahlungszielLower = (aiResult.zahlungsziel || '').toLowerCase();
+                const zahlungsartLower = (aiResult.zahlungsart || '').toLowerCase();
+                if (zahlungszielLower.includes('sofort') || zahlungsartLower === 'sofort' || zahlungsartLower === 'lastschrift' || zahlungsartLower.includes('paypal') || zahlungsartLower.includes('paid') || zahlungsartLower.includes('klarna')) {
+                  istBezahltStatus = 1;
+                }
+            }
+            
+            let yearToUse = new Date().getFullYear().toString();
+            if (aiResult.datum) {
+                const parsedYear = aiResult.datum.substring(0,4);
+                if (!isNaN(parseInt(parsedYear))) yearToUse = parsedYear;
+            }
+            
+            if (!yearCounters[yearToUse]) { yearCounters[yearToUse] = 0; }
+            yearCounters[yearToUse]++;
+            const internalRefId = `INTERNAL-${yearToUse}-${String(yearCounters[yearToUse]).padStart(5, '0')}`;
+            const rechnungsnummerToUse = aiResult.rechnungsnummer || internalRefId;
+
+            const erpCompatibleInvoice: ERPIncomingInvoiceItem = {
+              pdfFileName: file.name,
+              rechnungsnummer: rechnungsnummerToUse,
+              datum: aiResult.datum, 
+              lieferantName: finalLieferantName,
+              lieferantAdresse: aiResult.lieferantAdresse,
+              zahlungsziel: aiResult.zahlungsziel,
+              zahlungsart: aiResult.zahlungsart,
+              gesamtbetrag: aiResult.gesamtbetrag,
+              mwstSatz: aiResult.mwstSatz != null ? String(aiResult.mwstSatz) : undefined,
+              rechnungspositionen: aiResult.rechnungspositionen,
+              kundenNummer: aiResult.kundenNummer,
+              bestellNummer: aiResult.bestellNummer,
+              isPaidByAI: aiResult.isPaid,
+              erpNextInvoiceName: internalRefId, 
+              billDate: aiResult.bill_date,
+              dueDate: calculateDueDate(aiResult.datum, aiResult.zahlungsziel),
+              wahrung: aiResult.wahrung, 
+              istBezahlt: istBezahltStatus, 
+              kontenrahmen: kontenrahmen.trim(), 
+              remarks: remarks.trim(),
+            };
+
+            if (erpMode) {
+              currentErpInvoices.unshift(erpCompatibleInvoice);
+            } else {
+              currentRegularInvoices.unshift(erpCompatibleInvoice); // Save ERP compatible even in standard mode
+            }
+            
+            const statusForDoc: 'OK'|'WARN'|'ERROR' = aiResult?.anomalies?.includes('AI_CRASH_FALLBACK')
+              ? 'ERROR'
+              : (aiResult?.anomalies?.length ? 'WARN' : 'OK');
+            
+            try {
+              if (!isAuthLoading && user?.uid) {
+                  const erpDoc = {
+                    userId: user.uid,
+                    filename: file.name,
+                    status: statusForDoc,
+                    erpMode: true, 
+                    payload: {
+                      ...erpCompatibleInvoice,
+                      lieferantAdresse: erpCompatibleInvoice.lieferantAdresse ?? '',
+                      zahlungsziel: erpCompatibleInvoice.zahlungsziel ?? '',
+                      zahlungsart: erpCompatibleInvoice.zahlungsart ?? '',
+                      rechnungspositionen: erpCompatibleInvoice.rechnungspositionen ?? [],
+                    },
+                    createdAt: serverTimestamp(),
+                  };
+                  await addDoc(collection(db, "processed_invoices"), pruneForFirestore(erpDoc));
+              }
+            } catch (e) {
+              console.error('Failed to persist invoice to Firestore:', e);
+            }
+        } catch(error: any) {
+            accumulatedErrors.push({ fileName: file.name, message: error.message });
+        } finally {
+            setProgressValue(Math.round(((i + 1) / filesToProcess.length) * 100));
+        }
       }
 
       setExtractedInvoices(currentRegularInvoices);
@@ -496,16 +502,16 @@ export function IncomingInvoicesPageContent() {
       localStorage.setItem(LOCAL_STORAGE_MATCHER_DATA_KEY, JSON.stringify([...justProcessedForMatcher, ...previousMatcherInvoices]));
       
       if (accumulatedErrors.length > 0) {
-        setErrorMessage(accumulatedErrors.join('\n'));
+        setErrorMessage(accumulatedErrors.map(e => `${e.fileName}: ${e.message}`).join('\n'));
       }
       
       const producedSomething = (erpMode ? currentErpInvoices.length > 0 : currentRegularInvoices.length > 0);
-      setStatus(producedSomething ? 'success' : (accumulatedErrors.length ? 'error' : 'success'));
+      setStatus(producedSomething ? 'success' : (accumulatedErrors.length > 0 ? 'error' : 'success'));
       setCurrentFileProgress('Processing complete!');
 
     } catch (error) {
-      console.error("Error processing files:", error);
-      const message = error instanceof Error ? error.message : 'An unexpected error occurred during processing.';
+      console.error("Critical error in handleProcessFiles:", error);
+      const message = error instanceof Error ? error.message : 'An unexpected critical error occurred.';
       setErrorMessage(message);
       setStatus('error');
       setCurrentFileProgress('Processing failed.');

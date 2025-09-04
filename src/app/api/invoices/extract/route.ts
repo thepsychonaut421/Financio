@@ -323,9 +323,10 @@ If a value is not found, omit the key or set it to null. Ensure numbers are actu
 
     return NextResponse.json(safePayload, { headers: { 'Cache-Control': 'no-store' }});
   } catch (e: any) {
-    console.error('[API /invoices/extract Error]', e);
+    console.error(`[API /invoices/extract Error for file ${filename}]`, e);
+    // Ensure a consistent error response format
     return NextResponse.json(
-      { error: e?.message || String(e) },
+      { error: e?.message || 'An unexpected server error occurred.' },
       { status: 500, headers: { 'Cache-Control': 'no-store' } }
     );
   }
