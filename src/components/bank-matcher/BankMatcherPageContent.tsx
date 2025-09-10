@@ -12,7 +12,7 @@ import type { ERPIncomingInvoiceItem } from '@/types/incoming-invoice';
 import { parseBankStatementCSV } from '@/lib/bank-matcher/bankStatementParser';
 import { matchTransactions } from '@/lib/bank-matcher/matchBankToInvoices';
 import { Progress } from '@/components/ui/progress';
-import { readFileAsDataURL } from '@/lib/file-helpers';
+import { fileToDataURL } from '@/lib/file-helpers';
 import { extractBankStatementData, type BankTransactionAI } from '@/ai/flows/extract-bank-statement-data';
 import { v4 as uuidv4 } from 'uuid';
 import { BankMatcherActionButtons } from './BankMatcherActionButtons';
@@ -205,7 +205,7 @@ export function BankMatcherPageContent() {
 
         if (isPdf) {
           setStatusMessage(`Extracting transactions from PDF: ${file.name} using AI...`);
-          const dataUri = await readFileAsDataURL(file);
+          const dataUri = await fileToDataURL(file);
           const aiResult = await extractBankStatementData({ statementDataUri: dataUri });
           
           if(aiResult.error) {
