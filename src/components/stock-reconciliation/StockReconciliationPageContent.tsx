@@ -66,11 +66,12 @@ async function readSafePayload(res: Response) {
 
 // New fetcher with built-in retry logic for 401 Unauthorized errors
 async function fetchWithFreshToken(
-    getIdToken: () => Promise<string | null>, 
+    getIdToken: (forceRefresh?: boolean) => Promise<string | null>, 
     endpoint: string, 
     options: RequestInit
 ): Promise<Response> {
-    let idToken = await getIdToken();
+    // Force refresh on the first attempt to ensure a fresh token is always used.
+    let idToken = await getIdToken(true); 
     if (!idToken) throw new AuthError("Cannot fetch without a valid ID token. User may be logged out.");
 
     let response = await fetch(endpoint, {
@@ -80,7 +81,8 @@ async function fetchWithFreshToken(
 
     if (response.status === 401) {
         console.warn("[Auth] Token may have been stale, forcing refresh and retrying...");
-        idToken = await getIdToken(); // Force refresh
+        // The second attempt will also be a forced refresh.
+        idToken = await getIdToken(true); 
         if (!idToken) throw new AuthError("Failed to refresh token for retry. User may have been logged out.");
         
         response = await fetch(endpoint, {
