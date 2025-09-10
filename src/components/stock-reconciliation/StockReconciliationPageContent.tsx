@@ -49,6 +49,13 @@ async function readSafePayload(res: Response) {
   }
 }
 
+function normalizeJwt(tok: string | null): string | null {
+  if (!tok) return null;
+  // elimină prefix “Bearer ” dacă vine deja cu el din context
+  return tok.startsWith('Bearer ') ? tok.slice(7) : tok;
+}
+
+
 /**
  * Attaches token, retries once on 401, and does not mask non-auth errors.
  */
@@ -58,30 +65,35 @@ async function fetchWithAuth(
   options: RequestInit,
   { retryOn401 = true }: { retryOn401?: boolean } = {}
 ): Promise<Response> {
-  // First attempt - use cached token to avoid extra RTT
-  let idToken = await getIdToken();
-  if (!isPlausibleJwt(idToken)) {
-    idToken = await getIdToken(true); // Force refresh if cached one is bad
-  }
-  if (!isPlausibleJwt(idToken)) {
-    throw new AuthError('Cannot fetch without a valid ID token.');
-  }
+  const getTok = async (force?: boolean) => {
+    const t = normalizeJwt(await getIdToken(!!force));
+    if (!t || t.split('.').length !== 3 || t.length < 100) return null;
+    return t;
+  };
 
-  const doFetch = (tok: string) =>
+  let tok = await getTok(false) || await getTok(true);
+  if (!tok) throw new AuthError('Cannot fetch without a valid ID token.');
+
+  const doFetch = (t: string) =>
     fetch(endpoint, {
       ...options,
-      headers: { ...(options.headers || {}), Authorization: `Bearer ${tok}` },
+      headers: {
+        ...(options.headers || {}),
+        // trimite în toate formatele “clasice”
+        Authorization: `Bearer ${t}`,
+        'X-Firebase-Token': t,
+        'X-ID-Token': t,
+      },
       cache: 'no-store',
+      credentials: 'include', // util dacă backend-ul mai folosește cookie pt. sesiune
     });
 
-  let res = await doFetch(idToken);
+  let res = await doFetch(tok);
 
-  // Retry once on 401 with a force-refreshed token
+  // retry o singură dată pe 401 -> token proaspăt forțat
   if (retryOn401 && res.status === 401) {
-    const fresh = await getIdToken(true);
-    if (!isPlausibleJwt(fresh)) {
-      throw new AuthError('Authentication failed: could not refresh ID token.');
-    }
+    const fresh = await getTok(true);
+    if (!fresh) throw new AuthError('Authentication failed: could not refresh ID token.');
     res = await doFetch(fresh);
   }
   return res;
@@ -195,7 +207,7 @@ export function StockReconciliationPageContent() {
             } else {
                 toast({ title: 'Unexpected Error', description: error?.message || String(error), variant: 'destructive' });
             }
-            console.error('[StockReconciliation] fetch/parse failed:', error?.message || error, error);
+            console.error('[StockReconciliation] fetch/parse failed:', error);
         } finally {
             setIsLoading(false);
         }
@@ -398,9 +410,9 @@ export function StockReconciliationPageContent() {
                                 <Info className="h-4 w-4" />
                                 <AlertTitle>No Data Available</AlertTitle>
                                 <AlertDescription>
-                                No stock data could be aggregated. This could be because no invoices have been processed yet, or there are no items with product codes in them.
-                                <br />
-                                Go to the <Link href="/incoming-invoices" className="underline text-primary">Incoming Invoices</Link> page to get started. Or check your <Link href="/settings/stock" className="underline text-primary">Stock Settings</Link>.
+                                    No stock data could be aggregated. This could be because no invoices have been processed yet, or there are no items with product codes in them.
+                                    <br />
+                                    Go to the <Link href="/incoming-invoices" className="underline text-primary">Incoming Invoices</Link> page to get started. Or check your <Link href="/settings/stock" className="underline text-primary">Stock Settings</Link>.
                                 </AlertDescription>
                             </Alert>
                         )}
