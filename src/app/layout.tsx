@@ -22,11 +22,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${inter.variable} ${inter.className}`}>
+    <html lang="en" className={`${inter.variable}`}>
       <head>
         
       </head>
-      <body className="antialiased min-h-screen flex flex-col">
+      <body className="antialiased min-h-screen flex flex-col font-body">
         <AuthProvider> {/* Wrapped with AuthProvider */}
           <AppHeader />
           <main className="flex-grow">

@@ -1,9 +1,5 @@
-
-require('dotenv').config();
-
-import type {NextConfig} from 'next';
-
-const nextConfig: NextConfig = {
+/** @type {import('next').NextConfig} */
+const nextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
@@ -19,10 +15,8 @@ const nextConfig: NextConfig = {
     ],
   },
   experimental: {
-    // This is intentionally left empty to satisfy the Next.js config schema
-    // and prevent the "unrecognized key" warning for 'allowedDevOrigins',
-    // which seems to be injected by the development environment.
-  }
+    optimizePackageImports: ['lucide-react'],
+  },
 };
 
-export default nextConfig;
+module.exports = nextConfig;
