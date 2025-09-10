@@ -44,23 +44,23 @@ async function readSafePayload(res: Response) {
 }
 
 /**
- * Sends request with token in header.
+ * Sends request with token in body.
  */
 async function fetchWithAuth(
   getIdToken: (forceRefresh?: boolean) => Promise<string | null>,
   endpoint: string,
-  options: Omit<RequestInit, 'headers'> = {}, // Body is now part of options
+  options: Omit<RequestInit, 'headers' | 'body'> & { body?: any },
 ): Promise<Response> {
   const tok = await getIdToken(true); // Always get a fresh token
   if (!tok) {
     throw new AuthError('Cannot fetch without a valid ID token.');
   }
 
-  const bodyWithToken = { ...((options.body ? JSON.parse(options.body as string) : {})), idToken: tok };
+  const bodyWithToken = { ...(options.body || {}), idToken: tok };
 
   return fetch(endpoint, {
     ...options,
-    method: 'POST', // Force POST
+    method: 'POST',
     headers: { 
         'Content-Type': 'application/json',
     },
@@ -150,7 +150,7 @@ export function StockReconciliationPageContent() {
 
         setIsLoading(true);
         try {
-            const response = await fetchWithAuth(getIdToken, '/api/stock/aggregate', { body: JSON.stringify({}) });
+            const response = await fetchWithAuth(getIdToken, '/api/stock/aggregate', {});
             
             const { data: payload, error: payloadErr, status } = await readSafePayload(response);
 
@@ -192,7 +192,7 @@ export function StockReconciliationPageContent() {
         setIsSubmitting(true);
         try {
             const response = await fetchWithAuth(getIdToken, '/api/erpnext/stock', {
-                body: JSON.stringify({ items: stockItems }),
+                body: { items: stockItems },
             });
 
             const { data, error, status } = await readSafePayload(response);

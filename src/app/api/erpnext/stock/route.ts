@@ -1,4 +1,3 @@
-
 // src/app/api/erpnext/stock/route.ts
 import { NextResponse } from 'next/server';
 import { getAdminDbSafe } from '@/lib/firebase-admin';

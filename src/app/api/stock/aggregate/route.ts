@@ -5,8 +5,6 @@ import { isShippingFee } from '@/lib/is-shipping-fee';
 import { getUidFromRequest } from '@/lib/get-uid-from-request';
 import { AuthError } from '@/lib/auth-error';
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
 
 const CORS_HEADERS = {
     'Access-Control-Allow-Origin': '*',
@@ -89,7 +87,8 @@ export async function POST(req: Request) {
         tag:'stock.aggregate',
         uid, rows: rows.length,
         skippedShippingItems: shippingFeesExcluded,
-        defaultWarehouse: settings.defaultWarehouse || null
+        defaultWarehouse: settings.defaultWarehouse || null,
+        company: settings.company || null,
     }));
 
     return NextResponse.json({ ok:true, rows, warehouse: settings.defaultWarehouse, company: settings.company, skippedShippingItems: shippingFeesExcluded }, {
