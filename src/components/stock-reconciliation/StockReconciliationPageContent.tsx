@@ -39,10 +39,13 @@ function isPlausibleJwt(tok: unknown): tok is string {
 
 async function readSafePayload(res: Response) {
   try {
+    if (res.status === 204) { // No Content
+        return { data: null, error: null, status: res.status, statusText: res.statusText };
+    }
     const data = await res.json();
     return { data, error: data?.error, status: res.status, statusText: res.statusText };
   } catch {
-    return { data: null, error: null, status: res.status, statusText: res.statusText };
+    return { data: null, error: 'Failed to parse JSON response', status: res.status, statusText: res.statusText };
   }
 }
 
@@ -100,32 +103,26 @@ function escapeCsvField(field: string | number | undefined | null): string {
 function toStockEntryCsv(items: StockItem[], company: string, warehouse: string): string {
     const BOM = '\uFEFF';
     const today = new Date().toISOString().slice(0, 10);
-
-    const headers = [
-        "stock_entry_type", "company", "posting_date",
-        ...items.flatMap((_, idx) => [
-            `items-${idx}.item_code`, `items-${idx}.t_warehouse`, `items-${idx}.qty`, `items-${idx}.uom`
-        ])
-    ].join(',');
-    
-    const firstRow = [
-        "Material Receipt",
-        company,
-        today,
-        ...items.flatMap(it => [
-            it.productCode,
-            warehouse,
-            it.totalQuantity,
-            "Stk"
-        ])
-    ];
-
-    const csvContent = [
-        headers,
-        firstRow.map(escapeCsvField).join(',')
-    ].join('\n');
-
-    return BOM + csvContent;
+  
+    const baseHeaders = ['stock_entry_type', 'company', 'posting_date', 'title'];
+    const perItemHeaders = items.flatMap((_, i) => [
+      `items-${i}.item_code`,
+      `items-${i}.t_warehouse`,
+      `items-${i}.qty`,
+      `items-${i}.uom`,
+      `items-${i}.basic_rate`
+    ]);
+    const headers = [...baseHeaders, ...perItemHeaders].join(',');
+  
+    const rowData = [
+      'Material Receipt',
+      company,
+      today,
+      'Financio Import',
+      ...items.flatMap(it => [it.productCode, warehouse, it.totalQuantity, 'Stk', '0'])
+    ].map(escapeCsvField).join(',');
+  
+    return BOM + headers + '\n' + rowData;
 }
 
 
@@ -184,10 +181,10 @@ export function StockReconciliationPageContent() {
                 throw new HttpError(payloadErr || `Server returned HTTP ${status}`, status, payload);
             }
 
-            setStockItems(payload.rows || []);
-            setDefaultWarehouse(payload.warehouse || '');
-            setCompanyName(payload.company || '');
-            setSkippedItems(payload.skippedShippingItems || 0);
+            setStockItems(payload?.rows || []);
+            setDefaultWarehouse(payload?.warehouse || '');
+            setCompanyName(payload?.company || '');
+            setSkippedItems(payload?.skippedShippingItems || 0);
 
         } catch (error: any) {
              if (error instanceof AuthError) {
@@ -209,6 +206,11 @@ export function StockReconciliationPageContent() {
             toast({ title: 'No Data', description: 'There are no items to submit.', variant: 'destructive' });
             return;
         }
+        if (!companyName || !defaultWarehouse) {
+            toast({ title: 'Missing Settings', description: 'Company and Default Warehouse are required.', variant: 'destructive' });
+            return;
+        }
+
         setIsSubmitting(true);
         try {
             const response = await fetchWithAuth(getIdToken, '/api/erpnext/stock', {
@@ -226,7 +228,7 @@ export function StockReconciliationPageContent() {
 
             toast({
                 title: 'Success!',
-                description: `Stock Entry ${(data as any)?.name || 'document'} created successfully in ERPNext.`,
+                description: `Stock Entry ${(data as any)?.data?.name || 'document'} created successfully in ERPNext.`,
             });
         } catch (e: any) {
             if (e instanceof AuthError) {
@@ -270,7 +272,7 @@ export function StockReconciliationPageContent() {
             const lowercasedFilter = searchTerm.toLowerCase();
             items = items.filter(item =>
                 item.productName.toLowerCase().includes(lowercasedFilter) ||
-                item.productCode.toLowerCase().includes(lowercasedFilter)
+                String(item.productCode).toLowerCase().includes(lowercasedFilter)
             );
         }
         if (sortKey) {
@@ -393,8 +395,13 @@ export function StockReconciliationPageContent() {
                             </>
                         ) : (
                             <Alert>
-                                <Info className="h-4 w-4" /><AlertTitle>No Data Available</AlertTitle>
-                                <AlertDescription>No stock data could be aggregated. This could be because no invoices have been processed yet, or there are no items with product codes in them.<br />Go to the <Link href="/incoming-invoices" className="underline text-primary">Incoming Invoices</Link> page to get started. Or check your <Link href="/settings/stock" className="underline text-primary">Stock Settings</Link>.</AlertDescription>
+                                <Info className="h-4 w-4" />
+                                <AlertTitle>No Data Available</AlertTitle>
+                                <AlertDescription>
+                                No stock data could be aggregated. This could be because no invoices have been processed yet, or there are no items with product codes in them.
+                                <br />
+                                Go to the <Link href="/incoming-invoices" className="underline text-primary">Incoming Invoices</Link> page to get started. Or check your <Link href="/settings/stock" className="underline text-primary">Stock Settings</Link>.
+                                </AlertDescription>
                             </Alert>
                         )}
                     </CardContent>
@@ -406,5 +413,3 @@ export function StockReconciliationPageContent() {
         </div>
     );
 }
-
-    
