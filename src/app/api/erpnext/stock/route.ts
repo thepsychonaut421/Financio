@@ -36,6 +36,16 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
+const CORS_HEADERS = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Firebase-Token, X-ID-Token',
+};
+
+export async function OPTIONS(req: Request) {
+    return NextResponse.json({}, { headers: CORS_HEADERS });
+}
+
 
 async function createStockEntry(doc: StockEntry) {
     // Basic deduplication check could be added here if needed,
@@ -50,7 +60,7 @@ export async function POST(req: Request) {
         uid = await getUidFromRequest(req);
     } catch (error: any) {
         logError({ workflow: 'erpnext-api', docType: 'Stock Entry', action: 'auth-error' }, error, 'Authentication failed');
-        return NextResponse.json({ ok: false, error: error.message }, { status: 401 });
+        return NextResponse.json({ ok: false, error: error.message }, { status: 401, headers: CORS_HEADERS });
     }
 
     try {
@@ -58,17 +68,17 @@ export async function POST(req: Request) {
         const { items } = body as { items: StockItem[] };
         
         if (!items || !Array.isArray(items) || items.length === 0) {
-            return NextResponse.json({ ok: false, error: 'No stock items provided.' }, { status: 400 });
+            return NextResponse.json({ ok: false, error: 'No stock items provided.' }, { status: 400, headers: CORS_HEADERS });
         }
         
         const erpSettings = await getErpSettingsServer(uid);
         const stockSettings = await getStockSettingsServer(uid);
 
         if (!erpSettings?.company) {
-            return NextResponse.json({ ok: false, error: 'ERPNext Company is not configured in settings.' }, { status: 400 });
+            return NextResponse.json({ ok: false, error: 'ERPNext Company is not configured in settings.' }, { status: 400, headers: CORS_HEADERS });
         }
         if (!stockSettings?.defaultWarehouse) {
-            return NextResponse.json({ ok: false, error: 'Default Warehouse is not configured in stock settings.' }, { status: 400 });
+            return NextResponse.json({ ok: false, error: 'Default Warehouse is not configured in stock settings.' }, { status: 400, headers: CORS_HEADERS });
         }
 
         const stockEntryItems: StockEntryItem[] = items.map(item => ({
@@ -89,7 +99,7 @@ export async function POST(req: Request) {
         const result = await createStockEntry(stockEntryDoc);
         logInfo({ workflow: 'erpnext-api', docType: 'Stock Entry', action: 'success' }, `Successfully created Stock Entry: ${(result as any)?.name}`);
 
-        return NextResponse.json({ ok: true, data: result });
+        return NextResponse.json({ ok: true, data: result }, { headers: CORS_HEADERS });
 
     } catch (e: any) {
         logError({ workflow: 'erpnext-api', docType: 'Stock Entry', action: 'batch-error' }, e, 'A critical error occurred while creating Stock Entry.');
@@ -97,9 +107,9 @@ export async function POST(req: Request) {
         // Attempt to parse JSON from error message if it's a stringified object
         try {
             const parsedError = JSON.parse(errorMessage);
-            return NextResponse.json({ ok: false, error: parsedError.details || parsedError.message || "Failed to create Stock Entry." }, { status: parsedError.status || 500 });
+            return NextResponse.json({ ok: false, error: parsedError.details || parsedError.message || "Failed to create Stock Entry." }, { status: parsedError.status || 500, headers: CORS_HEADERS });
         } catch {
-             return NextResponse.json({ ok: false, error: "Failed to create Stock Entry." }, { status: 500 });
+             return NextResponse.json({ ok: false, error: "Failed to create Stock Entry." }, { status: 500, headers: CORS_HEADERS });
         }
     }
 }

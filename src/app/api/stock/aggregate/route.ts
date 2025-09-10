@@ -10,6 +10,17 @@ import { getUidFromRequest, AuthError } from '@/lib/get-uid-from-request';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
+const CORS_HEADERS = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Firebase-Token, X-ID-Token',
+};
+
+export async function OPTIONS(req: Request) {
+    return NextResponse.json({}, { headers: CORS_HEADERS });
+}
+
+
 export async function POST(req: Request) {
   let uid: string;
   try {
@@ -19,14 +30,14 @@ export async function POST(req: Request) {
     // Ensure a JSON response is sent on authentication failure
     return NextResponse.json(
         { ok: false, error: error.message || 'Authentication failed.' },
-        { status: 401 }
+        { status: 401, headers: CORS_HEADERS }
     );
   }
 
   try {
     const db = await getAdminDbSafe(); 
     if (!db) {
-        return NextResponse.json({ ok:false, error:'Database service is unavailable.' }, { status:500 });
+        return NextResponse.json({ ok:false, error:'Database service is unavailable.' }, { status:500, headers: CORS_HEADERS });
     }
 
     const settings = await getStockSettingsServer(uid);
@@ -79,8 +90,9 @@ export async function POST(req: Request) {
         defaultWarehouse: settings.defaultWarehouse || null
     }));
 
-    return NextResponse.json({ ok:true, rows, warehouse: settings.defaultWarehouse, skippedShippingItems: shippingFeesExcluded }, {
+    return NextResponse.json({ ok:true, rows, warehouse: settings.defaultWarehouse, company: settings.company, skippedShippingItems: shippingFeesExcluded }, {
         headers: {
+            ...CORS_HEADERS,
             'Cache-Control': 'no-store',
             'Content-Type': 'application/json; charset=utf-8',
         }
@@ -89,8 +101,8 @@ export async function POST(req: Request) {
   } catch (error: any) {
     console.error("[API /stock/aggregate Error]", error);
     if (error instanceof AuthError) {
-        return NextResponse.json({ ok: false, error: error.message }, { status: error.status });
+        return NextResponse.json({ ok: false, error: error.message }, { status: error.status, headers: CORS_HEADERS });
     }
-    return NextResponse.json({ ok: false, error: 'An unknown server error occurred.' }, { status: 500 });
+    return NextResponse.json({ ok: false, error: 'An unknown server error occurred.' }, { status: 500, headers: CORS_HEADERS });
   }
 }
