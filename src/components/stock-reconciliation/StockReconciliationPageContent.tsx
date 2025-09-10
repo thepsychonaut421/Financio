@@ -44,30 +44,32 @@ async function readSafePayload(res: Response) {
   }
 }
 
-
 /**
- * Sends request with token in body.
+ * Sends request with token in header.
  */
 async function fetchWithAuth(
   getIdToken: (forceRefresh?: boolean) => Promise<string | null>,
   endpoint: string,
-  options: Omit<RequestInit, 'headers' | 'body'> & { body?: Record<string, any> },
+  options: Omit<RequestInit, 'headers'> = {}, // Body is now part of options
 ): Promise<Response> {
-  const tok = await getIdToken(true);
+  const tok = await getIdToken(true); // Always get a fresh token
   if (!tok) {
     throw new AuthError('Cannot fetch without a valid ID token.');
   }
 
-  const requestBody = { ...(options.body || {}), idToken: tok };
-
   return fetch(endpoint, {
     ...options,
-    method: 'POST', // Force POST to have a body
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(requestBody),
+    method: 'POST', // Force POST
+    headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${tok}`,
+        'X-Firebase-Token': tok,
+        'X-ID-Token': tok,
+    },
     cache: 'no-store',
   });
 }
+
 
 
 function escapeCsvField(field: string | number | undefined | null): string {
@@ -164,7 +166,7 @@ export function StockReconciliationPageContent() {
             setSkippedItems(payload?.skippedShippingItems || 0);
 
         } catch (error: any) {
-             if (error instanceof AuthError) {
+            if (error instanceof AuthError) {
                 toast({ title: 'Authentication Error', description: error.message, variant: 'destructive' });
                 setStockItems([]);
             } else if (error instanceof HttpError) {
@@ -191,7 +193,7 @@ export function StockReconciliationPageContent() {
         setIsSubmitting(true);
         try {
             const response = await fetchWithAuth(getIdToken, '/api/erpnext/stock', {
-                body: { items: stockItems },
+                body: JSON.stringify({ items: stockItems }),
             });
 
             const { data, error, status } = await readSafePayload(response);

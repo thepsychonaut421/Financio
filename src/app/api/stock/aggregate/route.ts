@@ -3,7 +3,8 @@ import { NextResponse } from 'next/server';
 import { getAdminDbSafe } from '@/lib/firebase-admin';
 import { getStockSettingsServer } from '@/server/stock-settings-server';
 import { isShippingFee } from '@/lib/is-shipping-fee';
-import { getUidFromRequest, AuthError } from '@/lib/get-uid-from-request';
+import { getUidFromRequest } from '@/lib/get-uid-from-request';
+import { AuthError } from '@/lib/auth-error';
 
 
 export const runtime = 'nodejs';
@@ -23,11 +24,9 @@ export async function OPTIONS(req: Request) {
 export async function POST(req: Request) {
   let uid: string;
   try {
-    const body = await req.json();
-    if (!body?.idToken) {
-        throw new AuthError('Missing ID token in request body.');
-    }
-    uid = await getUidFromRequest(body.idToken);
+    // getUidFromRequest now reads from headers, which is what we want.
+    // The request body is not needed for auth anymore.
+    uid = await getUidFromRequest(req);
   } catch (error: any) {
     console.error("[API /stock/aggregate Auth Error]", error);
     return NextResponse.json(
@@ -107,5 +106,3 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: 'An unknown server error occurred.' }, { status: 500, headers: CORS_HEADERS });
   }
 }
-
-    
