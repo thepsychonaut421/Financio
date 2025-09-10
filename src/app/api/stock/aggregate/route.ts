@@ -1,5 +1,4 @@
 
-
 import { NextResponse } from 'next/server';
 import { getAdminDbSafe } from '@/lib/firebase-admin';
 import { getStockSettingsServer } from '@/server/stock-settings-server';
@@ -24,10 +23,13 @@ export async function OPTIONS(req: Request) {
 export async function POST(req: Request) {
   let uid: string;
   try {
-    uid = await getUidFromRequest(req);
+    const body = await req.json();
+    if (!body?.idToken) {
+        throw new AuthError('Missing ID token in request body.');
+    }
+    uid = await getUidFromRequest(body.idToken);
   } catch (error: any) {
     console.error("[API /stock/aggregate Auth Error]", error);
-    // Ensure a JSON response is sent on authentication failure
     return NextResponse.json(
         { ok: false, error: error.message || 'Authentication failed.' },
         { status: 401, headers: CORS_HEADERS }
@@ -51,7 +53,6 @@ export async function POST(req: Request) {
 
     snap.forEach(doc=>{
         const inv = doc.data() as any;
-        // Defensive coding: ensure rechnungspositionen is a valid array
         const items = Array.isArray(inv?.payload?.rechnungspositionen) ? inv.payload.rechnungspositionen : [];
         
         for (const it of items) {
@@ -68,7 +69,7 @@ export async function POST(req: Request) {
             const key = codeNorm || nameNorm;
             if (!key) continue;
 
-            const qty = Number(it.quantity || 0) || 0; // Guard against NaN
+            const qty = Number(it.quantity || 0) || 0;
             const rec = agg.get(key) || { code: code || name, name: name, qty:0, source: [] };
             rec.qty += qty;
             if (inv?.payload?.rechnungsnummer) rec.source.push(inv.payload.rechnungsnummer);
@@ -106,3 +107,5 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: 'An unknown server error occurred.' }, { status: 500, headers: CORS_HEADERS });
   }
 }
+
+    

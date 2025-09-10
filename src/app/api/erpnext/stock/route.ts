@@ -20,7 +20,6 @@ interface StockEntryItem {
     item_code: string;
     qty: number;
     t_warehouse: string;
-    // valuation_rate could be added if available from product catalog
 }
 
 interface StockEntry {
@@ -48,23 +47,26 @@ export async function OPTIONS(req: Request) {
 
 
 async function createStockEntry(doc: StockEntry) {
-    // Basic deduplication check could be added here if needed,
-    // e.g., based on a hash of items, date, and purpose.
     return await createResource("Stock Entry", doc);
 }
 
 
 export async function POST(req: Request) {
     let uid: string;
+    let body;
+
     try {
-        uid = await getUidFromRequest(req);
+        body = await req.json();
+        if (!body?.idToken) {
+            throw new AuthError('Missing ID token in request body.');
+        }
+        uid = await getUidFromRequest(body.idToken);
     } catch (error: any) {
         logError({ workflow: 'erpnext-api', docType: 'Stock Entry', action: 'auth-error' }, error, 'Authentication failed');
         return NextResponse.json({ ok: false, error: error.message }, { status: 401, headers: CORS_HEADERS });
     }
 
     try {
-        const body = await req.json();
         const { items } = body as { items: StockItem[] };
         
         if (!items || !Array.isArray(items) || items.length === 0) {
@@ -85,14 +87,14 @@ export async function POST(req: Request) {
             doctype: "Stock Entry Detail",
             item_code: item.productCode,
             qty: item.totalQuantity,
-            t_warehouse: stockSettings.defaultWarehouse, // Target warehouse for Material Receipt
+            t_warehouse: stockSettings.defaultWarehouse,
         }));
         
         const stockEntryDoc: StockEntry = {
             doctype: "Stock Entry",
             stock_entry_type: "Material Receipt",
             company: erpSettings.company,
-            posting_date: new Date().toISOString().slice(0, 10), // Use today's date for posting
+            posting_date: new Date().toISOString().slice(0, 10),
             items: stockEntryItems,
         };
 
@@ -104,7 +106,6 @@ export async function POST(req: Request) {
     } catch (e: any) {
         logError({ workflow: 'erpnext-api', docType: 'Stock Entry', action: 'batch-error' }, e, 'A critical error occurred while creating Stock Entry.');
         const errorMessage = e.message || 'An unknown server error occurred.';
-        // Attempt to parse JSON from error message if it's a stringified object
         try {
             const parsedError = JSON.parse(errorMessage);
             return NextResponse.json({ ok: false, error: parsedError.details || parsedError.message || "Failed to create Stock Entry." }, { status: parsedError.status || 500, headers: CORS_HEADERS });
@@ -113,3 +114,5 @@ export async function POST(req: Request) {
         }
     }
 }
+
+    

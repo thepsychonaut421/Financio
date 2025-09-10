@@ -23,7 +23,6 @@ interface StockItem {
 type SortKey = keyof StockItem | null;
 type SortOrder = 'asc' | 'desc';
 
-// --- Robust Fetch & Error Handling ---
 
 class HttpError extends Error {
   status: number;
@@ -33,13 +32,9 @@ class HttpError extends Error {
   }
 }
 
-function isPlausibleJwt(tok: unknown): tok is string {
-  return typeof tok === 'string' && tok.split('.').length === 3 && tok.length > 100;
-}
-
 async function readSafePayload(res: Response) {
   try {
-    if (res.status === 204) { // No Content
+    if (res.status === 204) {
         return { data: null, error: null, status: res.status, statusText: res.statusText };
     }
     const data = await res.json();
@@ -49,58 +44,32 @@ async function readSafePayload(res: Response) {
   }
 }
 
-function normalizeJwt(tok: string | null): string | null {
-  if (!tok) return null;
-  // elimină prefix “Bearer ” dacă vine deja cu el din context
-  return tok.startsWith('Bearer ') ? tok.slice(7) : tok;
-}
-
 
 /**
- * Attaches token, retries once on 401, and does not mask non-auth errors.
+ * Sends request with token in body.
  */
 async function fetchWithAuth(
   getIdToken: (forceRefresh?: boolean) => Promise<string | null>,
   endpoint: string,
-  options: RequestInit,
-  { retryOn401 = true }: { retryOn401?: boolean } = {}
+  options: Omit<RequestInit, 'headers' | 'body'> & { body?: Record<string, any> },
 ): Promise<Response> {
-  const getTok = async (force?: boolean) => {
-    const t = normalizeJwt(await getIdToken(!!force));
-    if (!t || t.split('.').length !== 3 || t.length < 100) return null;
-    return t;
-  };
-
-  let tok = await getTok(false) || await getTok(true);
-  if (!tok) throw new AuthError('Cannot fetch without a valid ID token.');
-
-  const doFetch = (t: string) =>
-    fetch(endpoint, {
-      ...options,
-      headers: {
-        ...(options.headers || {}),
-        // trimite în toate formatele “clasice”
-        Authorization: `Bearer ${t}`,
-        'X-Firebase-Token': t,
-        'X-ID-Token': t,
-      },
-      cache: 'no-store',
-      credentials: 'include', // util dacă backend-ul mai folosește cookie pt. sesiune
-    });
-
-  let res = await doFetch(tok);
-
-  // retry o singură dată pe 401 -> token proaspăt forțat
-  if (retryOn401 && res.status === 401) {
-    const fresh = await getTok(true);
-    if (!fresh) throw new AuthError('Authentication failed: could not refresh ID token.');
-    res = await doFetch(fresh);
+  const tok = await getIdToken(true);
+  if (!tok) {
+    throw new AuthError('Cannot fetch without a valid ID token.');
   }
-  return res;
+
+  return fetch(endpoint, {
+    ...options,
+    method: 'POST', // Force POST to have a body
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      ...(options.body || {}),
+      idToken: tok, // Add token to body
+    }),
+    cache: 'no-store',
+  });
 }
 
-
-// --- CSV Generation ---
 
 function escapeCsvField(field: string | number | undefined | null): string {
     if (field === undefined || field === null) return '';
@@ -181,10 +150,7 @@ export function StockReconciliationPageContent() {
 
         setIsLoading(true);
         try {
-            const response = await fetchWithAuth(getIdToken, '/api/stock/aggregate', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-            });
+            const response = await fetchWithAuth(getIdToken, '/api/stock/aggregate', {});
             
             const { data: payload, error: payloadErr, status } = await readSafePayload(response);
 
@@ -226,9 +192,7 @@ export function StockReconciliationPageContent() {
         setIsSubmitting(true);
         try {
             const response = await fetchWithAuth(getIdToken, '/api/erpnext/stock', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ items: stockItems }),
+                body: { items: stockItems },
             });
 
             const { data, error, status } = await readSafePayload(response);
@@ -425,3 +389,5 @@ export function StockReconciliationPageContent() {
         </div>
     );
 }
+
+    
