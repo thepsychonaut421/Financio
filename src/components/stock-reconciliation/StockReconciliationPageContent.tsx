@@ -23,6 +23,69 @@ interface StockItem {
 type SortKey = keyof StockItem | null;
 type SortOrder = 'asc' | 'desc';
 
+// --- Robust Fetch & Error Handling ---
+
+class HttpError extends Error {
+  status: number;
+  body?: any;
+  constructor(message: string, status = 0, body?: any) {
+    super(message); this.status = status; this.body = body;
+  }
+}
+
+function isPlausibleJwt(tok: unknown): tok is string {
+  return typeof tok === 'string' && tok.split('.').length === 3 && tok.length > 100;
+}
+
+async function readSafePayload(res: Response) {
+  try {
+    const data = await res.json();
+    return { data, error: data?.error, status: res.status, statusText: res.statusText };
+  } catch {
+    return { data: null, error: null, status: res.status, statusText: res.statusText };
+  }
+}
+
+/**
+ * Attaches token, retries once on 401, and does not mask non-auth errors.
+ */
+async function fetchWithAuth(
+  getIdToken: (forceRefresh?: boolean) => Promise<string | null>,
+  endpoint: string,
+  options: RequestInit,
+  { retryOn401 = true }: { retryOn401?: boolean } = {}
+): Promise<Response> {
+  // First attempt - use cached token to avoid extra RTT
+  let idToken = await getIdToken();
+  if (!isPlausibleJwt(idToken)) {
+    idToken = await getIdToken(true); // Force refresh if cached one is bad
+  }
+  if (!isPlausibleJwt(idToken)) {
+    throw new AuthError('Cannot fetch without a valid ID token.');
+  }
+
+  const doFetch = (tok: string) =>
+    fetch(endpoint, {
+      ...options,
+      headers: { ...(options.headers || {}), Authorization: `Bearer ${tok}` },
+      cache: 'no-store',
+    });
+
+  let res = await doFetch(idToken);
+
+  // Retry once on 401 with a force-refreshed token
+  if (retryOn401 && res.status === 401) {
+    const fresh = await getIdToken(true);
+    if (!isPlausibleJwt(fresh)) {
+      throw new AuthError('Authentication failed: could not refresh ID token.');
+    }
+    res = await doFetch(fresh);
+  }
+  return res;
+}
+
+
+// --- CSV Generation ---
 
 function escapeCsvField(field: string | number | undefined | null): string {
     if (field === undefined || field === null) return '';
@@ -34,82 +97,43 @@ function escapeCsvField(field: string | number | undefined | null): string {
     return stringField;
 }
 
-
 function toStockEntryCsv(items: StockItem[], company: string, warehouse: string): string {
-    const BOM = '\uFEFF'; 
+    const BOM = '\uFEFF';
     const today = new Date().toISOString().slice(0, 10);
-    
+
     const headers = [
-        "ID", "Series", "Stock Entry Type", "Company", "Posting Date",
-        "Item Code (Items)", "Qty (Items)", "UOM (Items)", "Target Warehouse (Items)", "Is Finished Item (Items)"
+        "stock_entry_type", "company", "posting_date",
+        ...items.flatMap((_, idx) => [
+            `items-${idx}.item_code`, `items-${idx}.t_warehouse`, `items-${idx}.qty`, `items-${idx}.uom`
+        ])
     ].join(',');
     
-    const rows = items.map((item, index) => {
-        const id = index === 0 ? `MAT-STE-${today.replace(/-/g, '')}-` : '';
-        const series = index === 0 ? "MAT-STE-.YYYY.-" : "";
-        const entryType = index === 0 ? "Material Receipt" : "";
-        const companyName = index === 0 ? company : "";
-        const postingDate = index === 0 ? today : "";
-        
-        return [
-            id, series, entryType, companyName, postingDate,
-            item.productCode, item.totalQuantity, "Stk", warehouse, "1"
-        ].map(escapeCsvField).join(',');
-    });
-    
-    return BOM + [headers, ...rows].join('\n');
+    const firstRow = [
+        "Material Receipt",
+        company,
+        today,
+        ...items.flatMap(it => [
+            it.productCode,
+            warehouse,
+            it.totalQuantity,
+            "Stk"
+        ])
+    ];
+
+    const csvContent = [
+        headers,
+        firstRow.map(escapeCsvField).join(',')
+    ].join('\n');
+
+    return BOM + csvContent;
 }
+
 
 function downloadFile(name: string, content: string, mime='text/csv;charset=utf-8;') {
   const blob = new Blob([content], { type: mime });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a'); a.href = url; a.download = name; a.click();
   URL.revokeObjectURL(url);
-}
-
-
-async function readSafePayload(res: Response) {
-    try {
-        const payload = await res.json();
-        return {
-            data: payload,
-            error: payload?.error || res.statusText,
-            status: res.status,
-            statusText: res.statusText
-        };
-    } catch {
-        return {
-            data: null,
-            error: "Failed to parse server response.",
-            status: res.status,
-            statusText: res.statusText
-        };
-    }
-}
-
-async function fetchWithFreshToken(
-    getIdToken: (forceRefresh?: boolean) => Promise<string | null>, 
-    endpoint: string, 
-    options: RequestInit
-): Promise<Response> {
-    try {
-        const idToken = await getIdToken(true); 
-        if (!idToken) {
-            throw new AuthError("Cannot fetch without a valid ID token. User may be logged out.");
-        }
-        
-        const response = await fetch(endpoint, {
-            ...options,
-            headers: { ...options.headers, 'Authorization': `Bearer ${idToken}` }
-        });
-
-        return response;
-
-    } catch (error) {
-        // This catches errors from getIdToken itself (e.g., user signed out)
-        if (error instanceof AuthError) throw error;
-        throw new AuthError("Failed to obtain a fresh authentication token before making a request.");
-    }
 }
 
 
@@ -125,7 +149,7 @@ export function StockReconciliationPageContent() {
     const [sortKey, setSortKey] = useState<SortKey>('productName');
     const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
     const [defaultWarehouse, setDefaultWarehouse] = useState('');
-    const [companyName, setCompanyName] = useState(''); // New state for company
+    const [companyName, setCompanyName] = useState('');
     const [skippedItems, setSkippedItems] = useState(0);
     const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -148,39 +172,33 @@ export function StockReconciliationPageContent() {
 
         setIsLoading(true);
         try {
-            const response = await fetchWithFreshToken(getIdToken, '/api/stock/aggregate', {
+            const response = await fetchWithAuth(getIdToken, '/api/stock/aggregate', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({}),
-                cache: 'no-store'
             });
             
             const { data: payload, error: payloadErr, status } = await readSafePayload(response);
 
             if (!response.ok) {
-                if (status === 401) throw new AuthError(payloadErr || 'Your session may have expired. Please log in again.');
-                throw new Error(payloadErr || `Server returned HTTP ${status}`);
+                if (status === 401) throw new AuthError(payloadErr || 'Unauthorized');
+                throw new HttpError(payloadErr || `Server returned HTTP ${status}`, status, payload);
             }
 
             setStockItems(payload.rows || []);
             setDefaultWarehouse(payload.warehouse || '');
-            setCompanyName(payload.company || ''); // Assume payload returns company
+            setCompanyName(payload.company || '');
             setSkippedItems(payload.skippedShippingItems || 0);
 
         } catch (error: any) {
-            const isAuthErr = error instanceof AuthError || (error.message && error.message.includes('token'));
-            const msg = error.message || 'An unknown error occurred.';
-            
-            console.error('[StockReconciliation] fetch/parse failed:', msg, error);
-
-            toast({
-                title: isAuthErr ? 'Authentication Error' : 'Error Loading Stock Data',
-                description: msg,
-                variant: 'destructive',
-            });
-
-            if (isAuthErr) setStockItems([]);
-
+             if (error instanceof AuthError) {
+                toast({ title: 'Authentication Error', description: error.message, variant: 'destructive' });
+                setStockItems([]);
+            } else if (error instanceof HttpError) {
+                toast({ title: 'Server Error', description: `${error.message}`, variant: 'destructive' });
+            } else {
+                toast({ title: 'Unexpected Error', description: error?.message || String(error), variant: 'destructive' });
+            }
+            console.error('[StockReconciliation] fetch/parse failed:', error?.message || error, error);
         } finally {
             setIsLoading(false);
         }
@@ -193,26 +211,31 @@ export function StockReconciliationPageContent() {
         }
         setIsSubmitting(true);
         try {
-            const response = await fetchWithFreshToken(getIdToken, '/api/erpnext/stock', {
+            const response = await fetchWithAuth(getIdToken, '/api/erpnext/stock', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ items: stockItems }),
             });
 
-            const { data, error } = await readSafePayload(response);
+            const { data, error, status } = await readSafePayload(response);
             
             if (!response.ok) {
-                throw new Error(error || 'Failed to submit to ERPNext.');
+                if (status === 401) throw new AuthError(error || 'Unauthorized');
+                throw new HttpError(error || 'Failed to submit to ERPNext.', status, data);
             }
 
             toast({
                 title: 'Success!',
                 description: `Stock Entry ${(data as any)?.name || 'document'} created successfully in ERPNext.`,
             });
-            // Optionally clear items after successful submission
-            // setStockItems([]);
         } catch (e: any) {
-            toast({ title: 'Submission Failed', description: e.message, variant: 'destructive' });
+            if (e instanceof AuthError) {
+                toast({ title: "Authentication Failed", description: e.message, variant: "destructive" });
+            } else if (e instanceof HttpError) {
+                toast({ title: `Submission Failed (HTTP ${e.status})`, description: e.message, variant: "destructive" });
+            } else {
+                toast({ title: 'Submission Failed', description: e.message, variant: 'destructive' });
+            }
         } finally {
             setIsSubmitting(false);
         }
@@ -383,3 +406,5 @@ export function StockReconciliationPageContent() {
         </div>
     );
 }
+
+    
