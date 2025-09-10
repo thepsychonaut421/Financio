@@ -5,23 +5,19 @@ import { AuthError } from '@/lib/auth-error';
 
 
 export async function getUidFromRequest(req: Request): Promise<string> {
-  const idToken = req.headers.get('authorization')?.replace(/^Bearer\s+/i,'').trim();
-  if (!idToken) throw new AuthError('Missing Firebase ID token');
+  const authHeader = req.headers.get('authorization')?.replace(/^Bearer\s+/i,'').trim();
+  const xFirebaseToken = req.headers.get('x-firebase-token')?.trim();
+  const xIdToken = req.headers.get('x-id-token')?.trim();
+
+  const idToken = authHeader || xFirebaseToken || xIdToken;
+
+  if (!idToken) throw new AuthError('Missing Firebase ID token from any of the expected headers.');
 
   const app = getAdminApp();
   if (!app) throw new AuthError('Firebase Admin not initialized');
 
   try {
-    // Diagnostic log
-    const backendProject = process.env.GOOGLE_CLOUD_PROJECT || process.env.FB_PROJECT_ID;
-    console.log('[auth] backendProject=', backendProject, 'tokenPrefix=', idToken.slice(0, 12));
-
     const decoded = await getAuth(app).verifyIdToken(idToken, true);
-    
-    // Optional: Log issuer and audience for deep debugging
-    const decodedPayload = decoded as any;
-    console.log('[auth] decoded.project_id=', decoded.firebase?.project_id, 'aud=', decodedPayload.aud, 'iss=', decodedPayload.iss);
-
     return decoded.uid;
   } catch (e: any) {
     console.error('[auth] verifyIdToken failed:', e?.code || e?.message || e);
