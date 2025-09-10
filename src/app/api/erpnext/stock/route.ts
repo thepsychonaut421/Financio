@@ -1,85 +1,105 @@
+
+// src/app/api/erpnext/stock/route.ts
 import { NextResponse } from 'next/server';
-import type { StockReconciliation, StockEntry } from '@/lib/erpnext/types';
-import { createStockReconciliation, createStockEntry } from '@/lib/erpnext/services/stock';
-import { logInfo, logError } from '@/lib/logger';
+import { getAdminDbSafe } from '@/lib/firebase-admin';
+import { getUidFromRequest } from '@/lib/get-uid-from-request';
+import { getStockSettingsServer } from '@/server/stock-settings-server';
+import { getErpSettingsServer } from '@/server/erp-settings-server';
+import { createResource, findResource } from '@/lib/erpnext/client';
+import { logError, logInfo } from '@/lib/logger';
 
-export async function POST(request: Request) {
-  const { searchParams } = new URL(request.url);
-  const type = searchParams.get('type');
-  const dryRun = searchParams.get('dryRun') === 'true';
 
-  if (!dryRun) {
-    if (!process.env.ERNEXT_API_KEY || !process.env.ERNEXT_API_SECRET) {
-      return NextResponse.json(
-        { error: 'Server configuration error: ERPNext credentials not set.' },
-        { status: 500 },
-      );
-    }
-  }
+interface StockItem {
+    productCode: string;
+    productName: string;
+    totalQuantity: number;
+}
 
-  const headers = !dryRun
-    ? {
-        Authorization: `token ${process.env.ERNEXT_API_KEY}:${process.env.ERNEXT_API_SECRET}`,
-        Accept: 'application/json',
-      }
-    : undefined;
+interface StockEntryItem {
+    doctype: "Stock Entry Detail";
+    item_code: string;
+    qty: number;
+    t_warehouse: string;
+    // valuation_rate could be added if available from product catalog
+}
 
-  const start = Date.now();
-  try {
-    const body = await request.json();
+interface StockEntry {
+    doctype: "Stock Entry";
+    stock_entry_type: "Material Receipt";
+    company: string;
+    posting_date: string;
+    items: StockEntryItem[];
+}
 
-    if (type === 'reconciliation') {
-      if (dryRun) {
-        return NextResponse.json({ message: 'Dry run: reconciliation skipped.' });
-      }
-      if (!process.env.ERNEXT_STOCK_RECONCILIATION_URL) {
-        return NextResponse.json(
-          { error: 'Server configuration error: Stock Reconciliation URL not set.' },
-          { status: 500 },
-        );
-      }
-      const key = await createStockReconciliation(body as StockReconciliation, {
-        endpoint: process.env.ERNEXT_STOCK_RECONCILIATION_URL!,
-        headers,
-      });
-      const diagnostics = { insert: 1, update: 0, noop: 0, warnings: 0 };
-      const summary = { workflow: 'stock', docType: 'Stock Reconciliation', total: 1, ...diagnostics };
-      logInfo(
-        { workflow: 'stock', docType: 'Stock Reconciliation', action: 'summary', duration_ms: Date.now() - start },
-        'Processed stock reconciliation',
-      );
-      return NextResponse.json({ message: 'Stock reconciliation processed.', key, diagnostics, summary });
-    }
 
-    if (type === 'entry') {
-      if (dryRun) {
-        return NextResponse.json({ message: 'Dry run: entry skipped.' });
-      }
-      if (!process.env.ERNEXT_STOCK_ENTRY_URL) {
-        return NextResponse.json(
-          { error: 'Server configuration error: Stock Entry URL not set.' },
-          { status: 500 },
-        );
-      }
-      const key = await createStockEntry(body as StockEntry, {
-        endpoint: process.env.ERNEXT_STOCK_ENTRY_URL!,
-        headers,
-      });
-      const diagnostics = { insert: 1, update: 0, noop: 0, warnings: 0 };
-      const summary = { workflow: 'stock', docType: 'Stock Entry', total: 1, ...diagnostics };
-      logInfo(
-        { workflow: 'stock', docType: 'Stock Entry', action: 'summary', duration_ms: Date.now() - start },
-        'Processed stock entry',
-      );
-      return NextResponse.json({ message: 'Stock entry processed.', key, diagnostics, summary });
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+export const maxDuration = 60;
+
+
+async function createStockEntry(doc: StockEntry) {
+    // Basic deduplication check could be added here if needed,
+    // e.g., based on a hash of items, date, and purpose.
+    return await createResource("Stock Entry", doc);
+}
+
+
+export async function POST(req: Request) {
+    let uid: string;
+    try {
+        uid = await getUidFromRequest(req);
+    } catch (error: any) {
+        logError({ workflow: 'erpnext-api', docType: 'Stock Entry', action: 'auth-error' }, error, 'Authentication failed');
+        return NextResponse.json({ ok: false, error: error.message }, { status: 401 });
     }
 
-    return NextResponse.json({ error: 'Invalid type parameter.' }, { status: 400 });
-  } catch (e: any) {
-    logError({ workflow: 'stock', docType: 'Stock', action: 'error' }, e, 'Failed to process stock document');
-    return NextResponse.json(
-      { error: e.message || 'Failed to process stock document.' },
-      { status: 500 },
-    );
-  }
+    try {
+        const body = await req.json();
+        const { items } = body as { items: StockItem[] };
+        
+        if (!items || !Array.isArray(items) || items.length === 0) {
+            return NextResponse.json({ ok: false, error: 'No stock items provided.' }, { status: 400 });
+        }
+        
+        const erpSettings = await getErpSettingsServer(uid);
+        const stockSettings = await getStockSettingsServer(uid);
+
+        if (!erpSettings?.company) {
+            return NextResponse.json({ ok: false, error: 'ERPNext Company is not configured in settings.' }, { status: 400 });
+        }
+        if (!stockSettings?.defaultWarehouse) {
+            return NextResponse.json({ ok: false, error: 'Default Warehouse is not configured in stock settings.' }, { status: 400 });
+        }
+
+        const stockEntryItems: StockEntryItem[] = items.map(item => ({
+            doctype: "Stock Entry Detail",
+            item_code: item.productCode,
+            qty: item.totalQuantity,
+            t_warehouse: stockSettings.defaultWarehouse, // Target warehouse for Material Receipt
+        }));
+        
+        const stockEntryDoc: StockEntry = {
+            doctype: "Stock Entry",
+            stock_entry_type: "Material Receipt",
+            company: erpSettings.company,
+            posting_date: new Date().toISOString().slice(0, 10), // Use today's date for posting
+            items: stockEntryItems,
+        };
+
+        const result = await createStockEntry(stockEntryDoc);
+        logInfo({ workflow: 'erpnext-api', docType: 'Stock Entry', action: 'success' }, `Successfully created Stock Entry: ${(result as any)?.name}`);
+
+        return NextResponse.json({ ok: true, data: result });
+
+    } catch (e: any) {
+        logError({ workflow: 'erpnext-api', docType: 'Stock Entry', action: 'batch-error' }, e, 'A critical error occurred while creating Stock Entry.');
+        const errorMessage = e.message || 'An unknown server error occurred.';
+        // Attempt to parse JSON from error message if it's a stringified object
+        try {
+            const parsedError = JSON.parse(errorMessage);
+            return NextResponse.json({ ok: false, error: parsedError.details || parsedError.message || "Failed to create Stock Entry." }, { status: parsedError.status || 500 });
+        } catch {
+             return NextResponse.json({ ok: false, error: "Failed to create Stock Entry." }, { status: 500 });
+        }
+    }
 }

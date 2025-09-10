@@ -95,6 +95,44 @@ export const JournalEntrySchema = z.object({
 export type JournalEntry = z.infer<typeof JournalEntrySchema>;
 
 
+export const StockReconciliationItemSchema = z.object({
+  item_code: z.string(),
+  warehouse: z.string(),
+  qty: z.number(),
+  valuation_rate: z.number().optional(),
+});
+export type StockReconciliationItem = z.infer<typeof StockReconciliationItemSchema>;
+
+export const StockReconciliationSchema = z.object({
+  doctype: z.literal('Stock Reconciliation'),
+  posting_date: z.string(),
+  company: z.string().optional(),
+  purpose: z.string().optional(),
+  items: z.array(StockReconciliationItemSchema),
+});
+export type StockReconciliation = z.infer<typeof StockReconciliationSchema>;
+
+
+export const StockEntryItemSchema = z.object({
+  item_code: z.string(),
+  s_warehouse: z.string().optional(),
+  t_warehouse: z.string().optional(),
+  qty: z.number(),
+  basic_rate: z.number().optional(),
+  doctype: z.literal("Stock Entry Detail").optional(),
+});
+export type StockEntryItem = z.infer<typeof StockEntryItemSchema>;
+
+export const StockEntrySchema = z.object({
+  doctype: z.literal('Stock Entry'),
+  posting_date: z.string(),
+  stock_entry_type: z.string(), // e.g., "Material Receipt", "Material Transfer"
+  company: z.string().optional(),
+  items: z.array(StockEntryItemSchema),
+});
+export type StockEntry = z.infer<typeof StockEntrySchema>;
+
+
 // Keep existing types and schemas as well
 export const ErpNextExistingTypes = {
     PurchaseInvoiceSchema: z.any(),
@@ -102,10 +140,6 @@ export const ErpNextExistingTypes = {
     ItemSchema: z.any(),
     PaymentEntryReferenceSchema: z.any(),
     PaymentEntrySchema: z.any(),
-    StockReconciliationItemSchema: z.any(),
-    StockReconciliationSchema: z.any(),
-    StockEntryItemSchema: z.any(),
-    StockEntrySchema: z.any(),
     SupplierSchema: z.any(),
 }
 // This is a placeholder to keep the old file content and avoid breaking changes
@@ -114,8 +148,4 @@ export type PurchaseInvoice = z.infer<typeof ErpNextExistingTypes.PurchaseInvoic
 export type SalesInvoice = z.infer<typeof ErpNextExistingTypes.SalesInvoiceSchema>;
 export type PaymentEntryReference = z.infer<typeof ErpNextExistingTypes.PaymentEntryReferenceSchema>;
 export type PaymentEntry = z.infer<typeof ErpNextExistingTypes.PaymentEntrySchema>;
-export type StockReconciliationItem = z.infer<typeof ErpNextExistingTypes.StockReconciliationItemSchema>;
-export type StockReconciliation = z.infer<typeof ErpNextExistingTypes.StockReconciliationSchema>;
-export type StockEntryItem = z.infer<typeof ErpNextExistingTypes.StockEntryItemSchema>;
-export type StockEntry = z.infer<typeof ErpNextExistingTypes.StockEntrySchema>;
 export type Supplier = z.infer<typeof ErpNextExistingTypes.SupplierSchema>;

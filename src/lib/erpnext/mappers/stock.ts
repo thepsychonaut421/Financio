@@ -16,14 +16,14 @@ export interface InternalStockReconciliation {
 
 export interface InternalStockEntry {
   postingDate: string;
-  purpose: string;
+  purpose: "Material Receipt"; // This is now fixed for our use case
   company?: string;
   items: {
     itemCode: string;
-    sWarehouse?: string;
-    tWarehouse?: string;
+    sWarehouse?: string; // Source warehouse, not needed for Material Receipt
+    tWarehouse?: string; // Target warehouse
     qty: number;
-    basicRate?: number;
+    basicRate?: number; // Valuation rate
   }[];
 }
 
@@ -130,33 +130,41 @@ export async function mapStockEntry(
   const payload: StockEntry = {
     doctype: 'Stock Entry',
     posting_date: entry.postingDate,
-    purpose: entry.purpose,
+    stock_entry_type: entry.purpose, // Use purpose for stock_entry_type
     company: entry.company,
     items: resolvedItems.map(it => ({
       item_code: it.itemCode,
-      s_warehouse: it.sWarehouse,
-      t_warehouse: it.tWarehouse,
+      s_warehouse: it.sWarehouse, // Should be undefined for Material Receipt
+      t_warehouse: it.tWarehouse, // Target warehouse
       qty: it.qty,
       basic_rate: it.basicRate,
     })),
   };
+  
+  const today = new Date().toISOString().slice(0, 10);
 
-  const csvRows = resolvedItems.map(it => [
-    entry.postingDate,
-    entry.purpose,
-    entry.company,
+  const csvRows = resolvedItems.map((it, index) => [
+    index === 0 ? `MAT-STE-${today.replace(/-/g, '')}-` : '',
+    index === 0 ? 'MAT-STE-.YYYY.-' : '',
+    index === 0 ? entry.purpose : '',
+    index === 0 ? entry.company : '',
+    index === 0 ? entry.postingDate : '',
     it.itemCode,
-    it.sWarehouse || '',
-    it.tWarehouse || '',
     it.qty,
-    it.basicRate ?? '',
+    "Stk", // UOM
+    it.tWarehouse,
+    "1" // is_finished_item
   ].map(escapeCSVField).join(','));
+  
+  const csvHeader = "ID,Series,Stock Entry Type,Company,Posting Date,Item Code (Items),Qty (Items),UOM (Items),Target Warehouse (Items),Is Finished Item (Items)";
+  const csv = [csvHeader, ...csvRows].join('\n');
+
 
   if (shouldPost(options)) {
     if (isDuplicateStockEntry(payload)) {
       return {
         payload,
-        csv: csvRows.join('\n'),
+        csv,
         response: { duplicate: true },
       };
     }
@@ -175,8 +183,8 @@ export async function mapStockEntry(
     } catch {
       data = await response.text();
     }
-    return { payload, csv: csvRows.join('\n'), response: data };
+    return { payload, csv, response: data };
   }
 
-  return { payload, csv: csvRows.join('\n') };
+  return { payload, csv };
 }

@@ -9,6 +9,7 @@ export async function getStockSettingsServer(uid: string): Promise<StockSettings
   const s = (snap.exists ? snap.data()?.stock : null) as StockSettings | null;
   return s ?? {
     defaultWarehouse: '',
-    shippingKeywords: ['versand','porto','versandkosten','versandkostenpauschale','lieferkosten','shipping','postage','paketmarke','dhl','hermes','dpd','gls','ups']
+    shippingKeywords: ['versand','porto','versandkosten','versandkostenpauschale','lieferkosten','shipping','postage','paketmarke','dhl','hermes','dpd','gls','ups'],
+    company: '' // Added company to stock settings
   };
 }
