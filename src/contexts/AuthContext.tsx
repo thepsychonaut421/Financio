@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
@@ -93,7 +92,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   
   useEffect(() => {
     if (!isLoading && user && (pathname === '/login' || pathname === '/signup')) {
-      router.push('/incoming-invoices');
+      router.push('/purchases');
     }
   }, [isLoading, user, pathname, router]);
 

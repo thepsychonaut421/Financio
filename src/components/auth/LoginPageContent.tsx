@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { useEffect, useState } from 'react';
@@ -34,7 +33,7 @@ export function LoginPageContent() {
 
   useEffect(() => {
     if (!isLoading && isAuthenticated) {
-      router.push('/incoming-invoices');
+      router.push('/purchases');
     }
   }, [isLoading, isAuthenticated, router]);
 

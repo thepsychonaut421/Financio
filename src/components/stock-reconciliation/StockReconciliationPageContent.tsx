@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -57,15 +56,15 @@ async function fetchWithAuth(
     throw new AuthError('Cannot fetch without a valid ID token.');
   }
 
+  const bodyWithToken = { ...((options.body ? JSON.parse(options.body as string) : {})), idToken: tok };
+
   return fetch(endpoint, {
     ...options,
     method: 'POST', // Force POST
     headers: { 
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${tok}`,
-        'X-Firebase-Token': tok,
-        'X-ID-Token': tok,
     },
+    body: JSON.stringify(bodyWithToken),
     cache: 'no-store',
   });
 }
@@ -151,7 +150,7 @@ export function StockReconciliationPageContent() {
 
         setIsLoading(true);
         try {
-            const response = await fetchWithAuth(getIdToken, '/api/stock/aggregate', {});
+            const response = await fetchWithAuth(getIdToken, '/api/stock/aggregate', { body: JSON.stringify({}) });
             
             const { data: payload, error: payloadErr, status } = await readSafePayload(response);
 
@@ -166,7 +165,7 @@ export function StockReconciliationPageContent() {
             setSkippedItems(payload?.skippedShippingItems || 0);
 
         } catch (error: any) {
-            if (error instanceof AuthError) {
+             if (error instanceof AuthError) {
                 toast({ title: 'Authentication Error', description: error.message, variant: 'destructive' });
                 setStockItems([]);
             } else if (error instanceof HttpError) {
@@ -185,7 +184,7 @@ export function StockReconciliationPageContent() {
             toast({ title: 'No Data', description: 'There are no items to submit.', variant: 'destructive' });
             return;
         }
-        if (!companyName || !defaultWarehouse) {
+         if (!companyName || !defaultWarehouse) {
             toast({ title: 'Missing Settings', description: 'Company and Default Warehouse are required.', variant: 'destructive' });
             return;
         }
@@ -377,7 +376,7 @@ export function StockReconciliationPageContent() {
                                 <AlertDescription>
                                     No stock data could be aggregated. This could be because no invoices have been processed yet, or there are no items with product codes in them.
                                     <br />
-                                    Go to the <Link href="/incoming-invoices" className="underline text-primary">Incoming Invoices</Link> page to get started. Or check your <Link href="/settings/stock" className="underline text-primary">Stock Settings</Link>.
+                                    Go to the <Link href="/purchases" className="underline text-primary">Incoming Purchases</Link> page to get started. Or check your <Link href="/settings/stock" className="underline text-primary">Stock Settings</Link>.
                                 </AlertDescription>
                             </Alert>
                         )}

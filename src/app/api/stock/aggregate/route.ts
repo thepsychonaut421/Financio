@@ -1,11 +1,9 @@
-
 import { NextResponse } from 'next/server';
 import { getAdminDbSafe } from '@/lib/firebase-admin';
 import { getStockSettingsServer } from '@/server/stock-settings-server';
 import { isShippingFee } from '@/lib/is-shipping-fee';
 import { getUidFromRequest } from '@/lib/get-uid-from-request';
 import { AuthError } from '@/lib/auth-error';
-
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -24,9 +22,11 @@ export async function OPTIONS(req: Request) {
 export async function POST(req: Request) {
   let uid: string;
   try {
-    // getUidFromRequest now reads from headers, which is what we want.
-    // The request body is not needed for auth anymore.
-    uid = await getUidFromRequest(req);
+    const body = await req.json();
+    if (!body?.idToken) {
+        throw new AuthError('Missing ID token in request body.');
+    }
+    uid = await getUidFromRequest(body.idToken);
   } catch (error: any) {
     console.error("[API /stock/aggregate Auth Error]", error);
     return NextResponse.json(
@@ -42,8 +42,10 @@ export async function POST(req: Request) {
     }
 
     const settings = await getStockSettingsServer(uid);
+    // Query only purchase invoices for the user
     const snap = await db.collection('processed_invoices')
         .where('userId','==',uid)
+        .where('kind', '==', 'purchase') // Filter for purchases only
         .select('payload.rechnungspositionen','payload.rechnungsnummer')
         .get();
 

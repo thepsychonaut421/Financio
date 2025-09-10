@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useCallback, useEffect, useMemo } from 'react';
@@ -419,6 +418,7 @@ export function useIncomingInvoices(kind: Kind) {
                             erpMode: true,
                             payload: { ...erpCompatibleInvoice, rechnungspositionen: erpCompatibleInvoice.rechnungspositionen ?? [] },
                             createdAt: serverTimestamp(),
+                            kind: kind, // Add kind to Firestore document
                         };
                         await addDoc(collection(db, "processed_invoices"), pruneForFirestore(docToSave));
                     }
