@@ -2,7 +2,7 @@
 // src/app/api/erpnext/stock/route.ts
 import { NextResponse } from 'next/server';
 import { getAdminDbSafe } from '@/lib/firebase-admin';
-import { getUidFromRequest } from '@/lib/get-uid-from-request';
+import { getUidFromRequest, AuthError } from '@/lib/get-uid-from-request';
 import { getStockSettingsServer } from '@/server/stock-settings-server';
 import { getErpSettingsServer } from '@/server/erp-settings-server';
 import { createResource, findResource } from '@/lib/erpnext/client';
@@ -114,5 +114,3 @@ export async function POST(req: Request) {
         }
     }
 }
-
-    

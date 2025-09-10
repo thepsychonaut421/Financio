@@ -58,14 +58,13 @@ async function fetchWithAuth(
     throw new AuthError('Cannot fetch without a valid ID token.');
   }
 
+  const requestBody = { ...(options.body || {}), idToken: tok };
+
   return fetch(endpoint, {
     ...options,
     method: 'POST', // Force POST to have a body
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      ...(options.body || {}),
-      idToken: tok, // Add token to body
-    }),
+    body: JSON.stringify(requestBody),
     cache: 'no-store',
   });
 }
@@ -389,5 +388,3 @@ export function StockReconciliationPageContent() {
         </div>
     );
 }
-
-    
