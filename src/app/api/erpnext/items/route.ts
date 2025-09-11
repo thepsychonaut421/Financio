@@ -23,7 +23,7 @@ export async function POST(request: Request) {
         }
         try {
             const result = await ensureItemExists(item.item_code, item);
-            results.push({ success: true, status: (result as any).doc ? 'created' : 'exists', data: result, original: item });
+            results.push({ success: true, status: result.status, data: result.doc, original: item });
         } catch (error: any) {
             results.push({ success: false, error: error.message, original: item });
             logError({ workflow: 'erpnext-api', docType: 'Item', action: 'ensure-error' }, error, `Failed to ensure item: ${item.item_code}`);

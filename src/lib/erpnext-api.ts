@@ -116,7 +116,7 @@ export async function ensureItemExists(item_code: string, payload?: Partial<Item
     try {
         const existing = await getResource("Item", item_code);
         logInfo({ workflow: 'erpnext-api', docType: 'Item', action: 'ensure-exists' }, `Item "${item_code}" already exists.`);
-        return existing;
+        return { doc: existing, status: 'exists' };
     } catch (e: any) {
         if (e.message && (e.message.includes('404') || e.message.includes('does not exist'))) {
             logInfo({ workflow: 'erpnext-api', docType: 'Item', action: 'ensure-create' }, `Item "${item_code}" not found, creating.`);
@@ -128,7 +128,8 @@ export async function ensureItemExists(item_code: string, payload?: Partial<Item
                 stock_uom: payload?.stock_uom || "Stk", // Default UOM
                 is_stock_item: typeof payload?.is_stock_item === 'boolean' ? (payload.is_stock_item ? 1 : 0) : 1,
             };
-            return createItem(createPayload);
+            const createdDoc = await createItem(createPayload);
+            return { doc: createdDoc, status: 'created' };
         }
         throw e; // Re-throw other errors
     }
@@ -165,7 +166,7 @@ export async function createBankTransaction(tx: BankTransaction) {
         
         if (tx.deposit) {
             accounts.push({ // Debit Bank Account
-                account: tx.account,
+                account: tx.bank_account,
                 debit_in_account_currency: amount,
             });
             accounts.push({ // Credit a default account (e.g., Sales)
@@ -174,7 +175,7 @@ export async function createBankTransaction(tx: BankTransaction) {
             });
         } else { // Withdrawal
             accounts.push({ // Credit Bank Account
-                account: tx.account,
+                account: tx.bank_account,
                 credit_in_account_currency: amount,
             });
             accounts.push({ // Debit a default account (e.g., Purchases)
