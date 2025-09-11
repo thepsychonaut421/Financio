@@ -15,7 +15,7 @@ import { Loader2 } from 'lucide-react';
 function StockSettingsPageContent() {
   const { user } = useAuth();
   const { toast } = useToast();
-  const [form, setForm] = useState<StockSettings>({ defaultWarehouse: '', shippingKeywords: [] });
+  const [form, setForm] = useState<StockSettings>({ defaultWarehouse: '', shippingKeywords: [], company: '' });
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
 
@@ -53,6 +53,15 @@ function StockSettingsPageContent() {
               <CardDescription>Configure your default warehouse and keywords to exclude shipping fees from stock calculations.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
+              <div>
+                  <Label htmlFor="company" className="font-medium">Company (ERPNext)</Label>
+                  <Input 
+                    id="company"
+                    value={form.company} 
+                    onChange={e=>setForm({...form, company:e.target.value})} 
+                    placeholder="e.g., Your Company Name GmbH" 
+                  />
+              </div>
               <div>
                   <Label htmlFor="default-warehouse" className="font-medium">Default Warehouse (ERPNext)</Label>
                   <Input 
