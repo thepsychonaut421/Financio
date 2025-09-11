@@ -83,7 +83,9 @@ function escapeCsvField(field: string | number | undefined | null): string {
 function toStockEntryCsv(items: StockItem[], company: string, warehouse: string): string {
     const BOM = '\uFEFF';
     const today = new Date().toISOString().slice(0, 10);
+    // Use English headers exactly as required by ERPNext Data Import Tool
     const headers = [
+        'naming_series',
         'stock_entry_type',
         'company',
         'posting_date',
@@ -97,15 +99,16 @@ function toStockEntryCsv(items: StockItem[], company: string, warehouse: string)
 
     const rows = items.map(it => {
         const rowData = [
+            'MAT-STE-AUTO-.YYYY.-', // Recommended: Let ERPNext generate the ID from this series
             'Material Receipt',
             company,
             today,
-            'Financio Import',
+            'Financio Import', // A clear title for the entry
             it.productCode,
             warehouse,
             it.totalQuantity,
-            'Stk',
-            '0'
+            'Stk', // Default UOM
+            '0' // Basic Rate, assuming 0 for material receipt
         ];
         return rowData.map(escapeCsvField).join(',');
     });
