@@ -12,6 +12,10 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import Link from 'next/link';
 import { AuthError } from '@/lib/auth-error';
+import { isShippingFee } from '@/lib/is-shipping-fee';
+import { getStockSettings } from '@/lib/stock-settings';
+import type { ERPIncomingInvoiceItem } from '@/types/incoming-invoice';
+import { matcherDataKey } from '@/lib/storage-keys';
 
 interface StockItem {
     productCode: string;
@@ -22,7 +26,6 @@ interface StockItem {
 
 type SortKey = keyof StockItem | null;
 type SortOrder = 'asc' | 'desc';
-
 
 class HttpError extends Error {
   status: number;
@@ -44,15 +47,12 @@ async function readSafePayload(res: Response) {
   }
 }
 
-/**
- * Sends request with token in body.
- */
 async function fetchWithAuth(
   getIdToken: (forceRefresh?: boolean) => Promise<string | null>,
   endpoint: string,
   options: Omit<RequestInit, 'headers' | 'body'> & { body?: any },
 ): Promise<Response> {
-  const tok = await getIdToken(true); // Always get a fresh token
+  const tok = await getIdToken(true); 
   if (!tok) {
     throw new AuthError('Cannot fetch without a valid ID token.');
   }
@@ -62,14 +62,11 @@ async function fetchWithAuth(
   return fetch(endpoint, {
     ...options,
     method: 'POST',
-    headers: { 
-        'Content-Type': 'application/json',
-    },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(bodyWithToken),
     cache: 'no-store',
   });
 }
-
 
 
 function escapeCsvField(field: string | number | undefined | null): string {
@@ -151,30 +148,54 @@ export function StockReconciliationPageContent() {
 
         setIsLoading(true);
         try {
-            const response = await fetchWithAuth(getIdToken, '/api/stock/aggregate', { body: {} });
-            
-            const { data: payload, error: payloadErr, status } = await readSafePayload(response);
+            const settings = await getStockSettings(user.uid);
+            setDefaultWarehouse(settings.defaultWarehouse);
+            setCompanyName(settings.company);
 
-            if (!response.ok) {
-                if (status === 401) throw new AuthError(payloadErr || 'Unauthorized');
-                throw new HttpError(payloadErr || `Server returned HTTP ${status}`, status, payload);
-            }
+            const purchaseInvoiceDataKey = matcherDataKey('purchase');
+            const storedInvoicesString = localStorage.getItem(purchaseInvoiceDataKey);
+            const invoices: ERPIncomingInvoiceItem[] = storedInvoicesString ? JSON.parse(storedInvoicesString) : [];
 
-            setStockItems(payload?.rows || []);
-            setDefaultWarehouse(payload?.warehouse || '');
-            setCompanyName(payload?.company || '');
-            setSkippedItems(payload?.skippedShippingItems || 0);
+            const agg = new Map<string, { code:string; name:string; qty:number; source:string[] }>();
+            let shippingFeesExcluded = 0;
+
+            invoices.forEach(inv => {
+                const items = inv.rechnungspositionen || [];
+                for (const it of items) {
+                    const code = (it.productCode || '').toString().trim();
+                    const name = (it.productName || '').toString().trim();
+                    
+                    if (isShippingFee(name, code, settings.shippingKeywords)) {
+                        shippingFeesExcluded++;
+                        continue;
+                    }
+
+                    const codeNorm = code.toUpperCase();
+                    const nameNorm = name.toUpperCase();
+                    const key = codeNorm || nameNorm;
+                    if (!key) continue;
+
+                    const qty = Number(it.quantity || 0) || 0;
+                    const rec = agg.get(key) || { code: code || name, name: name, qty:0, source: [] };
+                    rec.qty += qty;
+                    if (inv.rechnungsnummer) rec.source.push(inv.rechnungsnummer);
+                    agg.set(key, rec);
+                }
+            });
+
+            const rows = Array.from(agg.values()).map(r => ({
+                productCode: r.code,
+                productName: r.name,
+                totalQuantity: r.qty,
+                sourceInvoices: [...new Set(r.source)].slice(0,5),
+            }));
+
+            setStockItems(rows);
+            setSkippedItems(shippingFeesExcluded);
 
         } catch (error: any) {
-            if (error instanceof AuthError) {
-                toast({ title: 'Authentication Error', description: error.message, variant: 'destructive' });
-                setStockItems([]);
-            } else if (error instanceof HttpError) {
-                toast({ title: 'Server Error', description: `${error.message}`, variant: 'destructive' });
-            } else {
-                toast({ title: 'Unexpected Error', description: error?.message || String(error), variant: 'destructive' });
-            }
-            console.error('[StockReconciliation] fetch/parse failed:', error);
+            toast({ title: 'Unexpected Error', description: error?.message || String(error), variant: 'destructive' });
+            console.error('[StockReconciliation] aggregation failed:', error);
         } finally {
             setIsLoading(false);
         }
@@ -314,7 +335,7 @@ export function StockReconciliationPageContent() {
                                 Aggregated Item Quantities
                                 </CardTitle>
                                 <CardDescription>
-                                    This table sums up quantities for each unique product from processed purchase invoices.
+                                    This table sums up quantities for each unique product from locally processed purchase invoices.
                                 </CardDescription>
                             </div>
                             <Button onClick={aggregateStockData} disabled={isLoading || !user} variant="outline" className="mt-4 sm:mt-0">

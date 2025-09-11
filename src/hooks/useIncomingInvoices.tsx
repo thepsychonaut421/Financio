@@ -337,7 +337,7 @@ export function useIncomingInvoices(kind: Kind) {
 
         if (filesToProcess.length === 0) {
             setStatus('success');
-            setCurrentFileProgress('No new files to process. Duplicates were skipped.');
+            setCurrentFileProgress('Processing complete. All selected files were duplicates.');
             return;
         }
 
