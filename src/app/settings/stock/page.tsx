@@ -1,3 +1,4 @@
+
 'use client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useEffect, useState } from 'react';
@@ -22,7 +23,16 @@ function StockSettingsPageContent() {
   useEffect(() => {
     if (user) {
       setLoading(true);
-      getStockSettings(user.uid).then(setForm).finally(() => setLoading(false));
+      getStockSettings(user.uid)
+        .then(settings => {
+            // Ensure all form fields are controlled from the start
+            setForm({
+                company: settings?.company || '',
+                defaultWarehouse: settings?.defaultWarehouse || '',
+                shippingKeywords: settings?.shippingKeywords || [],
+            });
+        })
+        .finally(() => setLoading(false));
     } else {
       setLoading(false);
     }
@@ -102,3 +112,4 @@ export default function StockSettingsPage() {
         </ProtectedRoute>
     )
 }
+
