@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -82,26 +83,34 @@ function escapeCsvField(field: string | number | undefined | null): string {
 function toStockEntryCsv(items: StockItem[], company: string, warehouse: string): string {
     const BOM = '\uFEFF';
     const today = new Date().toISOString().slice(0, 10);
-  
-    const baseHeaders = ['stock_entry_type', 'company', 'posting_date', 'title'];
-    const perItemHeaders = items.flatMap((_, i) => [
-      `items-${i}.item_code`,
-      `items-${i}.t_warehouse`,
-      `items-${i}.qty`,
-      `items-${i}.uom`,
-      `items-${i}.basic_rate`
-    ]);
-    const headers = [...baseHeaders, ...perItemHeaders].join(',');
-  
-    const rowData = [
-      'Material Receipt',
-      company,
-      today,
-      'Financio Import',
-      ...items.flatMap(it => [it.productCode, warehouse, it.totalQuantity, 'Stk', '0'])
-    ].map(escapeCsvField).join(',');
-  
-    return BOM + headers + '\n' + rowData;
+    const headers = [
+        'stock_entry_type',
+        'company',
+        'posting_date',
+        'title',
+        'items.item_code',
+        'items.t_warehouse',
+        'items.qty',
+        'items.uom',
+        'items.basic_rate'
+    ].join(',');
+
+    const rows = items.map(it => {
+        const rowData = [
+            'Material Receipt',
+            company,
+            today,
+            'Financio Import',
+            it.productCode,
+            warehouse,
+            it.totalQuantity,
+            'Stk',
+            '0'
+        ];
+        return rowData.map(escapeCsvField).join(',');
+    });
+
+    return BOM + headers + '\n' + rows.join('\n');
 }
 
 
@@ -427,3 +436,4 @@ export function StockReconciliationPageContent() {
         </div>
     );
 }
+
