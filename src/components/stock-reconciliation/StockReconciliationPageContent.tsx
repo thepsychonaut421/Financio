@@ -1,10 +1,11 @@
+
 'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Info, PackageCheck, Search, ArrowUpDown, Loader2, RefreshCw, FileSpreadsheet, Send } from 'lucide-react';
+import { Info, PackageCheck, Search, ArrowUpDown, Loader2, RefreshCw, FileSpreadsheet, Send, ChevronDown, ChevronUp } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/contexts/AuthContext';
@@ -150,7 +151,7 @@ export function StockReconciliationPageContent() {
 
         setIsLoading(true);
         try {
-            const response = await fetchWithAuth(getIdToken, '/api/stock/aggregate', {});
+            const response = await fetchWithAuth(getIdToken, '/api/stock/aggregate', { body: {} });
             
             const { data: payload, error: payloadErr, status } = await readSafePayload(response);
 
@@ -165,7 +166,7 @@ export function StockReconciliationPageContent() {
             setSkippedItems(payload?.skippedShippingItems || 0);
 
         } catch (error: any) {
-             if (error instanceof AuthError) {
+            if (error instanceof AuthError) {
                 toast({ title: 'Authentication Error', description: error.message, variant: 'destructive' });
                 setStockItems([]);
             } else if (error instanceof HttpError) {
@@ -184,8 +185,16 @@ export function StockReconciliationPageContent() {
             toast({ title: 'No Data', description: 'There are no items to submit.', variant: 'destructive' });
             return;
         }
-         if (!companyName || !defaultWarehouse) {
-            toast({ title: 'Missing Settings', description: 'Company and Default Warehouse are required.', variant: 'destructive' });
+        if (!companyName || !defaultWarehouse) {
+            toast({ 
+                title: 'Missing Settings', 
+                description: (
+                    <span>
+                        Company and Default Warehouse are required. Please set them in <Link href="/settings/stock" className="underline">Stock Settings</Link>.
+                    </span>
+                ), 
+                variant: 'destructive' 
+            });
             return;
         }
 
@@ -226,7 +235,15 @@ export function StockReconciliationPageContent() {
              return;
         }
         if (!companyName || !defaultWarehouse) {
-            toast({ title: "Missing Settings", description: "Company Name and Default Warehouse must be set to export.", variant: "destructive"});
+            toast({ 
+                title: "Missing Settings", 
+                description: (
+                    <span>
+                        Company and Default Warehouse are required for export. Please set them in <Link href="/settings/stock" className="underline">Stock Settings</Link>.
+                    </span>
+                ), 
+                variant: "destructive"
+            });
             return;
         }
         const csv = toStockEntryCsv(filteredAndSortedItems, companyName, defaultWarehouse);
@@ -275,8 +292,8 @@ export function StockReconciliationPageContent() {
     const getSortIndicator = (key: keyof StockItem) => {
         if (sortKey !== key) return <ArrowUpDown className="ml-2 h-4 w-4 opacity-30" />;
         return sortOrder === 'asc' ? 
-               <ArrowUpDown className="ml-2 h-4 w-4 text-primary" /> : 
-               <ArrowUpDown className="ml-2 h-4 w-4 text-primary" />;
+               <ChevronUp className="ml-2 h-4 w-4 text-primary" /> : 
+               <ChevronDown className="ml-2 h-4 w-4 text-primary" />;
     };
 
     return (
@@ -284,7 +301,7 @@ export function StockReconciliationPageContent() {
             <header className="mb-8 text-center">
                 <h1 className="text-3xl md:text-4xl font-headline font-bold text-primary">Stock Reconciliation</h1>
                 <p className="text-muted-foreground mt-2">
-                    Aggregated view of all item quantities from processed invoices for stock checking. Shipping fees are automatically excluded.
+                    Aggregated view of all item quantities from processed purchase invoices for stock checking. Shipping fees are automatically excluded.
                 </p>
             </header>
             <main>
@@ -297,7 +314,7 @@ export function StockReconciliationPageContent() {
                                 Aggregated Item Quantities
                                 </CardTitle>
                                 <CardDescription>
-                                    This table sums up quantities for each unique product from processed invoices.
+                                    This table sums up quantities for each unique product from processed purchase invoices.
                                 </CardDescription>
                             </div>
                             <Button onClick={aggregateStockData} disabled={isLoading || !user} variant="outline" className="mt-4 sm:mt-0">
@@ -374,7 +391,7 @@ export function StockReconciliationPageContent() {
                                 <Info className="h-4 w-4" />
                                 <AlertTitle>No Data Available</AlertTitle>
                                 <AlertDescription>
-                                    No stock data could be aggregated. This could be because no invoices have been processed yet, or there are no items with product codes in them.
+                                    No stock data could be aggregated. This could be because no purchase invoices have been processed yet, or there are no items with product codes in them.
                                     <br />
                                     Go to the <Link href="/purchases" className="underline text-primary">Incoming Purchases</Link> page to get started. Or check your <Link href="/settings/stock" className="underline text-primary">Stock Settings</Link>.
                                 </AlertDescription>
