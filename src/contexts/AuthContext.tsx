@@ -41,13 +41,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       }).catch((error: AuthError) => {
         console.error("OAuth Redirect Error:", error);
-        // Generic error handler for other OAuth issues.
-        // The specific 'unauthorized-domain' error is now handled proactively on the login page.
-        toast({
-            title: "Sign-In Failed",
-            description: error.message || "An unknown error occurred during sign-in.",
-            variant: "destructive"
-        });
+        if (error.code === 'auth/unauthorized-domain') {
+            toast({
+                title: "Configuration Required",
+                description: (
+                    <div>
+                        <p>This app's domain is not authorized for social sign-in.</p>
+                        <p className="mt-2 text-xs">To enable this, add the domain from your browser's address bar to the list of "Authorised domains" in your Firebase Console under Authentication → Settings.</p>
+                    </div>
+                ),
+                variant: "destructive",
+                duration: 15000,
+            });
+        } else {
+             toast({
+                title: "Sign-In Failed",
+                description: error.message || "An unknown error occurred during sign-in.",
+                variant: "destructive"
+            });
+        }
       });
 
 
