@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useEffect, useState } from 'react';
@@ -143,6 +144,8 @@ export function LoginPageContent() {
               </span>
             </div>
           </div>
+          
+          <div className='text-center text-xs text-muted-foreground'>(Requires domain authorization in Firebase Console)</div>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <Button variant="outline" className="py-6 text-base" onClick={() => handleSocialLogin('Google')}>

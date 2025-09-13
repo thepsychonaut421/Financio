@@ -1,8 +1,9 @@
+
 'use client';
 
 import React, { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
-import { onAuthStateChanged, type User, signInWithEmailAndPassword, signOut, getRedirectResult } from 'firebase/auth';
+import { onAuthStateChanged, type User, signInWithEmailAndPassword, signOut, getRedirectResult, type AuthError } from 'firebase/auth';
 import { useToast } from '@/hooks/use-toast';
 import { auth } from '@/lib/firebase';
 
@@ -34,22 +35,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     getRedirectResult(auth)
       .then((result) => {
         if (result) {
-           // This gives you a Microsoft Access Token. You can use it to access the Microsoft API.
-           // const credential = OAuthProvider.credentialFromResult(result);
-           // const accessToken = credential?.accessToken;
-           // const user = result.user;
            toast({
                title: "Sign-In Successful",
                description: `Welcome back, ${result.user.displayName || result.user.email}!`,
            });
         }
-      }).catch((error) => {
+      }).catch((error: AuthError) => {
         console.error("OAuth Redirect Error:", error);
-        toast({
-            title: "Sign-In Failed",
-            description: error.message || "An unknown error occurred during sign-in.",
-            variant: "destructive"
-        });
+
+        if (error.code === 'auth/unauthorized-domain') {
+            toast({
+                title: "Configuration Required",
+                description: (
+                    <div>
+                        <p>This app's domain is not authorized for social sign-in.</p>
+                        <p className="mt-2 text-xs">To fix this, add the domain from your browser's address bar to the list of "Authorised domains" in your Firebase Console under Authentication → Settings.</p>
+                    </div>
+                ),
+                variant: "destructive",
+                duration: 15000,
+            });
+        } else {
+             toast({
+                title: "Sign-In Failed",
+                description: error.message || "An unknown error occurred during sign-in.",
+                variant: "destructive"
+            });
+        }
       });
 
 
