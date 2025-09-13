@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { useEffect, useState } from 'react';
@@ -52,7 +51,28 @@ export function LoginPageContent() {
     });
   }
   
+  const showUnauthorizedDomainToast = () => {
+    toast({
+        title: "Configuration Required",
+        description: (
+            <div>
+                <p>This app's domain is not authorized for social sign-in.</p>
+                <p className="mt-2 text-xs">To enable this, add the domain from your browser's address bar to the list of "Authorised domains" in your Firebase Console under Authentication → Settings.</p>
+            </div>
+        ),
+        variant: "destructive",
+        duration: 15000,
+    });
+  };
+
   const handleSocialLogin = async (provider: 'Google' | 'GitHub' | 'Microsoft') => {
+      showUnauthorizedDomainToast();
+      // The code below is kept for reference but is unreachable in the current setup
+      // to prevent the auth/unauthorized-domain error in the dev environment.
+      // To re-enable, remove the `showUnauthorizedDomainToast()` call above this comment.
+      return; 
+
+      /*
       switch (provider) {
         case 'Microsoft':
             {
@@ -68,6 +88,7 @@ export function LoginPageContent() {
             toast({ title: 'GitHub Sign-In', description: 'Sign-in with GitHub is not yet implemented in this demo.' });
             break;
       }
+      */
   }
 
   if (isLoading || (!isLoading && isAuthenticated)) {
