@@ -12,7 +12,7 @@ import Image from 'next/image';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
-import { OAuthProvider, signInWithRedirect, type AuthError } from 'firebase/auth';
+import { OAuthProvider, signInWithRedirect, type AuthError, GoogleAuthProvider, GithubAuthProvider } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
 
 const MicrosoftIcon = (props: React.SVGProps<SVGSVGElement>) => (
@@ -63,38 +63,26 @@ export function LoginPageContent() {
                 }
                 break;
             case 'Google':
-                 toast({ title: 'Google Sign-In', description: 'Sign-in with Google is not yet implemented in this demo.' });
-                // const googleProvider = new GoogleAuthProvider();
-                // await signInWithRedirect(auth, googleProvider);
+                {
+                    const googleProvider = new GoogleAuthProvider();
+                    await signInWithRedirect(auth, googleProvider);
+                }
                 break;
             case 'GitHub':
-                 toast({ title: 'GitHub Sign-In', description: 'Sign-in with GitHub is not yet implemented in this demo.' });
-                // const githubProvider = new GithubAuthProvider();
-                // await signInWithRedirect(auth, githubProvider);
+                {
+                    const githubProvider = new GithubAuthProvider();
+                    await signInWithRedirect(auth, githubProvider);
+                }
                 break;
         }
       } catch (error: any) {
           const authError = error as AuthError;
           console.error("Social Sign-In Error:", authError.code, authError.message);
-          if (authError.code === 'auth/unauthorized-domain') {
-              toast({
-                  title: "Configuration Required",
-                  description: (
-                      <div>
-                          <p>This app's domain is not authorized for social sign-in.</p>
-                          <p className="mt-2 text-xs">To fix this, go to your Firebase Console → Authentication → Settings → Authorized domains, and add the domain from your browser's address bar.</p>
-                      </div>
-                  ),
-                  variant: "destructive",
-                  duration: 15000,
-              });
-          } else {
-              toast({
-                  title: "Sign-In Failed",
-                  description: authError.message || "An unknown error occurred during sign-in.",
-                  variant: "destructive"
-              });
-          }
+          toast({
+              title: "Sign-In Failed",
+              description: authError.message || "An unknown error occurred during sign-in.",
+              variant: "destructive"
+          });
       }
   }
 

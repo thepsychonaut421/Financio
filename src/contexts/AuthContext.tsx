@@ -38,6 +38,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                title: "Sign-In Successful",
                description: `Welcome back, ${result.user.displayName || result.user.email}!`,
            });
+           // After a successful redirect sign-in, navigate to the main app page.
+           router.push('/purchases');
         }
       }).catch((error: AuthError) => {
         console.error("OAuth Redirect Error:", error);
@@ -64,7 +66,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
 
     return () => unsubscribe();
-  }, [toast]);
+  }, [toast, router]);
 
   const login = async (email: string, pass: string) => {
     try {
