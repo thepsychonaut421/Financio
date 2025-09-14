@@ -19,6 +19,9 @@ export async function POST(request: Request) {
         if (!token) {
             return NextResponse.json({ success: false, message: 'reCAPTCHA token is missing.' }, { status: 400 });
         }
+        if (!recaptchaAction) {
+            return NextResponse.json({ success: false, message: 'reCAPTCHA action is missing.' }, { status: 400 });
+        }
         
         if (!PROJECT_ID || !RECAPTCHA_SITE_KEY) {
             console.error('[reCAPTCHA] Server configuration error: GOOGLE_CLOUD_PROJECT or NEXT_PUBLIC_RECAPTCHA_SITE_KEY is not set.');
@@ -33,6 +36,7 @@ export async function POST(request: Request) {
                 event: {
                     token: token,
                     siteKey: RECAPTCHA_SITE_KEY,
+                    // recaptchaAction is verified below, not sent in the event
                 },
             },
             parent: projectPath,

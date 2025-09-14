@@ -1,9 +1,12 @@
+
 import type {Metadata} from 'next';
 import './globals.css';
 import { Toaster } from "@/components/ui/toaster";
 import { AppHeader } from '@/components/shared/AppHeader';
 import { Inter } from 'next/font/google';
 import { AuthProvider } from '@/contexts/AuthContext'; // Added AuthProvider
+import Script from 'next/script';
+
 
 const inter = Inter({
   subsets: ['latin'],
@@ -24,7 +27,10 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${inter.variable}`}>
       <head>
-        
+        <Script 
+          src={`https://www.google.com/recaptcha/enterprise.js?render=${process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY}`}
+          strategy="beforeInteractive"
+        />
       </head>
       <body className="antialiased min-h-screen flex flex-col font-body">
         <AuthProvider> {/* Wrapped with AuthProvider */}

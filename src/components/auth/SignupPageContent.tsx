@@ -1,67 +1,86 @@
+
 'use client';
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import Link from 'next/link';
-import { UserPlus, ShieldCheck } from 'lucide-react';
+import { UserPlus, ShieldCheck, Loader2 } from 'lucide-react';
 import Image from 'next/image';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
 
+declare global {
+  interface Window {
+    grecaptcha: any;
+  }
+}
+
+
 export function SignupPageContent() {
   const { login, isAuthenticated, isLoading } = useAuth(); // Using login for simulated signup
   const router = useRouter();
   const { toast } = useToast();
+  const [isVerifying, setIsVerifying] = useState(false);
+  const formRef = useRef<HTMLFormElement>(null);
 
   useEffect(() => {
     if (!isLoading && isAuthenticated) {
       router.push('/purchases'); 
     }
   }, [isLoading, isAuthenticated, router]);
-
-  const handleSignup = async (event: React.FormEvent) => {
+  
+  const handleSignup = (event: React.FormEvent) => {
     event.preventDefault();
+    setIsVerifying(true);
     
-    // In a real app, you would get the reCAPTCHA token here
-    const recaptchaToken = 'dummy-recaptcha-token-for-demo'; // Placeholder
+    if (!process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY) {
+        toast({ title: "Configuration Error", description: "reCAPTCHA site key is not configured.", variant: "destructive"});
+        setIsVerifying(false);
+        return;
+    }
 
-    try {
+    window.grecaptcha.enterprise.ready(async () => {
+      try {
+        const token = await window.grecaptcha.enterprise.execute(process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY, {action: 'SIGNUP'});
+        
         const response = await fetch('/api/recaptcha/verify', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ token: recaptchaToken }),
+            body: JSON.stringify({ token: token, recaptchaAction: 'SIGNUP' }),
         });
 
         const result = await response.json();
 
         if (!result.success) {
             toast({
-                title: "Verificare eșuată",
-                description: result.message || "Verificarea reCAPTCHA a eșuat. Vă rugăm să încercați din nou.",
+                title: "Verification Failed",
+                description: result.message || "reCAPTCHA verification failed. Please try again.",
                 variant: "destructive"
             });
+            setIsVerifying(false);
             return;
         }
 
-        // reCAPTCHA valid, proceed with signup logic
-        // For this simulation, we'll just use the existing login function
+        // reCAPTCHA valid, proceed with actual signup logic
         toast({
-            title: "Verificare reCAPTCHA reușită!",
-            description: "Acum se va efectua înregistrarea...",
+            title: "Verification Successful!",
+            description: "Simulating account creation...",
         });
-        login(); 
+        login(); // For this simulation, we'll just use the existing login function
 
-    } catch (error) {
-        toast({
-            title: "Eroare de rețea",
-            description: "Nu s-a putut contacta serverul pentru verificarea reCAPTCHA.",
-            variant: "destructive"
-        });
-    }
+      } catch (error) {
+          toast({
+              title: "Verification Error",
+              description: "Could not contact the reCAPTCHA service. Please check your network and try again.",
+              variant: "destructive"
+          });
+          setIsVerifying(false);
+      }
+    });
   };
 
   if (isLoading || (!isLoading && isAuthenticated)) {
@@ -93,7 +112,7 @@ export function SignupPageContent() {
           </CardDescription>
         </CardHeader>
         <CardContent className="p-6 sm:p-8 space-y-6">
-          <form onSubmit={handleSignup} className="space-y-6">
+          <form ref={formRef} onSubmit={handleSignup} className="space-y-6">
             <div className="space-y-2">
               <Label htmlFor="name" className="font-medium">Full Name</Label>
               <Input 
@@ -135,12 +154,13 @@ export function SignupPageContent() {
               />
             </div>
             <p className="text-xs text-muted-foreground">
-              This site is protected by reCAPTCHA and the Google{' '}
+              This site is protected by reCAPTCHA Enterprise and the Google{' '}
               <a href="https://policies.google.com/privacy" className="underline hover:text-primary" target="_blank" rel="noopener noreferrer">Privacy Policy</a> and{' '}
               <a href="https://policies.google.com/terms" className="underline hover:text-primary" target="_blank" rel="noopener noreferrer">Terms of Service</a> apply.
             </p>
-            <Button type="submit" className="w-full font-semibold text-base py-6" size="lg">
-              <UserPlus className="mr-2 h-5 w-5" /> Sign Up
+            <Button type="submit" className="w-full font-semibold text-base py-6" size="lg" disabled={isVerifying}>
+              {isVerifying ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <UserPlus className="mr-2 h-5 w-5" />}
+              {isVerifying ? 'Verifying...' : 'Sign Up'}
             </Button>
           </form>
         </CardContent>
