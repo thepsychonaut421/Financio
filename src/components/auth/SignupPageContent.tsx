@@ -10,10 +10,12 @@ import { UserPlus, ShieldCheck } from 'lucide-react';
 import Image from 'next/image';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
+import { useToast } from '@/hooks/use-toast';
 
 export function SignupPageContent() {
   const { login, isAuthenticated, isLoading } = useAuth(); // Using login for simulated signup
   const router = useRouter();
+  const { toast } = useToast();
 
   useEffect(() => {
     if (!isLoading && isAuthenticated) {
@@ -21,11 +23,45 @@ export function SignupPageContent() {
     }
   }, [isLoading, isAuthenticated, router]);
 
-  const handleSignup = (event: React.FormEvent) => {
+  const handleSignup = async (event: React.FormEvent) => {
     event.preventDefault();
-    // In a real app, you'd collect form data and call a signup API
-    // For this simulation, we'll just use the existing login function
-    login(); 
+    
+    // In a real app, you would get the reCAPTCHA token here
+    const recaptchaToken = 'dummy-recaptcha-token-for-demo'; // Placeholder
+
+    try {
+        const response = await fetch('/api/recaptcha/verify', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ token: recaptchaToken }),
+        });
+
+        const result = await response.json();
+
+        if (!result.success) {
+            toast({
+                title: "Verificare eșuată",
+                description: result.message || "Verificarea reCAPTCHA a eșuat. Vă rugăm să încercați din nou.",
+                variant: "destructive"
+            });
+            return;
+        }
+
+        // reCAPTCHA valid, proceed with signup logic
+        // For this simulation, we'll just use the existing login function
+        toast({
+            title: "Verificare reCAPTCHA reușită!",
+            description: "Acum se va efectua înregistrarea...",
+        });
+        login(); 
+
+    } catch (error) {
+        toast({
+            title: "Eroare de rețea",
+            description: "Nu s-a putut contacta serverul pentru verificarea reCAPTCHA.",
+            variant: "destructive"
+        });
+    }
   };
 
   if (isLoading || (!isLoading && isAuthenticated)) {
@@ -98,6 +134,11 @@ export function SignupPageContent() {
                 className="h-12 text-base"
               />
             </div>
+            <p className="text-xs text-muted-foreground">
+              This site is protected by reCAPTCHA and the Google{' '}
+              <a href="https://policies.google.com/privacy" className="underline hover:text-primary" target="_blank" rel="noopener noreferrer">Privacy Policy</a> and{' '}
+              <a href="https://policies.google.com/terms" className="underline hover:text-primary" target="_blank" rel="noopener noreferrer">Terms of Service</a> apply.
+            </p>
             <Button type="submit" className="w-full font-semibold text-base py-6" size="lg">
               <UserPlus className="mr-2 h-5 w-5" /> Sign Up
             </Button>
