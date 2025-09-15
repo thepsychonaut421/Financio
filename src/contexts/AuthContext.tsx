@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
@@ -52,6 +53,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     
     const handleMsalRedirect = async () => {
         try {
+            await msalInstance.initialize();
             const response = await msalInstance.handleRedirectPromise();
             if (response && response.account) {
                  if (cancelled) return;
