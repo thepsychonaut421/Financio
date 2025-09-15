@@ -10,10 +10,13 @@ import {
   getRedirectResult,
   setPersistence,
   browserLocalPersistence,
+  signInWithCredential,
+  OAuthProvider,
 } from 'firebase/auth';
 import { FirebaseError } from 'firebase/app';
 import { useToast } from '@/hooks/use-toast';
 import { auth } from '@/lib/firebase';
+import { msalInstance } from '@/lib/msal';
 
 interface AuthContextType {
   user: User | null;
@@ -34,7 +37,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const { toast } = useToast();
 
-  // 1) Ascultă schimbările de auth
+  // 1) Listen to auth state changes from Firebase
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (u) => {
       setUser(u);
@@ -43,52 +46,84 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => unsubscribe();
   }, []);
 
-  // 2) Procesează rezultatul redirect-ului O SINGURĂ DATĂ la mount,
-  //    blochează orice altă redirecționare până la finalizare.
+  // 2) Process redirect results from Firebase (Google/GitHub) and MSAL (Microsoft)
   useEffect(() => {
     let cancelled = false;
-    (async () => {
-      try {
-        await setPersistence(auth, browserLocalPersistence);
+    
+    const handleMsalRedirect = async () => {
+        try {
+            const response = await msalInstance.handleRedirectPromise();
+            if (response && response.account) {
+                 if (cancelled) return;
+                
+                toast({ title: 'Processing Microsoft Sign-In...', description: 'Please wait.' });
 
-        const result = await getRedirectResult(auth);
-        if (!result || cancelled) {
-          setRedirectHandled(true);
-          return;
+                // Create a Firebase credential with the MSAL ID token
+                const credential = OAuthProvider.credential({
+                    idToken: response.idToken,
+                    accessToken: response.accessToken, 
+                });
+
+                // Sign into Firebase with the credential
+                await signInWithCredential(auth, credential);
+
+                toast({
+                  title: 'Sign-In Successful',
+                  description: `Welcome back, ${response.account.name || response.account.username}!`,
+                });
+
+                router.replace('/purchases');
+            }
+        } catch (e: any) {
+            console.error('MSAL Redirect Error:', e);
+            toast({ title: 'Microsoft Sign-In Failed', description: e.message || 'An unknown error occurred during MSAL redirect.', variant: 'destructive' });
         }
+    };
 
-        toast({
-          title: 'Sign-In Successful',
-          description: `Welcome back, ${result.user.displayName || result.user.email}!`,
-        });
+    const handleFirebaseRedirect = async () => {
+        try {
+            const result = await getRedirectResult(auth);
+            if (!result || cancelled) return;
 
-        // Important: replace, nu push (evită să rămână /login în back stack)
-        router.replace('/purchases');
-      } catch (e) {
-        const err = e as FirebaseError;
-        console.error('OAuth Redirect Error:', err);
-        // Arată mesaje utile pe cazuri comune
-        const msg =
-          err.code === 'auth/unauthorized-domain'
-            ? `This app's domain is not authorized for social sign-in. Add it in Firebase Console → Authentication → Settings → Authorized domains.`
-            : err.message || 'An unknown error occurred during sign-in.';
+            toast({
+              title: 'Sign-In Successful',
+              description: `Welcome back, ${result.user.displayName || result.user.email}!`,
+            });
+            
+            router.replace('/purchases');
+        } catch(e) {
+            const err = e as FirebaseError;
+            console.error('Firebase OAuth Redirect Error:', err);
+            const msg =
+              err.code === 'auth/unauthorized-domain'
+                ? `This app's domain is not authorized for social sign-in. Add it in Firebase Console → Authentication → Settings → Authorized domains.`
+                : err.message || 'An unknown error occurred during sign-in.';
+            toast({ title: 'Sign-In Failed', description: msg, variant: 'destructive', duration: 15000 });
+        }
+    };
+    
+    (async () => {
+        await setPersistence(auth, browserLocalPersistence);
+        
+        await handleMsalRedirect();
+        await handleFirebaseRedirect();
 
-        toast({ title: 'Sign-In Failed', description: msg, variant: 'destructive', duration: 15000 });
-      } finally {
-        if (!cancelled) setRedirectHandled(true);
-      }
+        if (!cancelled) {
+            setRedirectHandled(true);
+        }
     })();
+
 
     return () => {
       cancelled = true;
     };
   }, [router, toast]);
 
+
   const login = async (email: string, pass: string) => {
     try {
       await setPersistence(auth, browserLocalPersistence);
       await signInWithEmailAndPassword(auth, email, pass);
-      // Redirecția se va face în efectul de mai jos (după ce redirectHandled e true)
     } catch (e) {
       const err = e as FirebaseError;
       console.error('Login failed:', err.message);
@@ -98,7 +133,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = async () => {
     try {
-      await signOut(auth);
+      await msalInstance.logoutRedirect(); // Handles MSAL logout
+      await signOut(auth); // Handles Firebase logout
       router.replace('/login');
     } catch (e) {
       console.error('Logout failed:', e);
@@ -116,7 +152,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  // 3) Redirecționează user-ul deja autentificat DE ABIA după ce am terminat redirect flow-ul.
+  // 3) Redirect away from login/signup if user is already authenticated
   useEffect(() => {
     if (!isLoading && redirectHandled && user && (pathname === '/login' || pathname === '/signup')) {
       router.replace('/purchases');

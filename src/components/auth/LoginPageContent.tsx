@@ -12,9 +12,11 @@ import Image from 'next/image';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
-import { OAuthProvider, signInWithRedirect, type AuthError, GoogleAuthProvider, GithubAuthProvider } from 'firebase/auth';
+import { signInWithRedirect, GoogleAuthProvider, GithubAuthProvider } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
 import { FirebaseError } from 'firebase/app';
+import { msalInstance } from '@/lib/msal';
+
 
 const MicrosoftIcon = (props: React.SVGProps<SVGSVGElement>) => (
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 21 21" {...props}>
@@ -58,12 +60,9 @@ export function LoginPageContent() {
         switch (providerName) {
             case 'Microsoft':
                 {
-                    const microsoftProvider = new OAuthProvider('microsoft.com');
-                    microsoftProvider.setCustomParameters({ tenant: 'common' });
-                    microsoftProvider.addScope('openid');
-                    microsoftProvider.addScope('email');
-                    microsoftProvider.addScope('profile');
-                    await signInWithRedirect(auth, microsoftProvider);
+                   await msalInstance.loginRedirect({
+                     scopes: ["openid", "profile", "User.Read"],
+                   });
                 }
                 break;
             case 'Google':
@@ -80,8 +79,8 @@ export function LoginPageContent() {
                 break;
         }
       } catch (error: any) {
-          const err = error as FirebaseError;
-          console.error("Social Sign-In Error:", err.code, err.message);
+          const err = error as FirebaseError | Error;
+          console.error("Social Sign-In Error:", err);
           toast({
               title: "Sign-In Failed",
               description: err.message || "An unknown error occurred during sign-in.",

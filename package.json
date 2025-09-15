@@ -15,6 +15,7 @@
     "genkit:watch": "genkit start -- tsx --watch srcai/dev.ts"
   },
   "dependencies": {
+    "@azure/msal-browser": "^3.19.0",
     "@genkit-ai/googleai": "1.8.0",
     "@genkit-ai/next": "1.8.0",
     "@google-cloud/recaptcha-enterprise": "^5.2.0",
